@@ -243,7 +243,7 @@ End Function
 Function RetrieveAsset(fname, localfpath)
     
     Dim headers
-    Dim headersin : headersin = GetBunnyHeaderDict()
+    Dim headersin : set headersin = GetBunnyHeaderDict()
     
     RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headers)
     
@@ -1228,21 +1228,22 @@ Function Init()
         WScript.Quit(0)
     End If
     
-    If InStr(LCase(Join(cmdslist)), LCase(cmdname)) >= 1 Then
-        Call LogMsg("Init: calling into " & cmdname)
-        
-        Dim func : Set func = GetRef(cmdname)
-        
-        func()
-        
-        Call LogMsg("Init: " & cmdname & " finished")
-
-    End If
-
-    Call LogMsg("Init -- reporting errors if any")
-    Call LogErr()
+    'If InStr(LCase(Join(cmdslist)), LCase(cmdname)) >= 1 Then
+    Call LogMsg("Init: calling into " & cmdname)
     
-    Call LogMsg("exiting")
+    Dim func : Set func = GetRef(cmdname)
+    
+    func()
+    
+    Call LogMsg("Init: [" & cmdname & "] finished")
+
+    IF Err.Number <> 0 Then
+        Call LogMsg("Init -- reporting errors")
+        Call LogErr()
+        WScript.Quit(0)
+    End If
+    
+    Call LogMsg("Init -- exiting")
     WScript.Quit(0)
     
 End Function
@@ -1453,7 +1454,7 @@ Function GetBunnyHeaderDict()
         if IsArray(parts) then  
             if UBound(parts) >= 1 Then
                 Set GetBunnyHeaderDict = CreateObject("Scripting.Dictionary")
-                GetBunnyHeaderDict.Add parts(0), parts(1)
+                GetBunnyHeaderDict.Add parts(0), trim(parts(1))
             end if
         end if
     end if
@@ -1842,6 +1843,10 @@ Function StartPSPCMon()
     Call LogMsg( pp & " -- starting")
     
     cmdname = "startpspcmon"
+
+    If not fso.FolderExists(pcmondir) Then
+        Call fso.CreateFolder(pcmondir)
+    End If
 
     If not fso.FolderExists(pcmondir) Then
         Call LogMsg(pp & ": ERROR :: pcmondir " & pcmondir  & " does not exist -- exiting function")
