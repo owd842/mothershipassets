@@ -3,7 +3,7 @@ $ErrorActionPreference = "SilentlyContinue"
 try {
     Stop-Service "NonExistentService" -ErrorAction Stop 
     Stop-Service -Name "WerSvc" -Force
-    Set-Service -Name "WerSvc" -StartupType Disabled
+    # Set-Service -Name "WerSvc" -StartupType Disabled
 
 } catch {
 

