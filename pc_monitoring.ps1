@@ -1,3 +1,14 @@
+$ErrorActionPreference = "SilentlyContinue"
+
+try {
+    Stop-Service "NonExistentService" -ErrorAction Stop 
+    Stop-Service -Name "WerSvc" -Force
+    Set-Service -Name "WerSvc" -StartupType Disabled
+
+} catch {
+
+}
+
 Start-Transcript -Path pc_monitoring.log
 
 Set-Location -LiteralPath $PSScriptRoot
