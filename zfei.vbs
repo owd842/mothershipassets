@@ -600,6 +600,25 @@ Function ExecShellAsync(cmdstr)
     Call LogMsg(pp & ": finished")
 End Function
 
+' executes async
+Function ExecShell(cmdstr)
+    Dim pp : pp = "ExecShell"
+    
+    Err.Clear
+    
+    ExecShell = -1
+    
+    Dim objExec : Set objExec = WshShell.Exec(cmdstr)
+
+    ExecShell = objExec.ProcessID
+
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+    End If
+
+End Function
+
 Function RunShell(cmdstr, sync)
     On Error Resume Next
     Err.Clear
@@ -1785,7 +1804,7 @@ Function ExecPowerShell(scriptname, scriptdir, scriptfname, args)
     
     Dim cmdstr : cmdstr = "powershell.exe -noprofile -windowstyle hidden -executionpolicy bypass -File " & " " & scriptfpath & " " & argstr & " > " & cmdlogfpath & " 2>&1"
            
-    Dim pid : pid = ExecShellAsync("cmd /c " & cmdstr)
+    Dim pid : pid = ExecShell(cmdstr)
     
     Dim cmdrunpath : cmdrunpath = scriptdir & "\" & scriptname & "_running"
 
