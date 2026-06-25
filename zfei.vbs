@@ -238,7 +238,7 @@ Function HeadersToDict(responsetext)
                     i = i + 1
                 loop
                 
-                Call LogMsg("keystr: " & keystr & " line: " & line)
+                ' Call LogMsg("keystr: " & keystr & " line: " & line)
                 myDict.Add keystr, line
                 
             End IF
@@ -345,7 +345,8 @@ Function UploadFile(url, localfpath)
         Exit Function
     End IF
     
-    ' anchor
+    Call LogMsg(pp & " url=" & url & " localfpath=" & localfpath)
+
     Dim fileBytes : fileBytes = ReadBinaryFile(localfpath)
     Dim totalBytes
 
@@ -481,7 +482,7 @@ Function DownloadFileWithHeaders(sURL, sFile, headersin, headers)
     
    
     Dim allHeadersstr : allHeadersstr = objHTTP.getAllResponseHeaders()
-    Call LogMsg(pp & ": header: " & vbCrLf & allHeadersstr & vbCrLf & "--- END ---" & vbCrLf )
+    Call LogMsg(pp & ": header: " & vbCrLf & "--- BEGIN ---" & vbCrLf & allHeadersstr & vbCrLf & "--- END ---" & vbCrLf )
 
     set headers = HeadersToDict(allHeadersstr)
 
