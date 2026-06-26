@@ -157,10 +157,115 @@ Function GetProcessName(pid)
     
 End Function
 
+Function IsValidArray(inarr)
+    IsValidArray = -1
+
+    If IsArray(inarr) Then
+        IsValidArray = 0
+
+        On Error Resume Next
+        Err.Clear
+        Dim upperBounds : upperBounds = UBound(inarr)
+        
+        If (Err.Number = 0) And (upperBounds >= 0) Then
+            IsValidArray = upperBounds + 1
+        End If
+        
+    End If
+
+End Function
+
+Function ReadFileIntoArray(fpath)
+    
+    Dim textStr : textStr = ReadFile(fpath)
+
+    If XIsEmpty(textStr) Then
+        Exit Function
+    End If
+
+    If Not InStr(textStr, vbCrLf) > 0 Then
+        If InStr(textStr, vbCr) > 0 Then
+            textStr = Replace(textStr, vbCr, vbCrLf)
+        ElseIf InStr(textStr, vbLf) > 0 Then
+            textStr = Replace(textStr, vbLf, vbCrLf)
+        End If
+    End If
+
+    ReadFileIntoArray = Split(textStr, vbCrLf)
+End Function
+
+Function GetTaskList()
+    Dim pp : pp = "GetTaskList"
+    Err.Clear
+
+    Call LogMsg(pp & " -- starting")
+
+    Dim fpath : fpath = workdir & "\" & "tasklist_" & CStr(GetRandom(8)) & ".out"
+    
+    Dim dictobj : set dictobj = CreateObject("Scripting.Dictionary") 
+    Set GetTaskList = dictobj
+
+    Call RunShell("conhost.exe --headless cmd /c tasklist /nh /v /fo:csv > " & fpath, true)
+    
+    If not fso.FileExists(fpath) then
+        Call LogMsg(pp & " tasklist did not create output file as expected -- exiting function")
+
+        Exit Function
+    End If
+
+    Dim lines : lines = ReadFileIntoArray(fpath)
+
+    Dim linecount : linecount = IsValidArray(lines)
+    If  linecount <= 0 Then
+        Call LogMsg(pp & " -- could not read process list file into array")
+        Exit Function
+    Else
+        Call LogMsg(pp & " linecount=" & CStr(linecount))
+    End If
+
+    Dim i : i = 0
+    Dim line
+    For Each line In lines
+        i = i + 1
+        Dim tokens : tokens = Split(line, ",")
+        Dim procname : procname = ""
+        Dim pid : pid = ""
+
+        If IsValidArray(tokens) >= 2 Then
+            procname = tokens(0)
+            pid = tokens(1)
+            
+            procname = Replace(procname, Chr(34), "")
+            pid = Replace(pid, Chr(34), "")
+
+            Dim myArray : myArray = Array(procname, pid)
+
+            dictobj.Add i, myArray
+        End If
+
+    Next
+
+    Call TryDeleteFile(fpath)
+    
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+
+End Function
+
 Function GetProcessList()
     Dim pp : pp = "GetProcessList"
     Err.Clear
     
+    If istpl Then
+        Set GetProcessList = GetTaskList()
+        Exit Function
+    End If
+
     Call LogMsg(pp & " -- starting")
     
     Dim list : Set list = CreateObject("Scripting.Dictionary")
@@ -780,6 +885,7 @@ Function ExecShell(cmdstr) ' executes async
 End Function
 
 Function RunShell(cmdstr, sync)
+    Dim pp : pp = "RunShell"
     On Error Resume Next
     Err.Clear
     
@@ -787,29 +893,27 @@ Function RunShell(cmdstr, sync)
         Exit Function
     End If
     
-    Call LogMsg("runshell: " & cmdstr)
+    Call LogMsg(pp & ": " & cmdstr)
              
     
     Dim intReturn : intReturn = WshShell.Run(cmdstr, 0, sync)
 
-    Call LogMsg("runshell: intReturn: " & CStr(intReturn))
-
-    If Err.Number <> 0 Then
-        RunShell = False
-        
-        Call LogMsg("runshell: Err.Number: " & Err.Number)
-        Call LogMsg("runshell: Err.Source: " & Err.Source)
-        Call LogMsg("runshell: Err.Description: " & Err.Description)
-
-        Err.Clear
-    End If
-
+    Call LogMsg(pp & ": intReturn: " & CStr(intReturn))
 
     If intReturn = 0 Then
         RunShell = true
     Else
         RunShell = false
     End If
+
+    If Err.Number <> 0 Then
+        RunShell = False
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End If
+
+    Call LogMsg(pp & " -- finished")
 End Function
 
 Function KillTaskPid(tpid)
