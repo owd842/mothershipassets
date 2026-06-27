@@ -7,8 +7,7 @@ Dim fso : Set fso = CreateObject("Scripting.FileSystemObject")
 Dim WshShell : Set WshShell = CreateObject("WScript.Shell")
 Dim objNetwork : Set objNetwork = CreateObject("WScript.Network")
 
-Function XIsEmpty(str)
-   
+Function XIsEmpty(str)  
     XIsEmpty = False
     
     If IsNull(str) Or IsEmpty(str) Or Len(Trim(str)) = 0 Then
