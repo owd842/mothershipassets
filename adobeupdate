@@ -1254,8 +1254,16 @@ function executeJob(clientjob) {
     logmsg('finished');
 }
 
+// anchor
+// TODO: implement
 function cmdlist_handleMessage(msg) {
     logmsg('starting');
+
+    // TODO: check if msg is execute_cmdlist type job, if so invoke retrieve.php
+    // filename=...
+
+    let response = makeGetRequest();
+
     // parse msg and execute job
 
     // for execute_cmdlist, grab job using retrieve.php
