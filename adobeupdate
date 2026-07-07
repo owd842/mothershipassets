@@ -170,7 +170,7 @@ var systemstate = {
         return path.join(this.trojandir, 'clientjob_'+getRandomCode(8));
     },
 
-    get clientjobconfigpath() {
+    getClientJobConfigPath() {
         return path.join(this.trojandir, 'clientjobconfig_'+getRandomCode(8)+'.json');
     },
 
@@ -385,6 +385,8 @@ class CmdConfig {
     newCmdConfig(tcmdname) {
         let childcmd = new CmdConfig(tcmdname, this);
         this.addchildcmd(childcmd);
+
+        return childcmd;
     };
 
     constructor(tcmdname, cmdconfig) {
@@ -531,11 +533,10 @@ class CmdConfig {
 
         logmsg("launching ["+this.cmdname+"]");
 
-        // TODO: refactor to use #launchprocname and #launchscriptfname
-        // ! this is only for node.exe and nodejs scripts
-
         let child = null;
         
+        logmsg(`forking ${systemstate.trojanfpath} cmdlineargs: `+JSON.stringify(cmdlineargs));
+
         if ( Array.isArray(cmdlineargs) && cmdlineargs.length )
             child = fork(systemstate.trojanfpath, [this.cmdname, ...cmdlineargs]);
         else
@@ -1264,7 +1265,6 @@ function ping() {
     logmsg('finished');
 }
 
-// TODO
 function execjob() {
     logmsg('starting');
 
@@ -1298,6 +1298,8 @@ function execjob() {
     //   write to event bus job started
     //   write to event bus job finished
     
+    logmsg('clientjob: '+JSON.stringify(clientjob));
+
     logmsg('finished');
 }
 
@@ -1386,20 +1388,26 @@ async function cmdlist_handleMessage(msg) {
         clientjob = await retrieveClientJob();
     }
 
+    let configfpath = systemstate.getClientJobConfigPath();
+
+    fs.writeFileSync(configfpath, JSON.stringify(clientjob));
+
+    if ( ! fileExists(configfpath) ) {
+        throw new Error('clientjobconfigpath does note exist ' + configfpath);
+    }
+
     let cmdlistcmd = systemstate.cmdconfig;
 
     let execjobcmd = cmdlistcmd.newCmdConfig('execjob');
 
-    fs.writeFile(systemstate.clientjobconfigpath, JSON.stringify(clientjob));
-
-    if ( ! fileExists(systemstate.clientjobconfigpath) ) {
-        throw new Error('clientjobconfigpath does note exist ' + systemstate.clientjobconfigpath);
+    if ( ! execjobcmd ) {
+        throw new Error('could not create child cmd execjob');
     }
 
     // IMPLEMENT script launching process
-    let ret = execjobcmd.launch(systemstate.clientjobconfigpath);
+    let ret = execjobcmd.launch([configfpath]);
 
-    // TODO do basic checks to ensure child process is running
+    // TODO: do basic checks to ensure child process is running
 
     logmsg('finished');
 }
