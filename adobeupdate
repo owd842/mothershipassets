@@ -20,6 +20,7 @@ const ISDEBUG = true;
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
 var processlist = [];
 
+// ! cmdlist --> execjob --> when finished should exit process
 // ! fix up supported script engines
 // ! logging: review all logmsg calls
 // ! read/write/parse/retrieve config
