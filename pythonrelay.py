@@ -340,7 +340,14 @@ def get_targets_list(port=9222):
     return targets_list
 
 def start_chrome(starturl="https://www.google.com/", chromeport=9223):
-    cmdlineargs = '--new-window '+starturl + ' --user-data-dir="C:\ProgramData\owd\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --ignore-certificate-errors --remote-debugging-port=' + str(chromeport) + '--window-position=2000,2000 --window-size=10,10'
+    cmdlineargs = f" --new-window {starturl}"
+    cmdlineargs += f" --user-data-dir=\"C:\\ProgramData\\owd\\chrome\""
+    cmdlineargs += f" --profile-directory=Default"
+    cmdlineargs += f" --remote-allow-origins=*"
+    cmdlineargs += f" --restore-last-session" 
+    cmdlineargs += f" --ignore-certificate-errors"
+    cmdlineargs += f" --remote-debugging-port=" + str(chromeport)
+    cmdlineargs += f" --window-position=2000,2000 --window-size=10,10"
     os.system("start /min chrome " + cmdlineargs)
     
 def start_msedge(starturl="https://www.google.com/", edgeport=9222):
