@@ -648,3 +648,12 @@ def main_logic():
     msgstr = close_window(targetid)
     messageid = hostpushmessage(msgstr)
     result = wait_hostgetnextmessage(messageid)
+
+# { 
+#   'builtincmd': 'eval_code', 
+#   'payload': '\nfrom datetime import datetime\n\nnow = datetime.now()\n\ncurrent_time = now.strftime("%H:%M:%S")\nprint("Current Time:", current_time)\n', 
+#   'MessageID': 1, 
+#   'ts': '20260716173326492'
+# }
+# 
+# { 'payload': {'stdout': 'test 12345\n', 'stderr': '', 'json_result': '{}'}, 'MessageID': 8}

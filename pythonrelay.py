@@ -428,6 +428,7 @@ try:
     if not isempty(configfpath) and os.path.isfile(configfpath):
         with open(configfpath, 'r', encoding='utf-8') as file:
             config = json.load(file)
+            logmsg(json.dumps(config))
 except Exception as e:
     print(e)
 
