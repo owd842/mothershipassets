@@ -1,3 +1,7 @@
+// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
+// storagevault941@agentforce.com
+// As1df1gh!
+
 // 20260705-0849
 // https://onecompiler.com/nodejs#draft-yf7t
 
@@ -2478,11 +2482,35 @@ outgoing result
         seqid:seqid++, 
         cmdid:getRandomCode(8), 
         ts:getTimestamp()
-        
-        MessageID --> for python relay  
     }
-
     
     { execresult: str, ts: getTimestamp() }
+
+    Python Relay
+
+    incomming messages
+
+    host sends:
+    {
+        MessageID
+        payload
+        ws_url
+        ts
+    }
+    
+    client expects:
+    { 
+      "MessageID":...
+      "payload":{}
+      "ws_url":
+      "builtincmd":
+    }
+
+    outgoing
+    {
+      "MessageID"
+      "payload" --> holds result object from executing incoming cmd
+    }
+
 
 */
