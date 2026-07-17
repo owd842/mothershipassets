@@ -2,7 +2,8 @@
 // storagevault941@agentforce.com
 // As1df1gh!
 
-// 20260705-0849
+// 20260716-1824
+
 // https://onecompiler.com/nodejs#draft-yf7t
 
 // IMPLEMENT
@@ -24,9 +25,9 @@ const ISDEBUG = true;
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
 var processlist = [];
 
-// ! cmdlist --> execjob --> when finished should exit process
-// ! fix up supported script engines
-// ! logging: review all logmsg calls
+// ! improve logging / logmsg
+
+// ! BUG: execjob script must terminate upon completion --> when finished should exit process
 // ! read/write/parse/retrieve config
 
 // TODO: retrieve nircmdc and use it to grab process names -- need to upgrade isCmdRunning
@@ -41,7 +42,7 @@ var processlist = [];
 // bat/cmd, ps1, vbs failover
 
 // EXEC_CMD --> StartPCMon, StopPCMon
-//              startpspcmon, stoppspcmon
+//              StartPSPCmon, StopPSPCmon
 
 // EXEC_CMD --> GetSystemOverview
 //              GetTrojanDir
