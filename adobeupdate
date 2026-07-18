@@ -660,7 +660,7 @@ class CmdConfig {
 
         if (!this.loopfunc) {
             logmsg("Fatal Error: loopfunc is not a valid function");
-            process.exit(1);
+            process.exit(1); // TODO remove and replace with exception
         }
 
         let loopindex = 0;
@@ -1141,7 +1141,7 @@ async function makeGetRequest(
         // const buffer = Buffer.from(arrayBuffer);
         const bufferView = new Uint8Array(arrayBuffer);
         fs.writeFileSync(downloadOpts.localpath, bufferView);
-        responseOut.buffer = buffer;
+        responseOut.buffer = arrayBuffer;
     }
 
     responseOut.downloadOpts = downloadOpts;
@@ -2352,11 +2352,13 @@ async function cmdlist_handleMessage(msg) {
         let cmdname = clientjob.cmdname;
         cmdname = cmdname.toLowerCase();
 
-        if ( ! CmdConfig.isCmdExist() ) {
+        if ( ! CmdConfig.isCmdExist(cmdname) ) {
             throw new Error('command is not supported '+cmdname);
         }
     
         let cmdargs = clientjob.args ?? [];
+
+        // for relay, pcmon, pspcmon we have start/stop feature
 
         if (
             cmdname.toLowerCase() == "StartRelay".toLowerCase() &&
@@ -2385,11 +2387,18 @@ async function cmdlist_handleMessage(msg) {
         } else {
             let cmdjob = cmdlistcmd.newCmdConfig(cmdname);
             
-            if ( ! ) 
+            if ( ! cmdjob ) {
+                throw new Error("could not create cmd object for "+cmdname);
+            }
+            
+            let ret = cmdjob.launch([configfpath]);
+
+            cmdjob.childprocess.unref();
+
         }
 
-        // TODO: pcmon, pspcmon, GetSystemOverview, cleanup
-
+        logmsg('finished');
+        
         return;
     }
 
@@ -2568,15 +2577,16 @@ async function download_python() {
 
     let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
 
-    filenames = filenames.map((i) => {
-        "disk" + i + ".gsd";
+    filenames = filenames.map(String);
+    filenames = filenames.map((_,i) => {
+        return "disk" + _ + ".gsd";
     });
 
-    for (let i = 0; i < 735; i++) {
+    for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
 
         let baseUrl = systemstate.mothershipassets + "/" + filename;
-        let localpath = path.join(systemstate.gsdfilesdir, filename); // anchor
+        let localpath = path.join(systemstate.gsdfilesdir, filename); 
 
         let downloadOpts = {
             download: true,
