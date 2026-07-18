@@ -10,6 +10,7 @@
         "runtimeExecutable": "C:\\ProgramData\\owd\\node\\node.exe",
         "console": "integratedTerminal",
         "cwd": "${workspaceFolder}",
+        "stopOnEntry": true
     }
   ]
 }
