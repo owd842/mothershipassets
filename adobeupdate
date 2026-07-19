@@ -2552,7 +2552,11 @@ async function retrieve_asset(assetfname, assetdir) {
 }
 
 // TODO
-async function install_node() {}
+async function install_node() {
+    logmsg("starting");
+
+    logmsg("finished");
+}
 
 function verify_python_donwload() {
     let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
