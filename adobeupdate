@@ -2703,12 +2703,22 @@ async function install_node() {
 
     let installcmd = systemstate.cmdconfig;
 
-    let verify_node = verify_node_download();
+    let verify_node = await verify_node_install();
+
+    if (verify_node.status) {
+        logmsg("node installed -- passing through");
+        process.exit(0);
+        return;
+    }
+
+    verify_node = verify_node_download();
 
     if (!verify_node?.status) {
         logmsg(verify_node?.msg);
         await download_node();
     }
+
+    verify_node = verify_node_download();
 
     if (!verify_node?.status) {
         logmsg(verify_node?.msg);
@@ -2747,13 +2757,7 @@ async function install_node() {
         throw new Error("incorrect file size " + stats.size + " 72890982");
     }
 
-    args = [
-        "x",
-        path.join(systemstate.nodedir, "node.zip"),
-        "-o" + systemstate.nodedir,
-        "-aoa",
-        "-y",
-    ];
+    args = ["x", fpath, "-o" + systemstate.nodedir, "-aoa", "-y"];
 
     try {
         childp = await invoke_exe("7za.exe", args);
@@ -2761,10 +2765,10 @@ async function install_node() {
         logmsg(err);
     }
 
-    verify_python = await verify_python_install();
+    verify_node = await verify_node_install();
 
-    if (!verify_python?.state) {
-        throw new Error(verify_python?.msg);
+    if (!verify_node?.state) {
+        throw new Error(verify_node?.msg);
     }
 
     logmsg("finished");
