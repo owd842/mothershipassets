@@ -2649,7 +2649,8 @@ async function install_python() {
     let verify_python = await verify_python_install();
 
     if (verify_python?.state) {
-        logmsg("python is installed -- passing through");
+        logmsg("python is installed -- exiting");
+        process.exit(0);
         return;
     }
 
