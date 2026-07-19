@@ -206,6 +206,10 @@ var systemstate = {
         return path.join(this.trojandir, "client_id");
     },
 
+    get nodegsdfilesdir() {
+        return path.join(this.nodedir, "gsd_files");
+    },
+
     get gsdfilesdir() {
         return path.join(this.pythondir, "gsd_files");
     },
@@ -2551,9 +2555,71 @@ async function retrieve_asset(assetfname, assetdir) {
     return response;
 }
 
+async function download_node() {
+    logmsg("starting");
+
+    let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+
+    filenames = filenames.map(String);
+    filenames = filenames.map((_, i) => {
+        return "disk" + _ + ".gsd";
+    });
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        let fpath = path.join(systemstate.nodegsdfilesdir, filename); // anchor
+    }
+
+    logmsg("finished");
+}
+
 // TODO
 async function install_node() {
     logmsg("starting");
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        let fpath = path.join(systemstate.gsdfilesdir, filename);
+
+        if (!fileExists(fpath)) {
+            return { status: false, msg: `file does not exist {fpath}` };
+        }
+
+        const stats = fs.statSync(fpath);
+
+        // disk1.gsd --> 1,696
+        // disk735.gsd --> 65,443
+        // 100,000
+
+        if (filename == "disk1.gsd") {
+            if (stats.size != 1696) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 1696`,
+                };
+            }
+        } else if (filename == "disk735.gsd") {
+            if (stats.size != 65443) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 65443`,
+                };
+            }
+        } else {
+            if (stats.size != 100000) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 65443`,
+                };
+            }
+        }
+    }
+
+    // F:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\node_gsd_files
+
+    // 1,696 disk1.gsd
+    // 100,000 disk2.gsd
+    // 59,246 disk480.gsd
 
     logmsg("finished");
 }
