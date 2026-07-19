@@ -2617,6 +2617,8 @@ async function verify_node_install() {
         return { state: false, msg: `node.exe does not exist {fpath}` };
     }
 
+    fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64");
+
     let childp = null;
 
     try {
