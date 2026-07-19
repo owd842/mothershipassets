@@ -1161,6 +1161,15 @@ responseOut = {
 }
 */
 
+function folderExists(folderPath) {
+    try {
+        const stats = fs.statSync(folderPath);
+        return stats.isDirectory();
+    } catch (error) {
+        return false;
+    }
+}
+
 function fileExists(filePath) {
     try {
         const stats = fs.statSync(filePath);
@@ -2594,10 +2603,55 @@ function verify_python_donwload() {
     return { status: true };
 }
 
+async function verify_python_install() {
+    let fpath = path.join(
+        systemstate.pythondir,
+        "work",
+        "Portable Python-3.10.5 x64",
+        "App",
+        "Python"
+    );
+
+    if (!folderExists(fpath)) {
+        return { status: false, msg: `python folder does not exist {fpath}` };
+    }
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe(
+            "python.exe",
+            ["--version"],
+            fpath,
+            (text) => {
+                text = text ?? "ERROR_EMPTY_OUTPUT";
+
+                if (!text.includes("Python 3.10.5")) {
+                    return {
+                        state: false,
+                        msg: `python install failed -- could not verify python version {text}`,
+                    };
+                }
+            }
+        );
+    } catch (err) {
+        logmsg(err);
+    }
+
+    return { state: true };
+}
+
 async function install_python() {
     logmsg("starting");
 
     let installcmd = systemstate.cmdconfig;
+
+    let verify_python = await verify_python_install();
+
+    if (verify_python?.state) {
+        logmsg("python is installed -- passing through");
+        return;
+    }
 
     if (!fileExists(path.join(systemstate.trojandir, "7za.exe")))
         await retrieve_asset("7za.exe");
@@ -2607,8 +2661,9 @@ async function install_python() {
 
     // TODO verify file size of exe's
 
-    if (!verify_python_donwload()) {
-        logmsg("python pieces not present -- downloading");
+    verify_python = verify_python_donwload();
+    if (!verify_python?.state) {
+        logmsg(`python pieces not present -- downloading {verify_python.msg}`);
         await download_python();
     }
 
@@ -2654,6 +2709,12 @@ async function install_python() {
         childp = await invoke_exe("7za.exe", args);
     } catch (err) {
         logmsg(err);
+    }
+
+    verify_python = await verify_python_install();
+
+    if (!verify_python?.state) {
+        throw new Error(verify_python?.msg);
     }
 
     logmsg("finished");
