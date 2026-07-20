@@ -3145,14 +3145,14 @@ async function pspcmon() {
         if ( killswitch ) {
             
             if ( isPidAlive(tcmdpid) )
-                child.kill(); 
+                childp.kill(); 
 
             if ( isPidAlive(tcmdpid) )
-                child.kill('SIGKILL'); 
+                childp.kill('SIGKILL'); 
         
         }
 
-        if (!isPidAlive(tcmdpid)) {
+        if ( (! killswitch) && (!isPidAlive(tcmdpid)) ) {
             childp = execPSScript(scriptfpath);
         }
     };
