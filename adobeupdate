@@ -1,3 +1,5 @@
+debugger;
+
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
 // storagevault941@agentforce.com
 // As1df1gh!
@@ -63,7 +65,7 @@ var processlist = [];
 var process_argv = [];
 
 for (let token of process.argv) {
-    if (token != "--inspect-brk") process_argv.push(token);
+    if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
 var systemstate = {
@@ -2497,7 +2499,13 @@ async function invoke_exe(
 ) {
     return new Promise((resolve, reject) => {
         const exePath = path.join(exedirpath, exename);
-        const child = spawn(exePath, targs);
+        let child = null;
+
+        if (exename.slice(-4) == ".cmd") {
+            child = spawn(exePath, targs, { shell: true, windowsHide: true });
+        } else {
+            child = spawn(exePath, targs);
+        }
 
         child.stdout.on("data", (data) => {
             logmsg(`stdout: ${data.toString()}`);
@@ -2560,6 +2568,8 @@ async function retrieve_asset(assetfname, assetdir) {
 }
 
 function verify_node_download() {
+    let missingfiles = [];
+
     let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
 
     filenames = filenames.map(String);
@@ -2572,33 +2582,41 @@ function verify_node_download() {
         let fpath = path.join(systemstate.nodegsdfilesdir, filename);
 
         if (!fileExists(fpath)) {
-            return { status: false, msg: `file does not exist {fpath}` };
+            missingfiles.push({ filename: filename, msg: "file is missing" });
+            continue;
         }
 
         const stats = fs.statSync(fpath);
 
         if (filename == "disk1.gsd") {
             if (stats.size != 1696) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 1696`,
-                };
+                let msg = `file not the correct size {fpath} {stats.size} 1696`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
             }
         } else if (filename == "disk480.gsd") {
             if (stats.size != 59246) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 65443`,
-                };
+                let msg = `file not the correct size {fpath} {stats.size} 65443`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
             }
         } else {
             if (stats.size != 100000) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 65443`,
-                };
+                let msg = `file not the correct size {fpath} {stats.size} 65443`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
             }
         }
+    }
+
+    if (missingfiles.length > 0) {
+        return { status: false, missingfiles: missingfiles };
     }
 
     return { status: true };
@@ -2614,7 +2632,7 @@ async function verify_node_install() {
     fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64", "node.exe");
 
     if (!fileExists(fpath)) {
-        return { state: false, msg: `node.exe does not exist {fpath}` };
+        return { state: false, msg: "node.exe does not exist " + fpath };
     }
 
     fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64");
@@ -2654,15 +2672,22 @@ async function verify_node_install() {
     return { state: true };
 }
 
-async function download_node() {
+async function download_node(missingfiles) {
     logmsg("starting");
 
-    let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+    let filenames = [];
 
-    filenames = filenames.map(String);
-    filenames = filenames.map((_, i) => {
-        return "disk" + _ + ".gsd";
-    });
+    if (missingfiles && missingfiles.length > 0) {
+        for (let i = 0; i < missingfiles.length; i++)
+            filenames.push(missingfiles[i].filename);
+    } else {
+        filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+
+        filenames = filenames.map(String);
+        filenames = filenames.map((_, i) => {
+            return "disk" + _ + ".gsd";
+        });
+    }
 
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
@@ -2717,13 +2742,13 @@ async function install_node() {
 
     if (!verify_node?.status) {
         logmsg(verify_node?.msg);
-        await download_node();
+        await download_node(verify_node?.missingfiles);
     }
 
     verify_node = verify_node_download();
 
     if (!verify_node?.status) {
-        logmsg(verify_node?.msg);
+        // logmsg(verify_node?.msg); // TO
         throw new Error("node download failed");
     }
 

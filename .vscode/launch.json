@@ -9,6 +9,7 @@
             "program": "${file}",
             // "runtimeExecutable": "C:\\ProgramData\\owd\\node\\node.exe",
             "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+            "autoAttachChildProcesses": true,
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "stopOnEntry": true
