@@ -29,7 +29,7 @@ const util = require("util");
 const ISDEBUG = true; 
 
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
-var processlist = [];
+var processlist = initProcessList();
 
 // --- TASKS LIST ---
 
@@ -38,7 +38,7 @@ var processlist = [];
 // ! BUG: execjob script must terminate upon completion --> when finished should exit process
 // ! read/write/parse/retrieve config
 
-// TODO: retrieve nircmdc and use it to grab process names -- need to upgrade isCmdRunning
+// TODO: retrieve pslist.exe and use it to grab process names -- need to upgrade isCmdRunning
 //       to inspect the process name as well as pid
 
 // Get-WmiObject Win32_Process | Select-Object ProcessID, Name, CommandLine | Format-List
@@ -898,35 +898,152 @@ function getFileMD5(fpath) {
     return crypto.createHash("md5").update(fileBuffer).digest("hex");
 }
 
-function initProcessList() {
-    const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
 
-    exec(
-        `powershell.exe -NoProfile -Command "${psCommand}"`,
-        { maxBuffer: 1024 * 1024 * 10 },
-        (error, stdout, stderr) => {
-            if (error) {
-                logmsg(`Execution Error: ${error.message}`);
-                return;
-            }
-            if (stderr) {
-                logmsg(`PowerShell Error: ${stderr}`);
-                return;
-            }
+function getProcessList_pslist() {
 
-            try {
-                const processes = JSON.parse(stdout);
+}
 
-                logmsg("process list count: " + processes.length);
-                processlist = processes;
-                /*  CommandLine =
-Name =
-ProcessId = */
-            } catch (parseError) {
-                logmsg(`Failed to parse JSON string: ${parseError.message}`);
-            }
+function csvToJson(csvData) {
+
+    const lines = csvData.split(/\r?\n/).filter(line => line.trim() !== '');
+
+    const headers = lines[0].split(',');
+
+    lines.splice(0, 1); 
+
+    const result = [];
+
+    // Loop through the remaining rows
+    for (let i = 0; i < lines.length; i++) {
+        const obj = {};
+        const currentLine = lines[i].split(',');
+
+        for (let j = 0; j < headers.length; j++) {
+            obj[headers[j].trim()] = currentLine[j]?.trim() || '';
         }
-    );
+        result.push(obj);
+    }
+
+    return result;
+    // Save the output
+    // fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
+}
+
+
+function isUTF16LEBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 2) {
+        return false;
+    }
+
+    // UTF-16LE BOM is 0xFF 0xFE
+    return buffer[0] === 0xFF && buffer[1] === 0xFE;
+}
+
+async function exec_wmic() {
+
+    return new Promise((resolve, reject) => {
+        const wmicCommand = 'wmic process get ProcessId,Name,CommandLine /format:csv';
+
+        exec(wmicCommand, (error, stdout, stderr) => {
+            
+            if (error) {
+                reject(error);
+            }
+
+            if (stderr) {
+                reject(stderr);
+            }
+
+            resolve(stdout);
+        });
+
+    });
+
+}
+
+async function exec_pslist() { // anchor
+    
+    return invoke_exe(
+        exename,
+        targs = null,
+        exedirpath = systemstate.trojandir,
+        stdoutfunc,
+        stderrfunc);
+
+}
+
+async function getProcessList_wmic() {
+
+    let buffer = await exec_wmic();
+    let isutf16le = isUTF16LEBuffer(buffer);
+
+    let csvData = isutf16le ? buffer.toString('utf16le') : buffer.toString('utf8'); 
+
+    // { CommandLine, Name, Node, ProcessId }  
+    let jsondata = csvToJson(csvData);
+
+    return jsondata;
+}
+
+
+async function getProcessList_ps() {
+
+    return new Promise((resolve, reject) => {
+        const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
+
+        exec(
+            `powershell.exe -NoProfile -Command "${psCommand}"`,
+            { maxBuffer: 1024 * 1024 * 10 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                }
+
+                if (stderr) {
+                    reject(stderr);
+                }
+
+                const processes = JSON.parse(stdout);
+                // CommandLine
+                // Name
+                // ProcessId
+
+                resolve(processes);
+
+        });
+
+    });
+
+}
+
+async function getProcessList_pslist() {
+
+}
+
+async function initProcessList() {
+
+    let outproclist = [];
+
+    try {
+        outproclist = await getProcessList_wmic();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if ( outproclist && outproclist.length > 0 ) {
+        return outproclist;
+    }
+
+    try {
+        outproclist = await getProcessList_ps();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if ( outproclist && outproclist.length > 0 ) {
+        return outproclist;
+    }
+
 }
 
 function getProcess(pid) {
@@ -2561,6 +2678,7 @@ async function invoke_exe(
             logmsg("Failed to start child process:", err);
             reject(err);
         });
+
     });
 }
 
