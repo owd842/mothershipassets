@@ -7,7 +7,7 @@
             "name": "Launch Program",
             "skipFiles": ["<node_internals>/**"],
             "program": "${file}",
-            "runtimeExecutable": "C:\\ProgramData\\owd\\node\\node.exe",
+            "runtimeExecutable": "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node.exe",
             // "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
             "autoAttachChildProcesses": true,
             "console": "integratedTerminal",

