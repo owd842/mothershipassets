@@ -3292,12 +3292,12 @@ async function download_pcmon() {
     }
     
     if ( ! systemstate.istpl ) {
-        await retrieve_asset("pcmon.exe"); //anchor
+        await retrieve_asset("pcmon.exe",null,systemstate.pcmondir);
         return;
     }
 
     if ( systemstate.istpl ) 
-        await retrieve_asset("pcmon.dll"); //anchor
+        await retrieve_asset("pcmon.dll",null,systemstate.pcmondir);
 }
 
 async function pcmon_tpl() {
@@ -3330,6 +3330,15 @@ async function pcmon() {
     }
 
     let exepath = path.join(systemstate.pcmondir, "pcmon.exe");
+
+    if ( ! fileExists(exepath) ) {
+        await download_pcmon();
+
+        if ( ! fileExists(exepath) ) {
+            throw new Error('failed to download pcmon.exe');
+        }
+    }
+
 
     let killswitch = false;
 
