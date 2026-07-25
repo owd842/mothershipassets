@@ -2700,6 +2700,12 @@ function cmdlist() {
     logmsg("finished");
 }
 
+function validateTask(taskdetail) {
+    // Last Run Time
+    // Last Result
+    return true;
+}
+
 // TODO
 // anchor
 async function reschedule() {
@@ -2709,13 +2715,19 @@ async function reschedule() {
 
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
+        let taskdetail = null;
 
         if (ptasknames.includes(taskname)) {
-            logmsg(`task {taskname} registered -- pass`);
+            logmsg(`task {taskname} registered`);
+            taskdetail = await exec_schtasks_query(taskname);
+
+            // TODO validate that task is running / active
+            if ( ! validateTask(taskdetail) )
+                await createTask(taskname);
+
+            continue;
         } else {
-            // isTaskActive(taskname) --> check if task is valid/active
-            // if inactive or run resulted in error, delete task and recreate it
-            await createTask(taskname); // TODO only create if task has not run as expected
+            await createTask(taskname);
         }
     }
 }
@@ -3574,9 +3586,6 @@ var taskconfig = {
 };
 
 async function getTaskDetail() {
-    // Last Run Time:                        1999-11-30 12:00:00 AM
-    // Last Result:                          267011
-    // schtasks /query /tn "\Microsoft\Windows\NlaSvc\WiFiTask" /fo LIST /v
 }
 
 async function getTasks() {
@@ -3622,11 +3631,58 @@ async function exec_schtasks(taskxmlpath, taskname) {
     let ret = await invoke_exe("schtasks", [
         "/create",
         "/XML",
-        `"{taskxmlpath}"`,
+        "\""+taskxmlpath+"\"",
         "/tn",
-        `"{taskname}"`,
+        "\""+taskname+"\"",
         "/F",
     ]);
+}
+
+
+async function exec_schtasks_query(taskname) {
+
+    let resultdict = {};
+    let taskstr = '';
+
+    // Last Run Time:                        1999-11-30 12:00:00 AM
+    // Last Result:                          267011
+    // schtasks /query /tn "\Microsoft\Windows\NlaSvc\WiFiTask" /fo LIST /v
+
+    let ret = await invoke_exe("schtasks", [
+        "/query",
+        "/tn",
+        taskname,
+        "/fo",
+        "LIST",
+        "/v" ],null,(stdout) => { taskstr += stdout});
+
+    if ( isNullOrWhitespace(taskstr) ) {
+        throw new Error('could not generate task names from schtasks');
+    }
+
+    const lines = taskstr.split(/\r?\n/); 
+
+    for ( let i = 0 ; i<lines.length; i++) {
+        let line = lines[i];
+        let parts = line.split(':');
+
+        if ( parts && parts.length > 1 ) {
+            let key = '';
+            let value = '';
+
+            if ( parts[0] == 'Repeat' ) {
+                value = parts.pop().trim();
+                key = parts.join(':').trim();
+            } else {
+                key = parts[0].trim();
+                value = parts.splice(1).join(':').trim();
+            }
+
+            resultdict[key] = value;
+        }
+    }
+
+    return resultdict;
 }
 
 function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
