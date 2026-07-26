@@ -1,0 +1,45 @@
+{
+    "[python]": {
+        "editor.folding": true,
+        "editor.foldingStrategy": "auto",
+        "editor.showFoldingControls": "always"
+    },
+
+    "editor.folding": true,
+    "editor.foldingStrategy": "auto",
+    "editor.showFoldingControls": "always", // "mouseover",
+    "editor.foldingImportsByDefault": false,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+    "prettier.tabWidth": 4,
+    "prettier.useTabs": false,
+    "editor.fontSize": 14,
+    "editor.rulers": [
+        {
+            "column": 4, // Ruler at column 80
+            "color": "#ff0000" // Magenta color
+        },
+        {
+            "column": 8, // Ruler at column 80
+            "color": "#0044ff" // Magenta color
+        },
+        {
+            "column": 80, // Ruler at column 80
+            "color": "#ff00ff" // Magenta color
+        },
+        {
+            "column": 100, // Ruler at column 100
+            "color": "#00ff22" // Green color
+        },
+        {
+            "column": 120, // Ruler at column 120
+            "color": "#9f0af5" // Purple color
+        }
+    ],
+    "notebook.showFoldingControls": "always",
+    "git.enableSmartCommit": true,
+    "debug.javascript.autoAttachFilter": "always"
+}

