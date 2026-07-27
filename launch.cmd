@@ -95,6 +95,8 @@ type nul > %logfpath%
 
 echo starting [ %source% ] [ %* ]  %clientid% ] [ %timestamp% ] >> %logfpath%
 
+REM check cmd line args -- if present, execute nodejs script directly
+
 set cmdname=ping
 
 goto %cmdname%loop

