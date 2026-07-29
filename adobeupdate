@@ -89,7 +89,13 @@ var taskconfig = {
     },
 
     get tasknames() {
-        return Object.keys(this.taskxmlfuncs);
+        let arr = Object.keys(this.taskxmlfuncs);
+
+        for ( let i = 0; i<arr.length; i++) {
+            arr[i] = 'adobeupdate_' + arr[i];
+        }
+
+        return arr;
     },
 
     taskxmlfuncs: {
@@ -2784,9 +2790,15 @@ async function reschedule() {
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
         
-        // TODO check if task does not exist before creating it
-        // schtasks /query /tn "MyTaskName"
+        logmsg(`checking if task exists ${taskname}`);
+        let taskexist = await getTaskExists(taskname);
+        
+        if ( taskexist ) {
+            logmsg(`task ${taskname} exists`); 
+            continue;
+        }
 
+        logmsg(`creating task ${taskname}`);
         await createTask(taskname);
     }
 }
@@ -3758,8 +3770,6 @@ async function createTask(taskname) {
 
     let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
 
-    taskname = "adobeupdate_" + taskname;
-
     let taskxmlstr = taskxmlstrfunc(
         taskname,
         "1999-07-25T12:00:00",
@@ -3788,6 +3798,16 @@ async function exec_schtasks(taskxmlpath, taskname) {
     ], null, 
     (text) => { logmsg(text); }, 
     (text) => { logmsg(text); });
+}
+
+async function getTaskExists(taskname) {
+    let resultdict = await getTaskDetail(taskname);
+
+    if ( resultdict && resultdict['TaskName'] ) {
+        return true;
+    }
+
+    return false;
 }
 
 async function getTaskDetail(taskname) {
