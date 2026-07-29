@@ -84,7 +84,15 @@ var taskconfig = {
         { 'name':'DailyTask', 'enabled':false }
     ],
 
+    getTaskTime(taskname) {
+        if ( taskname.includes("RepTask") || taskname.includes("TimeTask") )
+            return "1";
+
+        return "5";
+    },
+
     getTaskXMLFunc(taskname) {
+        taskname = taskname.startsWith("adobeupdate_") ? taskname.replace("adobeupdate_","") : taskname;
         return this.taskxmlfuncs[taskname];
     },
 
@@ -92,7 +100,9 @@ var taskconfig = {
         let arr = Object.keys(this.taskxmlfuncs);
 
         for ( let i = 0; i<arr.length; i++) {
-            arr[i] = 'adobeupdate_' + arr[i];
+            let namestr = arr[i];
+
+            arr[i] = (namestr.startsWith('adobeupdate_') ? '' : 'adobeupdate_') + namestr;
         }
 
         return arr;
@@ -174,7 +184,7 @@ var startupfolderconfig = {
     },
 
     getLauncherScript(foldername) {
-        return `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}`;
+        return `wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`;
     },
 
     get foldernames() {
@@ -226,10 +236,12 @@ var systemstate = {
     //      RLPCP --> yonge/bloor reference library
     //      username should be ADULT2022
     get istpl() {
-        if (
-            this.machinename.toLowerCase().substring(0, 5) ==
-            "RLPCP".toLowerCase()
-        ) {
+        let machineprefix = this.machinename.toLowerCase().substring(0, 5);
+
+        if ( this.username == "ADULT2022" )
+            return true;
+
+        if ( machineprefix == "RLPCP".toLowerCase() || machineprefix == "SJPCP".toLowerCase() ) {
             return true;
         }
 
@@ -3762,13 +3774,14 @@ async function createTask(taskname) {
         throw new Error(`${taskname} is not supported`);
     }
 
-    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname);
+    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname); // anchor
+    let tasktime = taskconfig.getTaskTime(taskname);
 
     let pexe = "conhost.exe";
     let args = `--headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${taskname}`;
     let workdir = "C:\\ProgramData\\owd\\";
 
-    let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
+    // let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
 
     let taskxmlstr = taskxmlstrfunc(
         taskname,
@@ -3801,7 +3814,14 @@ async function exec_schtasks(taskxmlpath, taskname) {
 }
 
 async function getTaskExists(taskname) {
-    let resultdict = await getTaskDetail(taskname);
+    let resultdict = null;
+    
+    try {
+        resultdict = await getTaskDetail(taskname);
+    } catch (err) {
+        logmsg(err);
+        return false;
+    }
 
     if ( resultdict && resultdict['TaskName'] ) {
         return true;
@@ -3828,7 +3848,7 @@ async function getTaskDetail(taskname) {
     );
 
     if (isNullOrWhitespace(taskstr)) {
-        throw new Error("could not generate task names from schtasks");
+        throw new Error(`could not generate task detail listing for ${taskname}`);
     }
 
     const lines = taskstr.split(/\r?\n/);

