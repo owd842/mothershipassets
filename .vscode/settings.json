@@ -41,5 +41,6 @@
     ],
     "notebook.showFoldingControls": "always",
     "git.enableSmartCommit": true,
+    "git.path": "C:\\ProgramData\\Git\\bin\\git.exe",
     "debug.javascript.autoAttachFilter": "always"
 }

