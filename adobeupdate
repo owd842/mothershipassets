@@ -887,7 +887,7 @@ class CmdConfig {
                 await sleep(1000);
             }
 
-            let num = this.dynamicdelay;
+            let num = systemstate.dynamicdelay;
 
             logmsg(`sleeping for an additional ${num} seconds`);
 
