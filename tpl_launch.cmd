@@ -114,18 +114,19 @@ if %errorlevel% equ 0 (
     echo [INFO] Named pipe "%pipeName%" does not exist. -- continuing >> %logfpath%
 )
 
-wmic process get ProcessId,CommandLine /format:csv | findstr tpl_launch | findstr /v findstr >> %logfpath%
+SET scriptPID=
+
+for /f %%A in ('powershell -command "(Get-CimInstance Win32_Process -Filter 'ProcessId=$PID').ParentProcessId"') do set "scriptPID=%%A"
+
+echo script pid: %scriptPID% >> %logfpath%
+
+
+wmic process get Name,ProcessId,ParentProcessID,CommandLine /format:csv | findstr tpl_launch | findstr /v findstr >> %logfpath%
 
 IF "%errorlevel%"=="0" (
     echo tpl_launch.cmd is running -- exiting >> %logfpath%
     exit
 )
-
-SET scriptPID=
-
-for /f "tokens=2 delims==" %%A in ('wmic process where "name='wmic.exe' and commandline like '%%%%_%%random%%_%%%%'" get parentprocessid /value') do set "scriptPID=%%A"
-
-echo script pid: %scriptPID% >> %logfpath%
 
 echo %scriptPID% > %trojandir%\%source%_running
 
