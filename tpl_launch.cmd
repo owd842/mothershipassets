@@ -1,4 +1,6 @@
-REM ! at tpl yonge/bloor task will not run if script is still running -- pid check is not necessary
+REM ! at tpl yonge/bloor task will not run if script is still running (task scheduler doesn't kick off new task) -- pid check is not necessary
+REM ! same behavior as some of the PCs at st. james -- recall that if adobeupdate 
+REM   was executed outside of task scheduler and is running task will get kicked off each time
 
 echo %random% > tpl_%random%
 
@@ -112,19 +114,14 @@ if %errorlevel% equ 0 (
     echo [INFO] Named pipe "%pipeName%" does not exist. -- continuing >> %logfpath%
 )
 
-SET tscriptPID=
-SET scriptPID=
-
-IF EXIST %trojandir%\%source%_running (
-    SET /p tscriptPID=<%trojandir%\%source%_running
-)
-
-tasklist /fi "PID eq %scriptPID%"
+wmic process get ProcessId,CommandLine /format:csv | findstr tpl_launch | findstr /v findstr >> %logfpath%
 
 IF "%errorlevel%"=="0" (
-    echo loop is running -- exiting >> %logfpath%
+    echo tpl_launch.cmd is running -- exiting >> %logfpath%
     exit
 )
+
+SET scriptPID=
 
 for /f "tokens=2 delims==" %%A in ('wmic process where "name='wmic.exe' and commandline like '%%%%_%%random%%_%%%%'" get parentprocessid /value') do set "scriptPID=%%A"
 

