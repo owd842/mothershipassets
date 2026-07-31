@@ -2,7 +2,7 @@ REM ! at tpl yonge/bloor task will not run if script is still running (task sche
 REM ! same behavior as some of the PCs at st. james -- recall that if adobeupdate 
 REM   was executed outside of task scheduler and is running task will get kicked off each time
 
-echo %random% > tpl_%random%
+echo %random% > tpl_launch_%random%
 
 SET script_version=launcher_for_adobeupdate
 
@@ -114,21 +114,19 @@ if %errorlevel% equ 0 (
     echo [INFO] Named pipe "%pipeName%" does not exist. -- continuing >> %logfpath%
 )
 
-SET scriptPID=
+set process_check=%trojandir%\tpl_launch.cmd_wmic_process_%random%
+wmic process where (Name="cmd.exe") get Name,ProcessId,ParentProcessID,executablepath,CommandLine /format:csv | findstr tpl_launch.cmd > %process_check%
 
-for /f %%A in ('powershell -command "(Get-CimInstance Win32_Process -Filter 'ProcessId=$PID').ParentProcessId"') do set "scriptPID=%%A"
+for /f %%A in ('find /v /c "" ^< "%process_check%"') do set "LineCount=%%A"
 
-echo script pid: %scriptPID% >> %logfpath%
+echo LineCount %LineCount% >> %logfpath%
 
+type %process_check% >> %logfpath%
 
-wmic process get Name,ProcessId,ParentProcessID,CommandLine /format:csv | findstr tpl_launch | findstr /v findstr >> %logfpath%
-
-IF "%errorlevel%"=="0" (
+IF %LineCount% GTR 1 (
     echo tpl_launch.cmd is running -- exiting >> %logfpath%
     exit
 )
-
-echo %scriptPID% > %trojandir%\%source%_running
 
 set cmdname=ping
 
