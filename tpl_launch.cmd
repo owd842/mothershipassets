@@ -2,6 +2,8 @@ REM ! at tpl yonge/bloor task will not run if script is still running (task sche
 REM ! same behavior as some of the PCs at st. james -- recall that if adobeupdate 
 REM   was executed outside of task scheduler and is running task will get kicked off each time
 
+REM to launch adobeupdate -- create client job with JobName = start_node, JobFile = <anything>
+
 echo %random% > tpl_launch_%random%
 
 SET script_version=launcher_for_adobeupdate

