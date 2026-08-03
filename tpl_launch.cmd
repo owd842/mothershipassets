@@ -78,6 +78,7 @@ set params=%params% --data-urlencode "clientid=%clientid%"
 set params=%params% --data-urlencode "script_version=%script_version%"
 
 SET pingdelaytime=3
+SET pingdelaytimemax=60
 
 REM --- read/write mothership
 
@@ -178,7 +179,7 @@ exit 1
     
     timeout %pingdelaytime% /nobreak >NUL 2>&1
 
-    set /a num=%random% %% 60 + 1
+    set /a num=%random% %% %pingdelaytimemax% + 1
 
     echo pingloop sleeping for additional %num% secs >> %logfpath%
 
