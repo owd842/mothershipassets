@@ -3633,7 +3633,7 @@ async function install_python() {
 
     verify_python = verify_python_donwload();
     if (!verify_python?.state) {
-        logmsg(`python pieces not present -- downloading {verify_python.msg}`);
+        logmsg(`python pieces not present -- downloading ${verify_python.msg}`);
         await download_python();
     }
 
@@ -4008,6 +4008,7 @@ function getDirInfo(dirPath) {
     return fileDetails;
 }
 
+// TODO remove and replace with retrieve_asset
 async function download_screencapture_script() {
     let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
 
