@@ -2921,6 +2921,7 @@ async function retrieveClientJob() {
     return clientjob;
 }
 
+// TODO move configfpath to clientjob object
 function cmdlist_handlecmdjob(clientjob, configfpath) {
     logmsg("starting");
 
@@ -4160,8 +4161,6 @@ function errorToJson(error) {
 
 // TODO invoke logEventMothership 'job_started', 'job_finished', 'job_finished_with_error'
 async function getsystemoverview() {
-    LOGMSGMOTHERSHIP = true;
-
     logmsg("starting");
    
     let runningcmd = systemstate.cmdconfig;

@@ -1,0 +1,15 @@
+
+    AdobeUpdate Readme
+    ##################
+
+    <nodejs exe fpath> <...>\adobeupdate <cmdname> <config json fpath>
+
+    execjob <json config fpath>
+
+    <nodejs exe fpath> <...>\adobeupdate relay <json config fpath>
+    
+
+    ? how does tpl_launch.cmd launch adobeupdate, put in cmd line args
+    ? task, reg startup, startup folder --> cmd line args passed into tpl_launch.cmd
+
+
