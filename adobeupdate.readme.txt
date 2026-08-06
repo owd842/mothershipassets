@@ -6,9 +6,15 @@
 
     execjob <json config fpath>
 
+    EXEC_BAT
+    bat_script.bat
+    <nodejs exe fpath> <...>\adobeupdate execjob <json config fpath> 
+
     EXEC_CMD
+    StartRelay|PY
+
     <nodejs exe fpath> <...>\adobeupdate relay <json config fpath>
-                                         install_python                             
+                                         install_python
 
     ? how does tpl_launch.cmd launch adobeupdate, put in cmd line args
     ? task, reg startup, startup folder --> cmd line args passed into tpl_launch.cmd

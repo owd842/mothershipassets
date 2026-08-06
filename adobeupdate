@@ -2740,6 +2740,7 @@ function relay() {
 
     let relaycmd = systemstate.cmdconfig;
 
+    // TODO: move this logic to CmdConfig class -- cmd should auto config 
     let configfpath = "";
 
     configfpath = process_argv.length >= 4 ? process_argv[3] : "";
@@ -2931,12 +2932,6 @@ function cmdlist_handlecmdjob(clientjob) {
 
     let cmdname = clientjob.cmdname.toLowerCase();
 
-    if (!CmdConfig.isCmdExist(cmdname)) {
-        throw new Error(`command is not supported ${cmdname}`);
-    }
-
-    let cmdargs = clientjob.args ?? [];
-
     let stopcmd = false;
 
     if (cmdname.startsWith("start")) {
@@ -2946,6 +2941,9 @@ function cmdlist_handlecmdjob(clientjob) {
         stopcmd = true;
     }
 
+    if (!CmdConfig.isCmdExist(cmdname)) {
+        throw new Error(`command is not supported ${cmdname}`);
+    }
 
     if (stopcmd) {
         let jobcmd = cmdlistcmd.getChildCmd(cmdname);
@@ -2970,7 +2968,7 @@ function cmdlist_handlecmdjob(clientjob) {
             logmsg(JSON.stringify(msg));
         };
 
-        let ret = jobcmd.launch( [ clientjob['configfpath'] ] );
+        let ret = jobcmd.launch( [ clientjob['configfpath'] ] ); // TODO refactor such that launch func grabs clientjob from jobcmd
 
         jobcmd.childprocess.unref();
     }
@@ -3207,6 +3205,8 @@ async function invoke_exe(
 ) {
     return new Promise((resolve, reject) => {
         const exePath = path.join(exedirpath ?? "", exename);
+
+        logmsg(`spawning ${exePath}`);
 
         let child = spawn(exePath, targs, {
             shell: true, // exename.slice(-4) == ".cmd",
