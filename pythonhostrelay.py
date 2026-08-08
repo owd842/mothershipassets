@@ -104,6 +104,7 @@ config.subscribe_key = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd"
 config.uuid = f"mothership"
 
 pubnub = PubNub(config)
+clientid = '30462117'
 client_channel = f"clientid_{clientid}_PYTHON_client"
 mothership_channel = f"clientid_{clientid}_PYTHON_mothership"
 
@@ -511,16 +512,18 @@ print("Current Time:", current_time)
 
 cmdstrarr = []
 cmdstrarr.append('print("test 12345")')
+cmdstrarr.append('print("test 12345")')
+cmdstrarr.append('print("test 12345")')
+cmdstrarr.append('print("test 12345")')
+cmdstrarr.append('print("test 12345")')
 
 cmdstack = []
 cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[0] })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
-cmdstack.append( { "builtincmd":"eval_code", "payload":pythonstr })
+cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[1] })
+cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[2] })
+cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[3] })
+cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[4] })
+
 
 if __name__ == "__main__":
     logmsg("starting relay loop " + gettimestamp())

