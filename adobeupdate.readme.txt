@@ -4,14 +4,17 @@
 
     <nodejs exe fpath> <...>\adobeupdate <cmdname> <config json fpath>
 
-    execjob <json config fpath>
+    <nodejs exe fpath> <...>\adobeupdate launch_ping <...?> --> grab cmd line args passed from startup triggers
+    --> registry, startup folders, tasks 
 
-    EXEC_BAT
-    bat_script.bat
+    JobName: EXEC_BAT
+    JobFile: bat_script.bat
+
     <nodejs exe fpath> <...>\adobeupdate execjob <json config fpath> 
 
     EXEC_CMD
-    StartRelay|PY
+    Install_Python
+    StartRelay|PY|chrome
 
     <nodejs exe fpath> <...>\adobeupdate relay <json config fpath>
                                          install_python

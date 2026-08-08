@@ -633,6 +633,41 @@ class CmdConfig {
 
     #__pubnubrelay = null;
 
+    #__clientjob = null;
+
+    get clientjob() {
+        if ( [ 'cmdlist', 'ping', 'watchdog', 'launch_ping' ].includes(this.cmdname) ) {
+            return null;
+        }
+        
+        if ( this.#__clientjob )
+            return this.#__clientjob;
+
+        let configfpath = "";
+
+        configfpath = process_argv.length >= 4 ? process_argv[3] : "";
+
+        logmsg(`reading configfpath: ${configfpath}`);
+
+        if (!fileExists(configfpath)) {
+            throw new Error("configfpath does not exist " + configfpath);
+        }
+
+        let jsonconfigstr = readTag(configfpath);
+
+        if (isNullOrWhitespace(jsonconfigstr)) {
+            throw new Error("jsonconfigstr is empty");
+        }
+
+        logmsg("jsonconfigstr=" + jsonconfigstr);
+
+        let tclientjob = JSON.parse(jsonconfigstr);
+
+        logmsg("clientjob: " + JSON.stringify(tclientjob));
+
+        this.#__clientjob = tclientjob;
+    }
+
     set pubnubrelay(value) {
         this.#__pubnubrelay = value;
     }
@@ -798,7 +833,6 @@ class CmdConfig {
         return "\\\\.\\pipe\\" + _fname;
     }
 
- 
     async activate(cmdlineargs, exitparent) {
         logmsg("starting");
 
@@ -2740,46 +2774,45 @@ function relay() {
 
     let relaycmd = systemstate.cmdconfig;
 
-    // TODO: move this logic to CmdConfig class -- cmd should auto config 
-    let configfpath = "";
+    let clientjob = relaycmd.clientjob;
 
-    configfpath = process_argv.length >= 4 ? process_argv[3] : "";
-
-    logmsg("reading configfpath: " + configfpath);
-
-    if (!fileExists(configfpath)) {
-        throw new Error("configfpath does not exist " + configfpath);
+    if ( clientjob == null ) {
+        throw new Error('cannot start relay without client job');
     }
 
-    let jsonconfigstr = readTag(configfpath);
+    let args = clientjob.args || [];
 
-    if (isNullOrWhitespace(jsonconfigstr)) {
-        throw new Error("jsonconfigstr is empty");
+    if ( args.length == 0 ) {
+        throw new Error('cannot start relay as clientjob does not specify args');
     }
 
-    logmsg("jsonconfigstr=" + jsonconfigstr);
-
-    let clientjob = JSON.parse(jsonconfigstr);
-
-    logmsg("clientjob: " + JSON.stringify(clientjob));
-
-    // let jobtype = clientjob?.jobtype; // not used -- should be EXEC_CMD
-    // let cmdname = clientjob?.cmdname; // not used -- should be StartRelay
-    let args = clientjob?.args;
-    let enginename = (args ?? [])[0];
-    let browsername = enginename == "PY" && args?.length > 1 ? args[1] : null;
+    let enginename = args[0];
+    enginename = enginename.toUpperCase();
 
     if (isNullOrWhitespace(enginename)) {
         throw new Error("enginename is missing");
     }
 
-    if (!["BAT", "PS1", "JS", "PY"].includes(enginename.toUpperCase())) {
-        throw new Error("enginename not supported: " + enginename);
+    if ( ! [ 'PY', 'JS', 'BAT', 'PS1' ].includes(enginename) ) {
+        throw new Error(`engine is not supported: ${enginename}`);
+    }
+
+    let browsername = '';
+
+    if ( enginename == 'PY' ) {
+        if ( args.length <= 0 ) {
+            browsername = 'chrome';
+            logmsg(`defaulting to browsername=${browsername}`);
+        } else {
+            browsername = args[1];
+            logmsg(`browsername=${browsername}`);
+        }
     }
 
     let pubnubr = null;
 
-    // python relay uses its own pubnub logic within the python script (pythonrelay.py)
+    // note: python relay uses its own pubnub logic within the python script (pythonrelay.py)
+
     if (enginename != "PY") {
         relaycmd.pubnubrelay = new PubnubRelay(enginename);
 
@@ -3672,13 +3705,16 @@ async function install_python() {
     let fpath = path.join(systemstate.pythondir, "portable_python.zip");
 
     if (!fileExists(fpath)) {
-        throw new Error("file does not exist " + fpath);
+        throw new Error(`file does not exist ${fpath}`);
     }
 
     const stats = fs.statSync(fpath);
-    if (!stats.size == 72890982) {
-        throw new Error("incorrect file size " + stats.size + " 72890982");
+    const zipsize = 72890982;
+    if (!stats.size == zipsize) {
+        throw new Error(`incorrect file size ${stats.size} expected ${zipsize}`);
     }
+
+    logmsg('gunite step successful -- proceeding with unzip step');
 
     args = [
         "x",
@@ -3699,6 +3735,8 @@ async function install_python() {
     if (!verify_python) {
         throw new Error('python install failed');
     }
+
+    process.exit(0);
 
     logmsg("finished");
 }
