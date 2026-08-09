@@ -60,14 +60,14 @@ def gettimestamp():
 
     return timestamp
 
-def serialize_exception(exc: Exception):
+def simplify_exception(exc: Exception):
 
     exc_data = {
         "error_type": type(exc).__name__,
         "message": str(exc),
         "traceback": traceback.format_exception(type(exc), exc, exc.__traceback__)
     }
-    return json.dumps(exc_data)
+    return exc_data
 
 def getexceptionobj(exp):
     expstrdict = {
@@ -173,6 +173,7 @@ def clientpushmessage(payload, messageid):
     
     return publish_msg(payload, messageid)
 
+# TODO refactor code to return object instead of json
 def exec_builtin(tcmdname, payload=""):
 
     if ( isempty(tcmdname) ):
@@ -197,70 +198,65 @@ def exec_builtin(tcmdname, payload=""):
             result = eval_code(payload)
         except Exception as exp:
             logexception(exp)
-            result = { "iserror": True, "error": serialize_exception(exp) }
+            result = { "iserror": True, "error": simplify_exception(exp) }
 
-    result = { "result": result }
+    return result
 
-    return json.dumps(result)
-
+# handles both chrome/msedge RDP JSON RPC calls as well as cmds for exec/eval relay
 # message:
 #   MessageID
-#   payload
+#   payload --> JSON RPC or arg to builtincmd
 #   builtincmd
 #   ws_url
-#   payload
 # result:
 #   messageid
 def client_loop(message):
-    logmsg("client_loop: starting "+inspect.currentframe().f_code.co_name)
+    pp = inspect.currentframe().f_code.co_name
+    logmsg(f"{pp}: starting")
 
-    message_obj = message
-    messageid = message_obj["MessageID"]
-    payload =   message_obj["payload"]
-    
+    if ( not ( message and isinstance(message, dict)) ):
+        raise Exception('message is null / invalid')
+
+    messageid = message.get("MessageID")
+    payload =   message.get("payload")
+    ws_url = message.get("ws_url")
     builtincmd = ""
     
-    if ( "builtincmd" in message_obj ):
-        builtincmd = message_obj["builtincmd"]
+    if ( "builtincmd" in message ):
+        builtincmd = message.get("builtincmd")
 
-        logmsg(f"client_loop: processing builtincmd {builtincmd}")
+        if ( isempty(builtincmd) ):
+            raise Exception("builtincmd is null")
+
+        logmsg(f"{pp}: processing builtincmd {builtincmd}")
         
-        if ( not isempty(builtincmd) ):
-            result = exec_builtin(builtincmd, payload) # result should be object, send directly back to host
-            
-    else:
+        result = exec_builtin(builtincmd, payload)
+        response = clientpushmessage(result, messageid)
+        return response
+
+    if not "ws_url" in message:
+        logmsg("ws_url not in message_obj")
+        return
+
+    if not "payload" in message:
+        logmsg("payload key not in message_obj")
+        return
+
+    ws_url = relay_ws_url if ws_url == "ws_url" else ws_url
+
+    logmsg(f"ws_url: {ws_url} payload: {payload}")
+
+    result = send_rpc_command(ws_url, payload, True)
     
-        if not "ws_url" in message_obj:
-            logmsg("ws_url not in message_obj")
-            return
+    if ( result == {} ):
+        result = { "isvoid": True }
 
-        if not "payload" in message_obj:
-            logmsg("payload key not in message_obj")
-            return
-
-        ws_url = message_obj["ws_url"]
+    if ( not result ):
+        result = { "iserror": True }
         
-        payload = message_obj["payload"]
+    response = clientpushmessage(result, messageid)
 
-        logmsg(f"ws_url: {ws_url}")
-        logmsg(f"payload: {payload}")
-
-        if ( ws_url == "ws_url" ):
-            ws_url = relay_ws_url
-
-        result = send_rpc_command(ws_url, payload,True)
-    
-    if ( result ):
-        data_dict = json.loads(result) # result string returned from exec_builtin
-        result = data_dict["result"]
-        
-        if ( result == {} ):
-            result = { "isvoid": True }
-
-        if ( not result ):
-            result = { "iserror": True }
-            
-        result = clientpushmessage(result, messageid)
+    return response
 
 def get_relay_ws_url(debugport=9222):
     pp = inspect.currentframe().f_code.co_name
@@ -274,8 +270,8 @@ def get_relay_ws_url(debugport=9222):
         
         if ( not response ):
             raise Exception("response is null")
-            
-        logmsg("response.status_code: " + str(response.status_code))  # e.g., 200 for success
+
+        logmsg(f"response.status_code: {str(response.status_code)}")  # e.g., 200 for success
         
         data_dict = response.json()
         
@@ -349,9 +345,8 @@ def eval_code(payload):
         "stdout": f_stdout.getvalue() if f_stdout else "",
         "stderr": f_stderr.getvalue() if f_stderr else "",
         "error": excp,
+        "iserror": isinstance(excp, BaseException)
     }
-
-    logmsg('result='+json.dumps(result))
 
     return result
 
@@ -453,6 +448,7 @@ def publish_msg(msgdict, messageid):
     msgobjout = {}
     msgobjout["payload"] = msgdict
     msgobjout["MessageID"] = messageid
+    msgobjout["ts"] = gettimestamp()
 
     logmsg(f"pubnub: publishing message on {client_channel} -- messageid {messageid} msgdict {msgdict}")
     result = pubnub.publish().channel(client_channel).message(msgobjout).pn_async(publish_callback)
@@ -491,6 +487,7 @@ logmsg(f"pubnub: Successfully connected. Listening for events on: {client_channe
 
 ###
 
+# infinite loop to keep script running
 if __name__ == "__main__":
     while True:
         try:

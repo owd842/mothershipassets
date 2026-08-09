@@ -36,12 +36,19 @@
         "ts": "20260808211220948"
     }
 
-    result received from client to host:
+    message received from client to host:
     {
-        'payload': {
-            'stdout': 'test 12345\n', 
-            'stderr': '', 
-            'json_result': '{}'
-        }, 
-        'MessageID': 1
+      'payload': {
+        "result": {
+            "line": "\\nfrom datetime import datetime\\n\\nnow = datetime.now()\\n\\ncurrent_time = now.strftime(\\"%H:%M:%S\\")\\nprint(\\"Current Time:\\", current_time)\\n", 
+            "stdout": "Current Time: 10:30:44\\n", 
+            "stderr": "", 
+            "error": null
+        }
+      }, 
+      'MessageID': 2, 
+      'ts': '20260809103044023'
     }
+
+
+
