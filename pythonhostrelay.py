@@ -7,7 +7,7 @@
 # python -m pip install requests
 # python -m pip install websocket
 # pip list -v
- 
+
 from collections import deque
 
 from datetime import datetime

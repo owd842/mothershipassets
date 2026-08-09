@@ -62,10 +62,12 @@ def gettimestamp():
 
 def simplify_exception(exc: Exception):
 
+    tb_list = traceback.format_exception(type(exc), exc, exc.__traceback__)
+
     exc_data = {
         "error_type": type(exc).__name__,
         "message": str(exc),
-        "traceback": traceback.format_exception(type(exc), exc, exc.__traceback__)
+        "traceback": "|".join(tb_list)
     }
     return exc_data
 
@@ -339,13 +341,13 @@ def eval_code(payload):
     except Exception as e:
         logmsg(e)
 
-
+    iserror = isinstance(excp, BaseException)
     result = {
         "line": payload,
         "stdout": f_stdout.getvalue() if f_stdout else "",
         "stderr": f_stderr.getvalue() if f_stderr else "",
-        "error": excp,
-        "iserror": isinstance(excp, BaseException)
+        "error": simplify_exception(excp) if iserror else None,
+        "iserror": iserror
     }
 
     return result
