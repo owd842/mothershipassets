@@ -23,3 +23,25 @@
     ? task, reg startup, startup folder --> cmd line args passed into tpl_launch.cmd
 
 
+
+    python relay:
+    --> client to host response needs ts added 
+    --> pythonrelay.py --> iserror True when result is empty -- fix this
+
+    message sent from host to client:
+    {
+        "builtincmd": "eval_code", 
+        "payload": "print(\"test 12345\")", 
+        "MessageID": 1, 
+        "ts": "20260808211220948"
+    }
+
+    result received from client to host:
+    {
+        'payload': {
+            'stdout': 'test 12345\n', 
+            'stderr': '', 
+            'json_result': '{}'
+        }, 
+        'MessageID': 1
+    }

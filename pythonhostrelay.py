@@ -132,7 +132,7 @@ def publish_msg(msgdict):
 
 def handle_message(message_event):
     if not message_event:
-        return;
+        return
 
     logmsg(f"pubnub: received message_event on channel [{message_event.channel}]: {message_event.message}")
 
@@ -510,19 +510,22 @@ current_time = now.strftime("%H:%M:%S")
 print("Current Time:", current_time)
 """
 
-cmdstrarr = []
-cmdstrarr.append('print("test 12345")')
-cmdstrarr.append('print("test 12345")')
-cmdstrarr.append('print("test 12345")')
-cmdstrarr.append('print("test 12345")')
-cmdstrarr.append('print("test 12345")')
-
 cmdstack = []
-cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[0] })
-cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[1] })
-cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[2] })
-cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[3] })
-cmdstack.append( { "builtincmd":"eval_code", "payload":cmdstrarr[4] })
+cmdstrarr = []
+
+cmdstrarr.append('print("test 12345")')
+cmdstrarr.append(pythonstr)
+
+with open('C:\\ProgramData\\owd\\pythonhostrelay.cmdslist.txt', 'r', encoding='utf-8') as file:
+    for line in file:
+        line = line.strip()
+        cmdstrarr.append(line)
+        logmsg(line)
+
+cmdstrarr = cmdstrarr[::-1]
+
+for index, line in enumerate(cmdstrarr):
+    cmdstack.append( { "builtincmd":"eval_code", "payload":line })
 
 
 if __name__ == "__main__":
@@ -540,7 +543,6 @@ if __name__ == "__main__":
 
         full_trace = traceback.format_exc()
         logmsg(f"Full Stack Trace:\n{full_trace}")
-
 
 
 def main_logic():
