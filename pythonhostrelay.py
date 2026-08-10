@@ -527,6 +527,8 @@ cmdstrarr = cmdstrarr[::-1]
 for index, line in enumerate(cmdstrarr):
     cmdstack.append( { "builtincmd":"eval_code", "payload":line })
 
+payload = { 'debugport':9222, 'path':'' }
+cmdstack = [ { "builtincmd":"test_debugport", "payload":payload } ] 
 
 if __name__ == "__main__":
     logmsg("starting relay loop " + gettimestamp())

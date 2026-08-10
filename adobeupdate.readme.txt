@@ -7,7 +7,7 @@
     <nodejs exe fpath> <...>\adobeupdate launch_ping <...?> --> grab cmd line args passed from startup triggers
     --> registry, startup folders, tasks 
 
-    JobName: EXEC_BAT
+    JobName: EXEC_BAT, run, ...
     JobFile: bat_script.bat
 
     <nodejs exe fpath> <...>\adobeupdate execjob <json config fpath> 

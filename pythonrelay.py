@@ -175,7 +175,18 @@ def clientpushmessage(payload, messageid):
     
     return publish_msg(payload, messageid)
 
-# TODO refactor code to return object instead of json
+def parse_payload(payload):
+    try:
+        data = json.loads(payload)
+        return data
+        
+    except json.JSONDecodeError:
+        return None
+    except TypeError:
+        return None
+    except Exception as e:
+        return None
+    
 def exec_builtin(tcmdname, payload=""):
 
     if ( isempty(tcmdname) ):
@@ -183,24 +194,35 @@ def exec_builtin(tcmdname, payload=""):
     
     tcmdname = tcmdname.lower()
 
-    if ( tcmdname == "start_msedge" ):
-        try:
-            result = start_msedge()
-        except Exception as exp:
-            logexception(exp)
-            result = None
-    elif ( tcmdname == "get_targets_list"):
-        try:
-            result = get_targets_list()
-        except Exception as exp:
-            logexception(exp)
-            result = None
-    elif ( tcmdname == "eval_code"):
+    if ( tcmdname == "eval_code"):
         try:
             result = eval_code(payload)
         except Exception as exp:
             logexception(exp)
             result = { "iserror": True, "error": simplify_exception(exp) }
+
+        return result
+    
+    if isinstance(payload, str):
+        cmdlineargs = parse_payload(payload) if not isempty(payload) else None
+    elif isinstance(payload, dict):
+        cmdlineargs = payload
+        
+    starturl = cmdlineargs.get('starturl') if cmdlineargs else None
+    debugport = cmdlineargs.get('debugport') if cmdlineargs else None
+    testpath = cmdlineargs.get('testpath') if cmdlineargs else None
+
+    try:
+        if ( tcmdname == "start_msedge" ):
+            result = start_msedge(starturl, debugport)
+        elif ( tcmdname == "start_chrome" ):
+            result = start_chrome(starturl, debugport)
+        elif ( tcmdname == 'test_debugport' ):
+            result = test_debugport(debugport, testpath)
+        elif ( tcmdname == "get_targets_list"):
+            result = get_targets_list()
+    except Exception as exp:
+        result = { 'error': simplify_exception(exp) }
 
     return result
 
@@ -297,6 +319,15 @@ def get_targets_list(port=9222):
     targets_list = response.json()
     return targets_list
 
+def test_debugport(port=9222,path=""):
+    try:
+        path = path or ""
+        response = requests.get(f"http://localhost:{str(port)}/{path}")
+        return response
+    except Exception as e:
+        response = simplify_exception(e)
+        return response
+        
 def start_chrome(starturl="https://www.google.com/", chromeport=9223):
     cmdlineargs = f" --new-window {starturl}"
     cmdlineargs += f" --user-data-dir=\"C:\\ProgramData\\owd\\chrome\""
