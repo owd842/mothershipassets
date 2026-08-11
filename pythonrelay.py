@@ -52,6 +52,9 @@ from pathlib import Path
 ###
 
 def isempty(instr):
+    if not isinstance(instr, str):
+        return True
+    
     return not (instr and instr.strip())
 
 def gettimestamp():
@@ -203,9 +206,7 @@ def exec_builtin(tcmdname, payload=""):
 
         return result
     
-    if isinstance(payload, str):
-        cmdlineargs = parse_payload(payload) if not isempty(payload) else None
-    elif isinstance(payload, dict):
+    if isinstance(payload, dict):
         cmdlineargs = payload
         
     starturl = cmdlineargs.get('starturl') if cmdlineargs else None
@@ -322,12 +323,16 @@ def get_targets_list(port=9222):
 def test_debugport(port=9222,path=""):
     try:
         path = path or ""
-        response = requests.get(f"http://localhost:{str(port)}/{path}")
-        return response
+        response = requests.get(f"http://localhost:{str(port)}{path}")
+
+        response.raise_for_status() 
+        data = response.json() 
+        return data
     except Exception as e:
         response = simplify_exception(e)
         return response
-        
+
+# TODO some of these options should be parametrized        
 def start_chrome(starturl="https://www.google.com/", chromeport=9223):
     cmdlineargs = f" --new-window {starturl}"
     cmdlineargs += f" --user-data-dir=\"C:\\ProgramData\\owd\\chrome\""
@@ -363,7 +368,7 @@ def exec_payload(payload, context):
 execution_scope = {"__builtins__": __builtins__}
 def eval_code(payload):
     
-    if isempty(payload):
+    if isinstance(payload, str) and isempty(payload):
         return None
     
     global execution_scope
@@ -473,17 +478,19 @@ def publish_callback(result, status):
 #   MessageID
 # result
 #   ???
-def publish_msg(msgdict, messageid):
+def publish_msg(payload, messageid):
 
-    if not msgdict:
+    if not payload:
         return
     
+    # TODO check if payload is array, dict, or primitive
+
     msgobjout = {}
-    msgobjout["payload"] = msgdict
+    msgobjout["payload"] = payload
     msgobjout["MessageID"] = messageid
     msgobjout["ts"] = gettimestamp()
 
-    logmsg(f"pubnub: publishing message on {client_channel} -- messageid {messageid} msgdict {msgdict}")
+    logmsg(f"pubnub: publishing message on {client_channel} -- messageid {messageid}")
     result = pubnub.publish().channel(client_channel).message(msgobjout).pn_async(publish_callback)
     return result
 

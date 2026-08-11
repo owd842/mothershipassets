@@ -527,8 +527,28 @@ cmdstrarr = cmdstrarr[::-1]
 for index, line in enumerate(cmdstrarr):
     cmdstack.append( { "builtincmd":"eval_code", "payload":line })
 
-payload = { 'debugport':9222, 'path':'' }
-cmdstack = [ { "builtincmd":"test_debugport", "payload":payload } ] 
+
+cmdstack = []
+
+cmd = { 
+    'builtincmd':'start_chrome', 
+    'payload':{ 
+        'starturl':'https://www.gmail.com/', 
+        'debugport':9223 
+    } 
+}
+
+cmdstack.append(cmd)
+
+cmd = { 
+    "builtincmd":"test_debugport", 
+    "payload":{ 
+        'debugport':9223, 
+        'testpath':'/json' 
+    } 
+}
+
+cmdstack.append(cmd)
 
 if __name__ == "__main__":
     logmsg("starting relay loop " + gettimestamp())
@@ -545,7 +565,6 @@ if __name__ == "__main__":
 
         full_trace = traceback.format_exc()
         logmsg(f"Full Stack Trace:\n{full_trace}")
-
 
 def main_logic():
     gmail_url = "https://mail.google.com/mail/u/0/#search/has%3Aattachment+tax"    
