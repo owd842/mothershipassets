@@ -671,6 +671,8 @@ class CmdConfig {
         logmsg("clientjob: " + JSON.stringify(tclientjob));
 
         this.#__clientjob = tclientjob;
+
+        return this.#__clientjob;
     }
 
     set pubnubrelay(value) {
@@ -2618,7 +2620,8 @@ function runpsrelay(pubnubo) {
 function runnoderelay(pubnubo) {
     logmsg("starting");
 
-    const child = spawn("node", ["-i"], {
+    // anchor
+    const child = spawn(systemstate.nodeexepath, ["-i"], {
         shell: false,
         detached: true,
         windowsHide: true,
@@ -2747,7 +2750,7 @@ function runbatrelay(pubnubo) {
 }
 
 function launchrelay(tenginename, tpubnubr, browsername) {
-    logmsg(`launching: ${tenginename}, ${tpubnubr}, ${browsername}`);
+    logmsg(`launching: ${tenginename} -- browsername=${browsername}`);
 
     if (tenginename == "JS") {
         tchildp = runnoderelay(tpubnubr);

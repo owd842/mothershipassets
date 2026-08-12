@@ -86,8 +86,6 @@ logfpath = os.path.join(scriptdir_full_path, logfname)
 logf = open(logfpath, 'w', encoding='utf-8')
 
 clientid=get_clientid()
-sessionid = str(random.randint(10000000, 99999999))
-batchid = sessionid
 
 delaytime = 1
 
@@ -104,7 +102,7 @@ config.subscribe_key = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd"
 config.uuid = f"mothership"
 
 pubnub = PubNub(config)
-clientid = '30462117'
+clientid = '65564005'
 client_channel = f"clientid_{clientid}_PYTHON_client"
 mothership_channel = f"clientid_{clientid}_PYTHON_mothership"
 
