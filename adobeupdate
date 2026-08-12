@@ -4293,7 +4293,9 @@ async function modify_msedge() {
 }
 
 async function copy_userdata(srcpath, destpath) {
-                                              
+
+    logmsg('starting');
+
     let copycmdstr = `robocopy "${srcpath}" "${destpath}" /E /R:0 /W:0`;
 
     if ( ! folderExists(destpath) ) {
@@ -4339,7 +4341,6 @@ function getFilesByExtensionSync(dirPath, extension) {
 }
 
 
-// anchor
 // TODO modify for client PCs / TPL
 async function modify_chrome() {
 
@@ -4379,35 +4380,30 @@ async function modify_chrome() {
                 lnks.push(element);
         }
     }
-
-
     
     // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
     cmdlineargs = `--user-data-dir="C:\\ProgramData\\owd\\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --remote-debugging-port=9223`;
-    shortcut_path = `"C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\Google Chrome.lnk"`;
 
-    let jsonconfig = {
-        "cmd_line_args": cmdlineargs,
-        "shortcut_path": shortcut_path
-    };
+    for ( const lnk of lnks ) {
+        logmsg(`processing ${lnk}`);
 
-    writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
+        shortcut_path = lnk;
 
-    let stdout = '';
-    let childp = execPSScript(scriptfpath, [jsonconfigpath],null, (text)=>{ 
-        stdout += text;
-    });
+        let jsonconfig = {
+            "cmd_line_args": cmdlineargs,
+            "shortcut_path": shortcut_path
+        };
 
-    shortcut_path = `"C:\\Users\\Public\\Desktop\\Google Chrome.lnk"`;
+        writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
 
-    jsonconfig = {
-        "cmd_line_args": cmdlineargs,
-        "shortcut_path": shortcut_path
-    };
+        let stdout = '';
+        let childp = execPSScript(scriptfpath, [jsonconfigpath], null, (text)=>{ 
+            stdout += text;
+        });
 
-    writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
+    }
 
-    childp = execPSScript(scriptfpath, [jsonconfigpath]);
+    logmsg(`copying user data folder`);
 
     srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
     destpath = 'C:\\ProgramData\\owd\\chrome';
