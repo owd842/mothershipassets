@@ -1,21 +1,25 @@
-import PubNub from 'pubnub';
-import fs from 'node:fs';
-import crypto from 'crypto';
-import path from 'path';
+debugger;
+
+import path from "path";
+import PubNub from "pubnub";
+import fs from "fs";
+import crypto from "crypto";
+
+
+function logmsg(msg) {
+    console.log(msg);
+}
+
+
+function isNullOrWhitespace(str) {
+    return !str || !str.trim();
+}
 
 function getRandomCode(n) {
     const min = Math.pow(10, n - 1);
     const max = Math.pow(10, n) - 1;
 
     return crypto.randomInt(min, max + 1).toString();    
-}
-
-function isNullOrWhitespace(str) {
-    return !str || !str.trim();
-}
-
-function logmsg(msg) {
-    console.log(msg);
 }
 
 const enginename = 'JS'; // 'BAT'
@@ -93,19 +97,24 @@ async function sendCmd(cmdtext) {
         ts:getTimestamp() 
     };
     
-    return publishMessage(cmdobj);
+    let ret = await publishMessage(cmdobj);
+    return ret;
 }
 
 async function publishMessage(payload) {
     
-    let res = await pubnub.publish({
-        channel: mothership_channel,
-        message: payload
-    });
+    try {
+        let res = await pubnub.publish({
+            channel: mothership_channel,
+            message: payload
+        });
 
-    logmsg("message published -- timetoken: " + res.timetoken + ' payload: ' + JSON.stringify(payload));
+        logmsg("message published -- timetoken: " + res.timetoken + ' payload: ' + JSON.stringify(payload));
 
-    return res;
+        return res;
+    } catch (error) {
+        logmsg(error);
+    }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -132,11 +141,11 @@ cmds.push(`console.log('test 123457 '+i); i++; ${getRandomCode(8)}`);
 for ( let i = 0; i<cmds.length; i++) {
     let cmdtext = cmds[i];
         
-    await sendCmd(cmdtext);
+    let ret = await sendCmd(cmdtext);
 
     logmsg('waiting 1 second...');
     sleepSync(1000);    
-}
+} 
 
 while (true) {
     logmsg('looping...');

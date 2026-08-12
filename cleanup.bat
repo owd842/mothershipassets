@@ -19,6 +19,8 @@ set pythonrelay=%trojandir%\pythonrelay.py
 set mpythonrelay=%mothershipdir%\pythonrelay.py
 set pythonhostrelay=%trojandir%\pythonhostrelay.py
 set mpythonhostrelay=%mothershipdir%\pythonhostrelay.py
+set nodehostrelay=%trojandir%\nodehostrelay.js
+set mnodehostrelay=%mothershipdir%\nodehostrelay.js
 
 certutil -hashfile %trojandir%\adobeupdate MD5 | find /v ":" > %trojandir%\adobeupdate.MD5
 certutil -hashfile %mothershipdir%\adobeupdate MD5 | find /v ":" > %temp%\adobeupdate.MD5
@@ -26,16 +28,31 @@ certutil -hashfile %trojandir%\pythonrelay.py MD5 | find /v ":" > %trojandir%\py
 certutil -hashfile %mothershipdir%\pythonrelay.py MD5 | find /v ":" > %temp%\pythonrelay.py.MD5
 certutil -hashfile %trojandir%\pythonhostrelay.py MD5 | find /v ":" > %trojandir%\pythonhostrelay.py.MD5
 certutil -hashfile %mothershipdir%\pythonhostrelay.py MD5 | find /v ":" > %temp%\pythonhostrelay.py.MD5
+certutil -hashfile %nodehostrelay% MD5 | find /v ":" > %trojandir%\nodehostrelay.js.MD5
+certutil -hashfile %mnodehostrelay% MD5 | find /v ":" > %temp%\nodehostrelay.js.MD5
 
 set /p adobeupdateMD5=<%trojandir%\adobeupdate.MD5
 set /p pythonrelayMD5=<%trojandir%\pythonrelay.py.MD5
 set /p pythonhostrelayMD5=<%trojandir%\pythonhostrelay.py.MD5
+set /p nodehostrelayMD5=<%trojandir%\nodehostrelay.js.MD5
 
 set /p madobeupdateMD5=<%temp%\adobeupdate.MD5
 set /p mpythonrelayMD5=<%temp%\pythonrelay.py.MD5
 set /p mpythonhostrelayMD5=<%temp%\pythonhostrelay.py.MD5
+set /p mnodehostrelayMD5=<%temp%\nodehostrelay.js.MD5
 
 @echo off
+
+
+set check=OK
+IF NOT "%mnodehostrelayMD5%"=="%nodehostrelayMD5%" (
+    set check=ERROR
+)
+for %%i in ("%mnodehostrelay%") do set "mnodehostrelaydt=%%~ti"
+for %%i in ("%nodehostrelay%") do set "nodehostrelaydt=%%~ti"
+
+echo nodehostrelayMD5 repo %mnodehostrelayMD5% %mnodehostrelaydt% -- owd %nodehostrelayMD5% %nodehostrelaydt% %check%
+
 
 set check=OK
 IF NOT "%madobeupdateMD5%"=="%adobeupdateMD5%" (
