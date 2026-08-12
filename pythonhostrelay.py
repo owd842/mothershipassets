@@ -531,20 +531,20 @@ for index, line in enumerate(cmdstrarr):
 cmdstack = []
 
 cmd = { 
-    'builtincmd':'start_chrome', 
-    'payload':{ 
-        'starturl':'https://www.gmail.com/', 
-        'debugport':9223 
+    "builtincmd":"test_debugport", 
+    "payload":{ 
+        'debugport':9223, 
+        'testpath':'/json' 
     } 
 }
 
 cmdstack.append(cmd)
 
 cmd = { 
-    "builtincmd":"test_debugport", 
-    "payload":{ 
-        'debugport':9223, 
-        'testpath':'/json' 
+    'builtincmd':'start_chrome', 
+    'payload':{ 
+        'starturl':'https://www.gmail.com/', 
+        'debugport':9223 
     } 
 }
 

@@ -5,7 +5,6 @@ cd /d %trojandir%
 
 del /f /q debug_test_*
 del /f /q *.log
-del /f /q adobeupdate
 del /f /q *_running
 del /f /q tpl_launch_*
 del /f /q tpl_launch.cmd_wmic_process_*
