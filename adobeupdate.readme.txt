@@ -15,6 +15,7 @@
     EXEC_CMD
     Install_Python
     StartRelay|PY|chrome
+    StartRelay|JS
 
     <nodejs exe fpath> <...>\adobeupdate relay <json config fpath>
                                          install_python

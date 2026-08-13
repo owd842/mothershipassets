@@ -53,7 +53,7 @@ subscription.onMessage = (messageEvent) => {
         messagelog += ( key == 'execresult' ) ? '' : (`${key}: ${value}`) + '\r\n';
     }
 
-    logmsg('\r\n' + messagelog + '\r\n---BEGIN---\r\n' + cmdresponse + '\r\n---END---\r\n');
+    logmsg('\r\n' + '[INCOMING MESSAGE]:' + '\r\n' + messagelog + '\r\n---BEGIN---\r\n' + cmdresponse + '\r\n---END---\r\n');
 };
 
 subscription.subscribe();
@@ -127,16 +127,17 @@ function sleepSync(ms) {
     Atomics.wait(view, 0, 0, ms); 
 }
 
+let lines = [];
+
+const content = fs.readFileSync('C:\\ProgramData\\owd\\nodehostrelay.cmdslist.js', 'utf16le'); // utf16le, utf-8
+const linesArray = content.split(/\r?\n/);
+lines = linesArray.filter(str => str !== "");
+;
+
 var cmds = [];
-cmds.push(`let i = 0;`);
-cmds.push(`console.log('test 123450'); ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123451 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123452 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123453 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123454 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123455 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123456 '+i); i++; ${getRandomCode(8)}`);
-cmds.push(`console.log('test 123457 '+i); i++; ${getRandomCode(8)}`);
+cmds.push("new Date().toLocaleString();");
+cmds.push(...lines);
+
 
 for ( let i = 0; i<cmds.length; i++) {
     let cmdtext = cmds[i];

