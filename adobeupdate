@@ -1139,7 +1139,7 @@ class PubnubRelay {
         const subscription = channel.subscription();
 
         subscription.onMessage = (messageEvent) => {
-            logmsg("Message event: " + JSON.stringify(messageEvent));
+            logmsg("[43Z8] Message event: " + JSON.stringify(messageEvent));
             this.messages.push(messageEvent);
             this.handleMessage(messageEvent);
         };
@@ -1174,10 +1174,7 @@ class PubnubRelay {
                 this.payloads.push(payload);
 
                 logmsg(
-                    "message sent -- timetoken:" +
-                    response.timetoken +
-                    " payloads: " +
-                    this.payloads.length
+                    `[9U3A]: message sent -- timetoken: ${response.timetoken} payloads: ${this.payloads.length} -- client_channel: ${this.client_channel}`
                 );
             })
             .catch((error) => {
@@ -2837,6 +2834,11 @@ function relay() {
 
     relaycmd.loopfunc = () => {
         logmsg("relay looping...");
+
+            pubnubr.publishMessage({
+                ping: 'ping '+getRandomCode(8),
+                ts: getTimestamp()
+            });
 
         let tcmdpid = childp?.pid ?? -1;
 

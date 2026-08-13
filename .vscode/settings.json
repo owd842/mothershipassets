@@ -4,7 +4,9 @@
         "editor.foldingStrategy": "auto",
         "editor.showFoldingControls": "always"
     },
-
+    "editor.gotoLocation.multipleDefinitions": "goto",
+    "editor.definitionLinkOpensInPeek": false,    
+    "editor.renderWhitespace": "all",
     "editor.folding": true,
     "editor.foldingStrategy": "auto",
     "editor.showFoldingControls": "always", // "mouseover",
