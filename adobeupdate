@@ -2,6 +2,7 @@
 
 debugger;
 
+
 //#region documentation
 // https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
 // https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
@@ -17,7 +18,7 @@ debugger;
 // storagevault941@agentforce.com
 // As1df1gh!
 
-// 20260731-1420
+// 20260814-1508
 
 // TODO
 
@@ -26,6 +27,8 @@ debugger;
 // test bat, ps1, js, py relay
 
 // --- BUGS ---
+
+// ( typeof myFunctionx === 'function') ? myFunctionx() : null;
 
 // ! execjob script must terminate upon completion --> when finished should exit process
 // ! processless initialisation not working

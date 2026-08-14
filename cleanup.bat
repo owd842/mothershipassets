@@ -1,3 +1,5 @@
+setlocal enabledelayedexpansion
+
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
 set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
@@ -21,15 +23,62 @@ set pythonhostrelay=%trojandir%\pythonhostrelay.py
 set mpythonhostrelay=%mothershipdir%\pythonhostrelay.py
 set nodehostrelay=%trojandir%\nodehostrelay.js
 set mnodehostrelay=%mothershipdir%\nodehostrelay.js
+set nodehostrelaycmds=%trojandir%\nodehostrelay.cmdslist.js
+set mnodehostrelaycmds=%mothershipdir%\nodehostrelay.cmdslist.js
 
-certutil -hashfile %trojandir%\adobeupdate MD5 | find /v ":" > %trojandir%\adobeupdate.MD5
-certutil -hashfile %mothershipdir%\adobeupdate MD5 | find /v ":" > %temp%\adobeupdate.MD5
-certutil -hashfile %trojandir%\pythonrelay.py MD5 | find /v ":" > %trojandir%\pythonrelay.py.MD5
-certutil -hashfile %mothershipdir%\pythonrelay.py MD5 | find /v ":" > %temp%\pythonrelay.py.MD5
-certutil -hashfile %trojandir%\pythonhostrelay.py MD5 | find /v ":" > %trojandir%\pythonhostrelay.py.MD5
-certutil -hashfile %mothershipdir%\pythonhostrelay.py MD5 | find /v ":" > %temp%\pythonhostrelay.py.MD5
-certutil -hashfile %nodehostrelay% MD5 | find /v ":" > %trojandir%\nodehostrelay.js.MD5
-certutil -hashfile %mnodehostrelay% MD5 | find /v ":" > %temp%\nodehostrelay.js.MD5
+set files_list=adobeupdate pythonrelay pythonhostrelay nodehostrelay nodehostrelaycmds
+
+@echo off
+color 0A
+for %%f in (%files_list%) do (
+    REM echo Item: !%%f! !m%%f!
+    certutil -hashfile !%%f! MD5 | find /v ":" > !%%f!.MD5
+    certutil -hashfile !m%%f! MD5 | find /v ":" > !m%%f!.MD5
+    
+    set /p %%fMD5=<!%%f!.MD5
+    set /p m%%fMD5=<!m%%f!.MD5
+
+    for /f "delims=" %%A in ("%%fMD5") do (
+        
+        for /f "delims=" %%B in ("m%%fMD5") do (
+            REM echo Value saved in %%fMD5 is: !%%A!
+            REM echo Value saved in m%%fMD5 is: !%%B!
+        )
+
+    )
+
+    for %%i in ("!%%f!") do set "%%fdt=%%~ti"
+    for %%i in ("!m%%f!") do set "m%%fdt=%%~ti"
+    
+    REM echo !%%fdt!
+    REM echo !m%%fdt!
+
+    set check=OK
+    IF NOT "!%%fMD5!"=="!m%%fMD5!" (
+        set check=ERROR
+    )
+
+    set mcheck=OK
+    IF NOT "!%%fdt!"=="!m%%fdt!" (
+        set mcheck=WARN
+    )
+
+    for %%I in ("!m%%f!") do set "filename_with_ext=%%~nxI"
+
+    echo %%f !filename_with_ext! repo !%%fMD5! !%%fdt! -- owd !m%%fMD5! !m%%fdt! MD5 !check! mod-dt !mcheck!
+
+)
+
+exit
+
+REM certutil -hashfile %trojandir%\adobeupdate MD5 | find /v ":" > %trojandir%\adobeupdate.MD5
+REM certutil -hashfile %mothershipdir%\adobeupdate MD5 | find /v ":" > %temp%\adobeupdate.MD5
+REM certutil -hashfile %trojandir%\pythonrelay.py MD5 | find /v ":" > %trojandir%\pythonrelay.py.MD5
+REM certutil -hashfile %mothershipdir%\pythonrelay.py MD5 | find /v ":" > %temp%\pythonrelay.py.MD5
+REM certutil -hashfile %trojandir%\pythonhostrelay.py MD5 | find /v ":" > %trojandir%\pythonhostrelay.py.MD5
+REM certutil -hashfile %mothershipdir%\pythonhostrelay.py MD5 | find /v ":" > %temp%\pythonhostrelay.py.MD5
+REM certutil -hashfile %nodehostrelay% MD5 | find /v ":" > %trojandir%\nodehostrelay.js.MD5
+REM certutil -hashfile %mnodehostrelay% MD5 | find /v ":" > %temp%\nodehostrelay.js.MD5
 
 set /p adobeupdateMD5=<%trojandir%\adobeupdate.MD5
 set /p pythonrelayMD5=<%trojandir%\pythonrelay.py.MD5

