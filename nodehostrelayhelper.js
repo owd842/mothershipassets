@@ -170,7 +170,53 @@ function spawn_chrome(
     return child;
 }
 
-async function connectToChrome(debugport) {
+/*
+json/list --> array of targets:
+{
+    description = ''
+    devtoolsFrontendUrl = 'https://chrome-devtools-frontend.appspot.com/serve_rev/@41fa82442390a4d4456c78f2d69a832d5720cb27/inspector.html?ws=localhost:9223/devtools/page/12AA807841114D42B55C5B05B3525C48'
+    id = '12AA807841114D42B55C5B05B3525C48'
+    title = 'chrome-extension://mloajfnmjckfjbeeofcdaecbelnblden/background/sru-osd.html'
+    type = 'background_page'
+    url = 'chrome-extension://mloajfnmjckfjbeeofcdaecbelnblden/background/sru-osd.html'
+    webSocketDebuggerUrl = 'ws://localhost:9223/devtools/page/12AA807841114D42B55C5B05B3525C48'
+}
+
+json/version
+{
+   "Browser": "Chrome/151.0.7922.138",
+   "Protocol-Version": "1.3",
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+   "V8-Version": "15.1.206.17",
+   "WebKit-Version": "537.36 (@41fa82442390a4d4456c78f2d69a832d5720cb27)",
+   "webSocketDebuggerUrl": "ws://localhost:9223/devtools/browser/2476b3c2-b428-4b6e-a9e8-ee09fe00b77c"
+}
+*/
+
+var payloads = {
+    'create_new_tab': {
+        "id": 1,
+        "method": "Target.createTarget",
+        "params": {
+            "url": null,
+            "newWindow": false,
+            // "width": 10,
+            // "height": 10,
+            // // "left": 2000,
+            // "top": 2000
+            // #"windowState": "minimized"
+            // #"hidden": True
+        }
+    }
+
+};
+
+async function create_new_tab(url='https://www.gmail.com/') {
+    let payload = { ...payloads['create_new_tab'] };
+    payload.params.url = url;
+}
+
+async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
     try {
         const response = await fetch(
             `http://localhost:${debugport}/json/version`
@@ -180,6 +226,8 @@ async function connectToChrome(debugport) {
 
         const targets = JSON.parse(cleanString); //await response.json();
 
+        // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
+        // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
         const wsUrl = targets.webSocketDebuggerUrl;
 
         // ws_url = "ws://localhost:9222/devtools/page/"+targetid
@@ -190,15 +238,6 @@ async function connectToChrome(debugport) {
         ws.on("open", () => {
             logmsg("Connected to Chrome DevTools Protocol!");
 
-            const command = {
-                id: 1,
-                method: "Page.navigate",
-                params: {
-                    url: "https://www.gmail.com",
-                },
-            };
-
-            ws.send(JSON.stringify(command));
         });
 
         ws.on("message", (data) => {

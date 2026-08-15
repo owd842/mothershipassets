@@ -28,7 +28,7 @@ debugger;
 
 // --- BUGS ---
 
-// ( typeof myFunctionx === 'function') ? myFunctionx() : null;
+// .\node\node-v26.4.0-win-x64\npm install pubnub
 
 // ! execjob script must terminate upon completion --> when finished should exit process
 // ! processless initialisation not working

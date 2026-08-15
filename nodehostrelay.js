@@ -221,7 +221,7 @@ async function sendcmds(cmds) {
 }
 
 process.on('SIGINT', () => {
-  logmsg('\nUnsubscribing and exiting...');
-  subscription.unsubscribe();
-  process.exit();
+    logmsg('\nUnsubscribing and exiting...');
+    subscription.unsubscribe();
+    process.exit();
 });

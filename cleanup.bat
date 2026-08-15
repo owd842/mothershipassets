@@ -1,6 +1,6 @@
 setlocal enabledelayedexpansion
 
-set update=false
+set update=TRUE
 
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
@@ -70,6 +70,12 @@ for %%f in (%files_list%) do (
     for %%I in ("!m%%f!") do set "filename_with_ext=%%~nxI"
 
     echo %%f !filename_with_ext! repo !%%fMD5! !%%fdt! -- owd !m%%fMD5! !m%%fdt! MD5 !check! mod-dt !mcheck!
+
+    IF "%update%"=="TRUE" (
+        IF "!check!"=="ERROR" (
+            copy /y !%%f! !m%%f!
+        )
+    )
 
 )
 
