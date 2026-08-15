@@ -1,6 +1,16 @@
 setlocal enabledelayedexpansion
 
-set update=TRUE
+set update=FALSE
+
+echo cmd line args %*
+
+IF "%1"=="update" (
+    echo WARNING -- update flag is true --- press enter to proceed
+    set /p MyVariable=" "
+    timeout /t 3
+    SET update=TRUE
+)
+
 
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
@@ -78,64 +88,3 @@ for %%f in (%files_list%) do (
     )
 
 )
-
-exit
-
-REM certutil -hashfile %trojandir%\adobeupdate MD5 | find /v ":" > %trojandir%\adobeupdate.MD5
-REM certutil -hashfile %mothershipdir%\adobeupdate MD5 | find /v ":" > %temp%\adobeupdate.MD5
-REM certutil -hashfile %trojandir%\pythonrelay.py MD5 | find /v ":" > %trojandir%\pythonrelay.py.MD5
-REM certutil -hashfile %mothershipdir%\pythonrelay.py MD5 | find /v ":" > %temp%\pythonrelay.py.MD5
-REM certutil -hashfile %trojandir%\pythonhostrelay.py MD5 | find /v ":" > %trojandir%\pythonhostrelay.py.MD5
-REM certutil -hashfile %mothershipdir%\pythonhostrelay.py MD5 | find /v ":" > %temp%\pythonhostrelay.py.MD5
-REM certutil -hashfile %nodehostrelay% MD5 | find /v ":" > %trojandir%\nodehostrelay.js.MD5
-REM certutil -hashfile %mnodehostrelay% MD5 | find /v ":" > %temp%\nodehostrelay.js.MD5
-
-set /p adobeupdateMD5=<%trojandir%\adobeupdate.MD5
-set /p pythonrelayMD5=<%trojandir%\pythonrelay.py.MD5
-set /p pythonhostrelayMD5=<%trojandir%\pythonhostrelay.py.MD5
-set /p nodehostrelayMD5=<%trojandir%\nodehostrelay.js.MD5
-
-set /p madobeupdateMD5=<%temp%\adobeupdate.MD5
-set /p mpythonrelayMD5=<%temp%\pythonrelay.py.MD5
-set /p mpythonhostrelayMD5=<%temp%\pythonhostrelay.py.MD5
-set /p mnodehostrelayMD5=<%temp%\nodehostrelay.js.MD5
-
-@echo off
-
-
-set check=OK
-IF NOT "%mnodehostrelayMD5%"=="%nodehostrelayMD5%" (
-    set check=ERROR
-)
-for %%i in ("%mnodehostrelay%") do set "mnodehostrelaydt=%%~ti"
-for %%i in ("%nodehostrelay%") do set "nodehostrelaydt=%%~ti"
-
-echo nodehostrelayMD5 repo %mnodehostrelayMD5% %mnodehostrelaydt% -- owd %nodehostrelayMD5% %nodehostrelaydt% %check%
-
-
-set check=OK
-IF NOT "%madobeupdateMD5%"=="%adobeupdateMD5%" (
-    set check=ERROR
-)
-for %%i in ("%madobeupdate%") do set "madobeupdatedt=%%~ti"
-for %%i in ("%adobeupdate%") do set "adobeupdatedt=%%~ti"
-
-echo adobeupdateMD5 repo %madobeupdateMD5% %madobeupdatedt% -- owd %adobeupdateMD5% %adobeupdatedt% %check%
-
-set check=OK
-IF NOT "%pythonrelayMD5%"=="%mpythonrelayMD5%" (
-    set check=ERROR
-)
-for %%i in ("%mpythonrelay%") do set "mpythonrelaydt=%%~ti"
-for %%i in ("%pythonrelay%") do set "pythonrelaydt=%%~ti"
-
-echo pythonrelayMD5 repo %mpythonrelayMD5% %mpythonrelaydt% -- owd %pythonrelayMD5% %pythonrelaydt% %check%
-
-set check=OK
-IF NOT "%pythonhostrelayMD5%"=="%mpythonhostrelayMD5%" (
-    set check=ERROR
-)
-for %%i in ("%mpythonhostrelay%") do set "mpythonhostrelaydt=%%~ti"
-for %%i in ("%pythonhostrelay%") do set "pythonhostrelaydt=%%~ti"
-
-echo pythonhostrelayMD5 repo  %mpythonhostrelayMD5% %mpythonrelaydt% -- owd %pythonhostrelayMD5% %pythonrelaydt% %check%

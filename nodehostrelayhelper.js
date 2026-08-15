@@ -194,6 +194,7 @@ json/version
 */
 
 var payloads = {
+
     'create_new_tab': {
         "id": 1,
         "method": "Target.createTarget",
@@ -211,46 +212,45 @@ var payloads = {
 
 };
 
-async function create_new_tab(url='https://www.gmail.com/') {
+function create_new_tab(url='https://www.gmail.com/') {
     let payload = { ...payloads['create_new_tab'] };
     payload.params.url = url;
+    return payload;
 }
 
 async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
-    try {
-        const response = await fetch(
-            `http://localhost:${debugport}/json/version`
-        );
-        let responsetxt = await response.text();
-        const cleanString = responsetxt.replace(/\r?\n|\r/g, "");
+    const response = await fetch(`http://localhost:${debugport}/json/version`);
+    let responsetxt = await response.text();
+    const cleanString = responsetxt.replace(/\r?\n|\r/g, "");
 
-        const targets = JSON.parse(cleanString); //await response.json();
+    const targets = JSON.parse(cleanString); //await response.json();
 
-        // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
-        // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
-        const wsUrl = targets.webSocketDebuggerUrl;
+    // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
+    // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
+    const wsUrl = targets.webSocketDebuggerUrl;
 
-        // ws_url = "ws://localhost:9222/devtools/page/"+targetid
-        logmsg(`Connecting to: ${wsUrl}`);
+    // ws_url = "ws://localhost:9222/devtools/page/"+targetid
+    logmsg(`Connecting to: ${wsUrl}`);
 
-        const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
 
-        ws.on("open", () => {
-            logmsg("Connected to Chrome DevTools Protocol!");
+    ws.on("open", () => {
+        logmsg("Connected to Chrome DevTools Protocol");
+        if (openfunc) openfunc();
+    });
 
-        });
+    ws.on("message", (data) => {
+        let txt = data.toString();
+        logmsg(`[J3O9] received response from Chrome: ${txt}`);
+        if (messagefunc) messagefunc(txt);
+    });
 
-        ws.on("message", (data) => {
-            let txt = data.toString();
-            logmsg(`Received response from Chrome:${txt}`);
-        });
+    ws.on("error", (err) => {
+        logmsg(err);
+        if (errorfunc) errorfunc(err);
+    });
 
-        ws.on("error", (err) => {
-            logmsg(err);
-        });
-    } catch (error) {
-        logmsg(error);
-    }
+    return { 'ws':ws, 'ws_url':wsUrl };
 }
 
 logmsg("--- EXPORTING ---");
@@ -263,6 +263,8 @@ module.exports = {
     getRandomCode,
     isPidAlive,
     connectToChrome,
+    payloads,
+    create_new_tab
 };
 
 // childp = spawn_chrome();
