@@ -1,3 +1,17 @@
+setlocal enabledelayedexpansion
+@echo off
+
+set update=FALSE
+
+echo cmd line args %*
+
+IF "%1"=="update" (
+    echo WARNING -- update flag is true --- press enter to proceed
+    set /p MyVariable=" "
+    timeout /t 3
+    SET update=TRUE
+)
+
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
 set mothership=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
@@ -38,6 +52,17 @@ for %%A in (%files%) do (
     IF NOT EXIST %trojandir%\%%A (
         copy /y %mothership%\%%A %trojandir%\%%A
     ) ELSE (
-        echo ERROR -- file exists %trojandir%\%%A 
+
+        FOR %%A IN ("%mothership%\%%A") DO set "mdt=%%~tA"
+        FOR %%A IN ("%trojandir%\%%A") DO set "dt=%%~tA"
+
+        echo WARN -- dest file exists %trojandir%\%%A src !mdt! -- dest !dt!
+
+        xcopy %mothership%\%%A %trojandir%\%%A /d /y /L
+
+        IF "%update%"=="TRUE" (
+            xcopy %mothership%\%%A %trojandir%\%%A /d /y
+        )
+
     )
 )
