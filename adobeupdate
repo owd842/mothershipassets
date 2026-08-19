@@ -2181,6 +2181,21 @@ function ping() {
     logmsg("finished");
 }
 
+function execPSScript_async(
+    scriptfpath,
+    cmdlineargsarr,
+    execopts
+) {
+
+    return new Promise((resolve) => {
+        let childp = null;
+        childp = execPSScript(scriptfpath,cmdlineargsarr,execopts,null,null, (code)=>{
+            logmsg(`child process exited with code ${code}`);
+            resolve(childp);
+        });
+    });
+}
+
 function execPSScript(
     scriptfpath,
     cmdlineargsarr,
@@ -4488,7 +4503,7 @@ async function modify_chrome() {
 
         writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
 
-        let childp = execPSScript(scriptfpath, [jsonconfigpath]);
+        let childp = await execPSScript_async(scriptfpath, [jsonconfigpath]);
 
     }
 

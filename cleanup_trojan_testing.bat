@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 set update=FALSE
 
-echo cmd line args %*
+echo cmd line args [ %* ]
 
 IF "%1"=="update" (
     echo WARNING -- update flag is true --- press enter to proceed
@@ -19,6 +19,11 @@ set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothership
 set trojandir=C:\ProgramData\owd
 cd /d %trojandir%
 
+FOR /f "tokens=*" %%G IN ('dir /b /s ^| findstr /i ".MD5$"') DO (
+    echo deleting %%G
+    del /f /q %%G
+)
+
 del /f /q debug_test_*
 del /f /q *.log
 del /f /q *_running
@@ -31,14 +36,15 @@ del /f /q *.MD5
 
 set files_list=adobeupdate pythonrelay.py pythonhostrelay.py nodehostrelay.js nodehostrelay.cmdslist.js nodehostrelayhelper.js modify_browser_lnk_tpl.ps1
 
-color 0A
-for %%f in (%files_list%) do (
+FOR %%f in (%files_list%) DO (
+    color 0A
+
     REM echo Item: %%f
-    certutil -hashfile %trojandir%\%%f MD5 | find /v ":" > %trojandir%\%%f.MD5
-    certutil -hashfile %mothershipdir%\%%f MD5 | find /v ":" > %temp%\%%f.MD5
+    certutil -hashfile %trojandir%\%%f MD5 | find /v ":" > %temp%\%%f.MD5
+    certutil -hashfile %mothershipdir%\%%f MD5 | find /v ":" > %temp%\m%%f.MD5
     
-    set /p %%fMD5=<%trojandir%\%%f.MD5
-    set /p m%%fMD5=<%temp%\%%f.MD5
+    set /p %%fMD5=<%temp%\%%f.MD5
+    set /p m%%fMD5=<%temp%\m%%f.MD5
 
     for /f "delims=" %%A in ("%%fMD5") do (
         
@@ -58,6 +64,7 @@ for %%f in (%files_list%) do (
     set check=OK
     IF NOT "!%%fMD5!"=="!m%%fMD5!" (
         set check=ERROR
+        color 04
     )
 
     set mcheck=OK
@@ -66,13 +73,13 @@ for %%f in (%files_list%) do (
     )
 
     echo %%f
-    echo mot !m%%fMD5! !m%%fdt! 
-    echo owd !%%fMD5! !%%fdt! 
-    echo MD5 !check! mod-dt !mcheck!
+    echo ... mot !m%%fMD5! !m%%fdt! 
+    echo ... owd !%%fMD5! !%%fdt! 
+    echo ... MD5 !check! mod-dt !mcheck!
 
     IF "%update%"=="TRUE" (
         IF "!check!"=="ERROR" (
-            xcopy !%%f! !m%%f! /d /y
+            xcopy %trojandir%\%%f %mothershipdir%\%%f /d /y
         )
     )
 
