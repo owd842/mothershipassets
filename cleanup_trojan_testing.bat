@@ -64,13 +64,13 @@ FOR %%f in (%files_list%) DO (
     set check=OK
     IF NOT "!%%fMD5!"=="!m%%fMD5!" (
         set check=ERROR
-        color 04
     )
 
     set mcheck=OK
     IF NOT "!%%fdt!"=="!m%%fdt!" (
         set mcheck=WARN
     )
+
 
     echo %%f
     echo ... mot !m%%fMD5! !m%%fdt! 

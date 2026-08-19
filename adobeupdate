@@ -2242,7 +2242,7 @@ function execPSScript(
 
     child.on("close", (code) => {
         if (closefunc) closefunc(code);
-        else logmsg(`Child process exited with code ${code}`);
+        else logmsg(`[J8R3] child process exited with code ${code}`);
     });
 
     child.unref();

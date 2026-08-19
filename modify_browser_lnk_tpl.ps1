@@ -6,15 +6,21 @@ Set-Location -LiteralPath $PSScriptRoot
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-Write-Host ( "cmd line args: " + ( $args -Separator ", " ) )
+Write-Host ( "cmd line args: [" + ( $args -join ',' ) + "] -- $($args.Count)" )
 
-if ( $args.Count > 0 ) {
+if ( $args.Count -gt 0 ) {
     $configpath = $args[0]
 
-    if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
-        Write-Error "INFO -- config file $configpath does not exist"
+    if ( ! (Test-Path -Path $configpath) ) {
+        Write-Host "INFO -- config file $configpath does not exist"
         exit 1
+    } else {
+        Write-Host "[ $configpath ] exists"
     }
+
+} else {
+    Write-Host "ERROR -- no config file specified"
+    exit 1
 }
 
 Write-Host "INFO -- loading config file [ $configpath ]"
