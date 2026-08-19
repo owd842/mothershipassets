@@ -6,27 +6,53 @@ Set-Location -LiteralPath $PSScriptRoot
 
 $ErrorActionPreference = 'SilentlyContinue'
 
+$configpathset = $false
+if ( $args.Count > 0 ) {
+    $configpath = $args[0]
 
-$configpath = ( Join-Path $PSScriptRoot ( ( Split-Path $PSCommandPath -Leaf ) + "_config.json" ) )
-
-if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
-    Write-Host "INFO -- config file $configpath does not exist -- attempting cmd line arg"
-
-    if ( $args.Count > 0 ) {
-        $configpath = $args[0]
-        if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
-            Write-Error "ERROR -- config file $configpath does not exist"
-            exit 1
-        }
+    if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
+        Write-Error "INFO -- config file $configpath does not exist"
     } else {
-        Write-Error "ERROR -- config file $configpath not specified"
+        $configpathset = $true
+    }
+}
+
+if ( ! $configpathset ) {
+
+    $filenamespat = ( Split-Path $PSCommandPath -Leaf ) + "_\d+_config.json"
+
+    $files = Get-ChildItem -Path $PSScriptRoot -Recurse -File | Where-Object { $_.Name -match  $filenamespat } | Sort-Object -Descending | Select-Object -First 1
+
+    if ( $files.Count -eq 0 ) {    
+        Write-Host "no matching files found $filenamespat"
         exit 1
     }
+
+    $configpath = $files
 }
 
 Write-Host "INFO -- loading config file $configpath"
 
-$config = Get-Content -Path $configpath -Raw | ConvertFrom-Json
+$jsonString = Get-Content -Raw -Path $configpath
+
+Write-Host $jsonString 
+
+$isValid = $false
+
+try {
+    $null = ConvertFrom-Json $jsonString -ErrorAction Stop
+    $isValid = $true
+} catch {
+    $isValid = $false
+    Write-Output ( "json string is invalid" )
+    exit 1
+}
+
+Write-Output ( "json string is valid: " + $isValid )
+
+if ( $isValid ) {
+    $config = ConvertFrom-Json -InputObject $jsonString
+}
 
 $hashtable = @{}
 $config.PSObject.Properties | ForEach-Object { $hashtable[$_.Name] = $_.Value }
@@ -67,12 +93,17 @@ if ($Item -and $Item.IsLink) {
     $Link = $Item.GetLink
     $Link.Arguments = $cmd_ling_args
     
-    <#
-    $Link.Path             = "C:\Windows\System32\notepad.exe"   # New target path
-    $Link.Arguments        = "C:\path\to\your\file.txt"          # Arguments
-    $Link.WorkingDirectory = "C:\Windows\System32"               # Start-in directory
-    $Link.Description      = "Opened via custom PowerShell edit" # Comment/Description
-    #>
-    
     $Link.Save()
+
+    $Link = $Item.GetLink
+    $Link.Arguments = $cmd_ling_args
+
+    Write-Host('')
+    Write-Host('--- link dump ---')
+    Write-Host('Arguments: ' + $Link.Arguments)
+    Write-Host('Path: ' + $Link.Path)
+    Write-Host('Arguments: ' + $Link.Arguments)
+    Write-Host('WorkingDirectory: ' + $Link.WorkingDirectory)
+    Write-Host('Description: ' + $Link.Description)
+ 
 }

