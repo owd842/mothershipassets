@@ -20,6 +20,96 @@ var logfpath = path.join(
     scriptfname + "_" + getTimestamp() + ".log"
 );
 
+
+function csvToJson(csvData) {
+
+    const lines = csvData.split(/[\r\n]+/).filter((line) => line.trim() !== "");
+
+    const headers = lines[0].split(",");
+
+    lines.splice(0, 1);
+
+    const result = [];
+
+    // Loop through the remaining rows
+    for (let i = 0; i < lines.length; i++) {
+        const obj = {};
+        const currentLine = lines[i].split(",");
+
+        // index 0 is computer name
+        // index -1 is processid, -2 is process name
+
+        let n = currentLine.length;
+
+        if ( n > 3 ) {
+
+            let m = headers.length;
+
+            obj[headers[m-1].trim()] = currentLine[n-1];
+            obj[headers[m-2].trim()] = currentLine[n-2];
+            
+            let commandline = currentLine.slice(1,n-2);
+            obj['CommandLine'] = commandline.join(',');
+            obj[headers[0].trim()] = currentLine[0];
+
+        } else {
+
+            for (let j = 0; j < headers.length; j++) {
+                obj[headers[j].trim()] = currentLine[j]?.trim() || "";
+            }
+
+        }
+
+        result.push(obj);
+    }
+
+    return result;
+    // Save the output
+    // fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
+}
+
+function isUTF16LEBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 2) {
+        return false;
+    }
+
+    // UTF-16LE BOM is 0xFF 0xFE
+    return buffer[0] === 0xff && buffer[1] === 0xfe;
+}
+
+async function exec_wmic_process() {
+    return new Promise((resolve, reject) => {
+        const wmicCommand =
+            "wmic process get ProcessId,Name,CommandLine /format:csv";
+
+        exec(wmicCommand, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (stderr) {
+                reject(stderr);
+            }
+
+            resolve(stdout);
+        });
+    });
+}
+
+async function getProcessList_wmic() {
+    let buffer = await exec_wmic_process();
+    let isutf16le = isUTF16LEBuffer(buffer);
+
+    let csvData = isutf16le
+        ? buffer.toString("utf16le")
+        : buffer.toString("utf8");
+
+    // { CommandLine, Name, Node, ProcessId }
+    let jsondata = csvToJson(csvData);
+
+    return jsondata;
+}
+
 function getCallerName() {
     const originalFunc = Error.prepareStackTrace;
 
@@ -264,7 +354,8 @@ module.exports = {
     isPidAlive,
     connectToChrome,
     payloads,
-    create_new_tab
+    create_new_tab,
+    getProcessList_wmic
 };
 
 // childp = spawn_chrome();

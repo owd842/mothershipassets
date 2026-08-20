@@ -1,5 +1,7 @@
 // npm install ws
 
+const { getTimestamp } = require("./nodehostrelayhelper.js");
+
 // npm install pubnub
 console.log("--- start nodehostrelay.cmdlist.js ---");
 
@@ -45,10 +47,37 @@ let ws_url = '';
     try {
         // might be worth scanning for chrome processes, get cmd line args and see if rdp flag is set
 
-        childp = helper.spawn_chrome(); // child process closes upon script term
-                                        // child chrome process has a new/different pid upon launch
+        // { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' }
+        let procs = await helper.getProcessList_wmic();
+
+        procs = procs.filter((element, index, array) => {
+            let check_a = element.Name?.toLowerCase().includes('chrome');
+            let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
+            return check_a && check_b;
+        });
+
+        if ( procs.length == 0 ) {
+            childp = helper.spawn_chrome(); // child process closes upon script term
+                                            // child chrome process has a new/different pid upon launch
         
-        await delay(1000);
+            await delay(1000);
+
+            procs = await helper.getProcessList_wmic();
+
+            procs = procs.filter((element, index, array) => {
+                let check_a = element.Name?.toLowerCase().includes('chrome');
+                let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
+                helper.logmsg(element.CommandLine);
+                return check_a && check_b;
+            });
+
+        }
+
+        // TODO: confirm debug port is 9223
+        
+        if ( procs.length == 0 ) {
+            // FATAL ERROR -- unable to find chrome process with debug port
+        }
 
         let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
         ws = ret.ws;
@@ -70,7 +99,7 @@ let ws_url = '';
 
 
 function keepRunning() {
-    helper.logmsg("looping...");
+    helper.logmsg("looping... "+helper.getTimestamp());
 
     setTimeout(keepRunning, 1000);
 }
