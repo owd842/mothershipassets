@@ -57,8 +57,8 @@ let ws_url = '';
         });
 
         if ( procs.length == 0 ) {
-            childp = helper.spawn_chrome(); // child process closes upon script term
-                                            // child chrome process has a new/different pid upon launch
+            childp = helper.spawn_chrome("https://www.gmail.com", 9223, false, true);
+                                                                                        
         
             await delay(1000);
 
@@ -77,6 +77,7 @@ let ws_url = '';
         
         if ( procs.length == 0 ) {
             // FATAL ERROR -- unable to find chrome process with debug port
+            throw new Error('could not launch or find chrome process with debug port');
         }
 
         let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
@@ -90,6 +91,18 @@ let ws_url = '';
         let command = helper.create_new_tab('https://www.gmail.com');
 
         ws_send(ws, command);
+
+        await delay(1000);
+
+        let response = await helper.ping_chrome(9223, 'json/list');
+
+        let resobj = JSON.parse(response);
+
+        resobj = resobj.filter((element, index, array) => {
+            return element.url?.startsWith('https://');
+        });
+
+        logmsg('pass');
 
     } catch (err) {
         helper.logmsg(err);
