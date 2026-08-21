@@ -34,7 +34,7 @@ debugger;
 // ! processless initialisation not working
 
 // --- TASKS LIST ---
-
+// ! implement reset mechanism in relays --> node relay --> clear session and start from scratch
 // ! need to filter out task, startup folder, reg startup launches --> we don't want the task launches to
 //   execute penetrate
 

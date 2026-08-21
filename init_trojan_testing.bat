@@ -58,11 +58,11 @@ FOR %%A IN (%files%) DO (
         FOR %%A IN ("%mothershipdir%\%%A") DO set "mdt=%%~tA"
         FOR %%A IN ("%trojandir%\%%A") DO set "dt=%%~tA"
 
-        certutil -hashfile %trojandir%\%%A MD5 | find /v ":" > %trojandir%\%%A.MD5
-        certutil -hashfile %mothershipdir%\%%A MD5 | find /v ":" > %temp%\%%A.MD5
+        certutil -hashfile %trojandir%\%%A MD5 | find /v ":" > %temp%\%%A.MD5
+        certutil -hashfile %mothershipdir%\%%A MD5 | find /v ":" > %temp%\m%%A.MD5
 
-        set /p %%AMD5=<%trojandir%\%%A.MD5
-        set /p m%%AMD5=<%temp%\%%A.MD5
+        set /p %%AMD5=<%temp%\%%A.MD5
+        set /p m%%AMD5=<%temp%\m%%A.MD5
 
         SET md5_check=ERROR
         IF "!m%%AMD5!"=="!%%AMD5!" (

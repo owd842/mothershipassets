@@ -1,20 +1,14 @@
-// npm install ws
-
 const { getTimestamp } = require("./nodehostrelayhelper.js");
 
-// npm install pubnub
-console.log("--- start nodehostrelay.cmdlist.js ---");
-
-let helper = null;
-helper = require("./nodehostrelayhelper.js");
-
+let helper = require("./nodehostrelayhelper.js");
 
 console.log(typeof helper);
 console.log(Object.keys(helper));
 
 helper.logmsg("start cmdslist");
 
-let childp = null;
+let ws = null;
+let ws_url = '';
 
 function ws_open() {
     helper.logmsg('new ws connection');
@@ -37,50 +31,68 @@ function ws_send(ws, command) {
 
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function isPidAlive(pid) {
+    if (pid <= 0) {
+        return false;
+    }
 
-let ws = null;
-let ws_url = '';
+    try {
+        // Signal 0 tests for process existence without modifying it
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        // ESRCH means the process was not found
+        return error.code === "EPERM"; // True if it exists but you lack permissions
+    }
+}
+
+async function is_chrome_active(debugport=9223) {
+    
+    // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
+    let procs = await helper.getProcessList_wmic();
+
+    procs = procs.filter((element, index, array) => {
+        let check_a = element.Name?.toLowerCase().includes('chrome');
+        let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
+        return check_a && check_b;
+    });
+
+    // TODO check if one of the procs has debugport=${debugport}
+
+    return procs && procs.length > 0;
+}
+
+// note: spawning chrome process --> results in a PID that differs from launch
+// ! can't use isPidAlive to check if pid is active
+async function activate_chrome(start_url="https://www.gmail.com", debugport=9223, headless=false, unref=false) {
+
+    let isactive = await is_chrome_active();
+
+    if ( isactive )
+        return true;
+
+    childp = helper.spawn_chrome(start_url, debugport, headless, unref);
+
+    await delay(2000);
+
+    isactive = await is_chrome_active();
+
+    return isactive;
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 (async () => {
 
     try {
-        // might be worth scanning for chrome processes, get cmd line args and see if rdp flag is set
 
-        // { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' }
-        let procs = await helper.getProcessList_wmic();
-
-        procs = procs.filter((element, index, array) => {
-            let check_a = element.Name?.toLowerCase().includes('chrome');
-            let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
-            return check_a && check_b;
-        });
-
-        if ( procs.length == 0 ) {
-            childp = helper.spawn_chrome("https://www.gmail.com", 9223, false, true);
-                                                                                        
+        let ret = await activate_chrome('https://www.gmail.com/');
         
-            await delay(1000);
-
-            procs = await helper.getProcessList_wmic();
-
-            procs = procs.filter((element, index, array) => {
-                let check_a = element.Name?.toLowerCase().includes('chrome');
-                let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
-                helper.logmsg(element.CommandLine);
-                return check_a && check_b;
-            });
-
+        if ( ! ret ) {
+            throw new Error('could not launch or find chrome process');
         }
 
-        // TODO: confirm debug port is 9223
-        
-        if ( procs.length == 0 ) {
-            // FATAL ERROR -- unable to find chrome process with debug port
-            throw new Error('could not launch or find chrome process with debug port');
-        }
-
-        let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
+        ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
         ws = ret.ws;
         ws_url = ret.ws_url;
 

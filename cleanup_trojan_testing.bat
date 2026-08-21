@@ -34,7 +34,13 @@ del /f /q *.xml
 del /f /q download_*
 del /f /q *.MD5
 
-set files_list=adobeupdate pythonrelay.py pythonhostrelay.py nodehostrelay.js nodehostrelay.cmdslist.js nodehostrelayhelper.js modify_browser_lnk_tpl.ps1
+set files_list=adobeupdate
+set files_list=%files_list% pythonrelay.py 
+set files_list=%files_list% pythonhostrelay.py 
+set files_list=%files_list% nodehostrelay.js 
+set files_list=%files_list% nodehostrelay.cmdslist.js 
+set files_list=%files_list% nodehostrelayhelper.js 
+set files_list=%files_list% modify_browser_lnk_tpl.ps1
 
 FOR %%f in (%files_list%) DO (
     color 0A
