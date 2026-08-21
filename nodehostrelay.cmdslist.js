@@ -62,23 +62,7 @@ async function is_chrome_active(debugport=9223) {
     return procs && procs.length > 0;
 }
 
-// note: spawning chrome process --> results in a PID that differs from launch
-// ! can't use isPidAlive to check if pid is active
-async function activate_chrome(start_url="https://www.gmail.com", debugport=9223, headless=false, unref=false) {
 
-    let isactive = await is_chrome_active();
-
-    if ( isactive )
-        return true;
-
-    childp = helper.spawn_chrome(start_url, debugport, headless, unref);
-
-    await delay(2000);
-
-    isactive = await is_chrome_active();
-
-    return isactive;
-}
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,7 +70,9 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     try {
 
-        let ret = await activate_chrome('https://www.gmail.com/');
+        let ret = await helper.kill_chrome();
+
+        ret = await helper.activate_chrome('https://www.gmail.com/');
         
         if ( ! ret ) {
             throw new Error('could not launch or find chrome process');
@@ -111,7 +97,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         let resobj = JSON.parse(response);
 
         resobj = resobj.filter((element, index, array) => {
-            return element.url?.startsWith('https://');
+            return element.url?.startsWith('https://') && ( element.type === 'page' );
         });
 
         logmsg('pass');
