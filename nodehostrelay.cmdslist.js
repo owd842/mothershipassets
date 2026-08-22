@@ -55,7 +55,8 @@ function isPidAlive(pid) {
 
         ret = await helper.activate_chrome('https://www.gmail.com/');
         
-        if ( ! ret ) {
+        // TODO refactor to return JSON object indicating processid, name, commandline, etc.
+        if ( ! ret ) { 
             throw new Error('could not launch or find chrome process');
         }
 
@@ -63,15 +64,17 @@ function isPidAlive(pid) {
         ws = ret.ws;
         ws_url = ret.ws_url;
 
+        // TODO log ws_url
+
         while ( ! ( ws.readyState === WebSocket.OPEN ) ) {
-            await delay(1000);
+            await helper.delay(1000);
         }
 
         let command = helper.create_new_tab('https://www.gmail.com');
 
         ws_send(ws, command);
 
-        await delay(1000);
+        await helper.delay(1000);
 
         let response = await helper.ping_chrome(9223, 'json/list');
 
