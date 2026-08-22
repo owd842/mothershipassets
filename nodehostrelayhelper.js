@@ -20,8 +20,13 @@ var logfpath = path.join(
     scriptfname + "_" + getTimestamp() + ".log"
 );
 
-let chrome_debug_path = "C:\\Users\\LC2022\\AppData\\Local\\chrome-win64\\chrome.exe";
+let uinfo = os.userInfo();
+let username = uinfo.username;
+
+let chrome_debug_path = `C:\\Users\\${username}\\AppData\\Local\\chrome-win64\\chrome.exe`;
 let chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 
 function csvToJson(csvData) {
@@ -80,6 +85,22 @@ function isUTF16LEBuffer(buffer) {
     return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
 
+async function is_chrome_active(debugport=9223) {
+    
+    // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
+    let procs = await getProcessList_wmic();
+
+    procs = procs.filter((element, index, array) => {
+        let check_a = element.Name?.toLowerCase().includes('chrome');
+        let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
+        return check_a && check_b;
+    });
+
+    // TODO check if one of the procs has debugport=${debugport}
+
+    return procs && procs.length > 0;
+}
+
 // note: spawning chrome process --> results in a PID that differs from launch
 // ! can't use isPidAlive to check if pid is active
 async function activate_chrome(start_url="https://www.gmail.com", debugport=9223, headless=false, unref=false) {
@@ -89,7 +110,7 @@ async function activate_chrome(start_url="https://www.gmail.com", debugport=9223
     if ( isactive )
         return true;
 
-    childp = helper.spawn_chrome(start_url, debugport, headless, unref);
+    childp = spawn_chrome(start_url, debugport, headless, unref);
     // helper.exec_chrome(start_url, debugport, headless);
 
     await delay(2000);
@@ -323,12 +344,12 @@ function spawn_chrome(
 
     // TODO auto discover by reading chrome lnk files
 
-    const child = spawn('conhost.exe', [chrome_debug_path, ...cmdlineargs], {
-        detached: true, // might cause errors
+    const child = spawn(chrome_debug_path, [...cmdlineargs], {
+        //detached: true, // might cause errors
         // windowsHide: true,
         // stdio: ["ignore", out, err],
-        shell: true,
-        cwd: 'C:\\Users\\LC2022\\AppData\\Local\\chrome-win64\\',
+        //shell: true,
+        cwd: `C:\\Users\\${username}\\AppData\\Local\\chrome-win64\\`,
     });
 
     child.stdout.on("data", (data) => {
@@ -453,7 +474,9 @@ logmsg("--- EXPORTING ---");
 
 module.exports = {
     exec_chrome,
+    activate_chrome,
     spawn_chrome,
+    is_chrome_active,
     logmsg,
     getTimestamp,
     isNullOrWhitespace,
@@ -463,7 +486,8 @@ module.exports = {
     payloads,
     create_new_tab,
     getProcessList_wmic,
-    ping_chrome
+    ping_chrome,
+    delay
 };
 
 // childp = spawn_chrome();

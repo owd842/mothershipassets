@@ -46,31 +46,12 @@ function isPidAlive(pid) {
     }
 }
 
-async function is_chrome_active(debugport=9223) {
-    
-    // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
-    let procs = await helper.getProcessList_wmic();
-
-    procs = procs.filter((element, index, array) => {
-        let check_a = element.Name?.toLowerCase().includes('chrome');
-        let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
-        return check_a && check_b;
-    });
-
-    // TODO check if one of the procs has debugport=${debugport}
-
-    return procs && procs.length > 0;
-}
-
-
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 (async () => {
 
     try {
 
-        let ret = await helper.kill_chrome();
+        // let ret = await helper.kill_chrome();
 
         ret = await helper.activate_chrome('https://www.gmail.com/');
         

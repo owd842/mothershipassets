@@ -52,15 +52,14 @@ mkdir %trojandir%\.vscode
 set nodedir=%trojandir%\node\node-v26.4.0-win-x64
 
 IF NOT EXIST %nodedir% (
-    robocopy %DRIVE_LETTER%\__Binaries\node-v26.4.0-win-x64 %nodedir% /E
+    start "" /min robocopy %DRIVE_LETTER%\__Binaries\node-v26.4.0-win-x64 %nodedir% /E
 )
 
-IF NOT EXIST %nodedir%\node.exe (
-    echo node exe missing
+set output=
+IF EXIST %nodedir%\node.exe (
+    for /f "tokens=*" %%i in ('%nodedir%\node.exe --version') do set "output=%%i"
+    set "output=%output: =%"
 )
-
-for /f "tokens=*" %%i in ('%nodedir%\node.exe --version') do set "output=%%i"
-set "output=%output: =%"
 
 IF NOT "%output%"=="v26.4.0" (
     echo node version not correct
