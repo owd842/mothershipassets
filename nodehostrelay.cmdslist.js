@@ -2,20 +2,30 @@ const { getTimestamp } = require("./nodehostrelayhelper.js");
 
 let helper = require("./nodehostrelayhelper.js");
 
-console.log(typeof helper);
-console.log(Object.keys(helper));
+// console.log(typeof helper);
+// console.log(Object.keys(helper));
 
-helper.logmsg("start cmdslist");
+helper.logmsg("starting cmdslist");
 
 let ws = null;
 let ws_url = "";
+let commands = [];
 
 function ws_open() {
     helper.logmsg("new ws connection");
 }
 
+// TODO match incomming response to issued command
 function ws_message(data) {
     helper.logmsg(data);
+
+    let responseobj = JSON.parse(data);
+
+    let command = commands.find((c) => {
+        c.id == responseobj.id;
+    });
+
+    command.response = responseobj;
 }
 
 function ws_error(err) {
@@ -23,10 +33,17 @@ function ws_error(err) {
 }
 
 function ws_send(ws, command) {
+    command.id = helper.getRandomCode(8);
     let jsonstr = JSON.stringify(command);
 
+    command.ts = getTimestamp();
+    commands.push(command);
+
+    helper.logmsg(`sending message: ${jsonstr}`);
+
     if (ws.readyState === WebSocket.OPEN) {
-        return ws.send(jsonstr);
+        let ret = ws.send(jsonstr);
+        return ret;
     }
 
     return null;
@@ -54,23 +71,25 @@ function isPidAlive(pid) {
         ret = await helper.activate_chrome("https://www.bing.com/");
 
         // TODO refactor to return JSON object indicating processid, name, commandline, etc.
+        // confirm remote debug port + user data dict
         if (!ret) {
             throw new Error("could not launch or find chrome process");
         }
 
-        ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
+        ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error); // TODO might exist several chrome browser instances
         ws = ret.ws;
         ws_url = ret.ws_url;
 
-        // TODO log ws_url
+        helper.logmsg(`ws_rul=${ws_url}`);
 
         while (!(ws.readyState === WebSocket.OPEN)) {
             await helper.delay(1000);
         }
 
-        let command = helper.create_new_tab("https://www.gmail.com");
+        // let command = helper.create_new_tab("https://www.gmail.com");
+        let command = helper.create_new_window("https://www.gmail.com");
 
-        ws_send(ws, command);
+        ret = ws_send(ws, command);
 
         await helper.delay(1000);
 

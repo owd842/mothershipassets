@@ -19,7 +19,7 @@ set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothership
 set trojandir=C:\ProgramData\owd
 cd /d %trojandir%
 
-FOR /f "tokens=*" %%G IN ('dir /b /s ^| findstr /i ".MD5$"') DO (
+FOR /f "tokens=*" %%G IN ('dir /b ^| findstr /i ".MD5$"') DO (
     echo deleting %%G
     del /f /q %%G
 )

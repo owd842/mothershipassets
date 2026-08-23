@@ -406,13 +406,33 @@ var payloads = {
             // // "left": 2000,
             // "top": 2000
             // #"windowState": "minimized"
-            // #"hidden": True
+            // #"hidden": True --> has problems/issues
+        },
+    },
+
+    create_new_window: {
+        id: 1,
+        method: "Target.createTarget",
+        params: {
+            url: null,
+            newWindow: true,
+            width: 10,
+            height: 10,
+            left: 2000,
+            top: 2000,
+            windowState: "minimized",
         },
     },
 };
 
 function create_new_tab(url = "https://www.gmail.com/") {
     let payload = { ...payloads["create_new_tab"] };
+    payload.params.url = url;
+    return payload;
+}
+
+function create_new_window(url = "https://www.gmail.com") {
+    let payload = { ...payloads["create_new_window"] };
     payload.params.url = url;
     return payload;
 }
@@ -486,6 +506,7 @@ module.exports = {
     getProcessList_wmic,
     ping_chrome,
     delay,
+    create_new_window,
 };
 
 // childp = spawn_chrome();
