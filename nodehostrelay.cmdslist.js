@@ -15,25 +15,33 @@ function ws_open() {
     helper.logmsg("new ws connection");
 }
 
-// TODO match incomming response to issued command
 function ws_message(data) {
     helper.logmsg(data);
 
+    // {"error":{"code":-32600,"message":"Message must have integer 'id' property"}}
+    // {"method":"Inspector.detached","params":{"reason":"target_closed"}} --> if you close browser window
+
     let responseobj = JSON.parse(data);
 
+    if ( Object.hasOwn(responseobj, 'error') ) {
+        return;
+    }
+
     let command = commands.find((c) => {
-        c.id == responseobj.id;
+        return c.id == responseobj.id;
     });
 
-    command.response = responseobj;
+    if ( command )
+        command['response'] = responseobj;
 }
 
 function ws_error(err) {
+    // Unexpected server response: 500
     helper.logmsg(err);
 }
 
 function ws_send(ws, command) {
-    command.id = helper.getRandomCode(8);
+    command.id = parseInt(helper.getRandomCode(8), 10);
     let jsonstr = JSON.stringify(command);
 
     command.ts = getTimestamp();
@@ -68,15 +76,13 @@ function isPidAlive(pid) {
     try {
         // let ret = await helper.kill_chrome();
 
-        ret = await helper.activate_chrome("https://www.bing.com/");
+        let procs = await helper.activate_chrome("https://www.bing.com/"); // anchor
 
-        // TODO refactor to return JSON object indicating processid, name, commandline, etc.
-        // confirm remote debug port + user data dict
-        if (!ret) {
+        if (!procs || procs.length == 0) {
             throw new Error("could not launch or find chrome process");
         }
 
-        ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error); // TODO might exist several chrome browser instances
+        let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
         ws = ret.ws;
         ws_url = ret.ws_url;
 
@@ -93,7 +99,7 @@ function isPidAlive(pid) {
 
         await helper.delay(1000);
 
-        let response = await helper.ping_chrome(9223, "json/list");
+        response = await helper.ping_chrome(9223, "json/list");
 
         let resobj = JSON.parse(response);
 

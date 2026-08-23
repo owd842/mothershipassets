@@ -79,21 +79,61 @@ function isUTF16LEBuffer(buffer) {
     return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
 
-async function is_chrome_active(debugport = 9223) {
+function parseCmdString(str) {
+  const regex = /--([a-zA-Z0-9_-]+)(?:[=]+("[^"]+"|'[^']+'|[^\s]+))?/g;
+  const dict = {};
+  let match;
+
+  while ((match = regex.exec(str)) !== null) {
+    const key = match[1];
+    let value = match[2];
+
+    if (value !== undefined) {
+      if ((value.startsWith('"') && value.endsWith('"')) || 
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+    } else {
+      value = true;
+    }
+
+    dict[key] = value;
+  }
+
+  return dict;
+}
+
+async function is_chrome_active(debugport = 9223, userdatadir=null) {
     // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
     let procs = await getProcessList_wmic();
 
     procs = procs.filter((element, index, array) => {
         let check_a = element.Name?.toLowerCase().includes("chrome");
-        let check_b = element.CommandLine?.toLowerCase().includes(
-            "remote-debugging-port"
-        );
-        return check_a && check_b;
+        
+        if ( ! check_a )
+            return false;
+
+        let cmdline = element.CommandLine?.toLowerCase();
+
+        let cmdlineargs = parseCmdString(cmdline);
+
+        let check_b = cmdlineargs['remote-debugging-port'] == String(debugport);
+
+        let check_c = true;
+        
+        if ( ! isNullOrWhitespace(userdatadir) ) {
+            let token = 'user-data-dir';
+            
+            if ( Object.hasOwn(cmdlineargs, token) )
+                check_c = cmdlineargs[token].toLowerCase() == userdatadir.toLowerCase();
+        }
+
+        element.cmdlineargs = cmdlineargs;
+
+        return check_a && check_b && check_c;
     });
 
-    // TODO check if one of the procs has debugport=${debugport}
-
-    return procs && procs.length > 0;
+    return procs;
 }
 
 // note: spawning chrome process --> results in a PID that differs from launch
@@ -104,18 +144,19 @@ async function activate_chrome(
     headless = false,
     unref = false
 ) {
-    let isactive = await is_chrome_active();
+   
+    let procs = await is_chrome_active(debugport);
 
-    if (isactive) return true;
+    if ( procs && procs.length > 0 )
+        return procs;
 
     childp = spawn_chrome(start_url, debugport, headless, unref);
-    // helper.exec_chrome(start_url, debugport, headless);
 
     await delay(2000);
 
-    isactive = await is_chrome_active();
+    procs = await is_chrome_active(debugport);
 
-    return isactive;
+    return procs;
 }
 
 function kill_chrome() {
@@ -193,11 +234,11 @@ function getRandomCode(n) {
 }
 
 function isNullOrWhitespace(str) {
-    if (typeof str === "undefined") {
+    if (typeof str === "undefined" || str === null ) {
         return true;
     }
 
-    if (!(typeof str === "string")) return false;
+    if (!(typeof str === "string")) return true;
 
     return !str || !str.trim();
 }
