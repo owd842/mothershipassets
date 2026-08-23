@@ -84,7 +84,21 @@ function isPidAlive(pid) {
             return element.url?.startsWith('https://') && ( element.type === 'page' );
         });
 
-        logmsg('pass');
+        const script = `
+            const el = document.querySelector("#my-input");
+            el.value = "Hello World";
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        `;
+
+        command = JSON.stringify({
+            id: 1,
+            method: "Runtime.evaluate",
+            params: { expression: script }
+        });
+
+        ws_send(ws, command);
+
+        helper.logmsg('pass');
 
     } catch (err) {
         helper.logmsg(err);

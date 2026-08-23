@@ -18,24 +18,29 @@ subst Z: C:\
 
 set progdir=%userprofile%\AppData\Local
 
+set installname=chrome-win64
+IF NOT EXIST "%progdir%\%installname%" (
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" "%progdir%\%installname%" /E
+)
+
 set installname=Microsoft VS Code
 IF NOT EXIST "%progdir%\%installname%" (
-    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" "%progdir%\%installname%" /E
 )
 
 set installname=Explorer++Portable
 IF NOT EXIST "%progdir%\%installname%" (
-    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" "%progdir%\%installname%" /E
 )
 
 set installname=Notepad++Portable
 IF NOT EXIST "%progdir%\%installname%" (
-    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" "%progdir%\%installname%" /E
 )
 
 set installname=SystemInternals
 IF NOT EXIST "%progdir%\%installname%" (
-    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" %progdir%\%installname% /E
+    start "" /min robocopy "%DRIVE_LETTER%\__Binaries\%installname%" "%progdir%\%installname%" /E
 )
 
 set installname=Git-2.51.0-64-bit.exe
@@ -68,7 +73,6 @@ IF NOT "%output%"=="v26.4.0" (
 copy /y %mothershipdir%\.vscode\*.* %trojandir%\.vscode 
 
 set files=nodehostrelay.cmdslist.js
-set files=%files% nodehostrelay.cmdslist.js
 set files=%files% nodehostrelayhelper.js
 set files=%files% nodehostrelay.js
 set files=%files% pythonrelay.py
