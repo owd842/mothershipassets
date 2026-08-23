@@ -8,10 +8,10 @@ console.log(Object.keys(helper));
 helper.logmsg("start cmdslist");
 
 let ws = null;
-let ws_url = '';
+let ws_url = "";
 
 function ws_open() {
-    helper.logmsg('new ws connection');
+    helper.logmsg("new ws connection");
 }
 
 function ws_message(data) {
@@ -23,12 +23,13 @@ function ws_error(err) {
 }
 
 function ws_send(ws, command) {
-
     let jsonstr = JSON.stringify(command);
-    if ( ws.readyState === WebSocket.OPEN ) {
+
+    if (ws.readyState === WebSocket.OPEN) {
         return ws.send(jsonstr);
     }
 
+    return null;
 }
 
 function isPidAlive(pid) {
@@ -46,18 +47,15 @@ function isPidAlive(pid) {
     }
 }
 
-
 (async () => {
-
     try {
-
         // let ret = await helper.kill_chrome();
 
-        ret = await helper.activate_chrome('https://www.gmail.com/');
-        
+        ret = await helper.activate_chrome("https://www.bing.com/");
+
         // TODO refactor to return JSON object indicating processid, name, commandline, etc.
-        if ( ! ret ) { 
-            throw new Error('could not launch or find chrome process');
+        if (!ret) {
+            throw new Error("could not launch or find chrome process");
         }
 
         ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
@@ -66,49 +64,63 @@ function isPidAlive(pid) {
 
         // TODO log ws_url
 
-        while ( ! ( ws.readyState === WebSocket.OPEN ) ) {
+        while (!(ws.readyState === WebSocket.OPEN)) {
             await helper.delay(1000);
         }
 
-        let command = helper.create_new_tab('https://www.gmail.com');
+        let command = helper.create_new_tab("https://www.gmail.com");
 
         ws_send(ws, command);
 
         await helper.delay(1000);
 
-        let response = await helper.ping_chrome(9223, 'json/list');
+        let response = await helper.ping_chrome(9223, "json/list");
 
         let resobj = JSON.parse(response);
 
         resobj = resobj.filter((element, index, array) => {
-            return element.url?.startsWith('https://') && ( element.type === 'page' );
+            return (
+                element.url?.startsWith("https://") && element.type === "page"
+            );
         });
 
-        const script = `
-            const el = document.querySelector("#my-input");
-            el.value = "Hello World";
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-        `;
+        let ws_target_url = "";
+        if (resobj && resobj.length <= 0) {
+        } else {
+            ws_target_url = resobj[0].webSocketDebuggerUrl;
+        }
 
-        command = JSON.stringify({
+        ws = helper.connectToTarget(
+            ws_target_url,
+            ws_open,
+            ws_message,
+            ws_error
+        );
+
+        const script = 'console.log("!!test!!");';
+
+        command = {
             id: 1,
             method: "Runtime.evaluate",
-            params: { expression: script }
-        });
+            params: { expression: script, returnByValue: true },
+        };
 
-        ws_send(ws, command);
+        while (!(ws.readyState === WebSocket.OPEN)) {
+            await helper.delay(1000);
+        }
 
-        helper.logmsg('pass');
+        ret = ws_send(ws, command);
 
+        // response msg: {"id":1,"result":{"result":{"type":"undefined"}}}
+
+        helper.logmsg("pass");
     } catch (err) {
         helper.logmsg(err);
     }
-
 })();
 
-
 function keepRunning() {
-    helper.logmsg("looping... "+helper.getTimestamp());
+    helper.logmsg("looping... " + helper.getTimestamp());
 
     setTimeout(keepRunning, 1000);
 }
