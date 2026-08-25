@@ -34,6 +34,8 @@ del /f /q *.xml
 del /f /q download_*
 del /f /q *.MD5
 
+exit 
+
 set files_list=adobeupdate
 set files_list=%files_list% pythonrelay.py 
 set files_list=%files_list% pythonhostrelay.py 

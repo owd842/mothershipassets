@@ -476,6 +476,31 @@ var payloads = {
     },
 };
 
+function get_dom() {
+    let payload = { 
+        "id": 1, 
+        "method": "DOM.getDocument", 
+        "params": { 
+            "depth": -1, 
+            "pierce": true 
+        } 
+    };
+
+    return payload;
+
+}
+
+function navigate(url) {
+    let payload = {
+        "id": 1,
+        "method": "Page.navigate",
+        "params": {
+            "url": `${url}`
+        }
+    };
+    return payload;
+}
+
 function runtime_eval(script) {
     let payload = {...payloads['runtime_eval'] };
     payload.params.expression = script;
@@ -579,7 +604,9 @@ module.exports = {
     delay,
     create_new_window,
     runtime_eval,
-    get_tabs
+    get_tabs,
+    navigate,
+    get_dom
 };
 
 // childp = spawn_chrome();

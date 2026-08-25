@@ -30,6 +30,8 @@ function ws_message(data) {
     // {"method":"Page.frameStartedLoading","params":{"frameId":"B91B9F6D66CF9888F84A2A9463B54E8F"}}
     // {"method":"Page.frameStoppedLoading","params":{"frameId":"B91B9F6D66CF9888F84A2A9463B54E8F"}}
 
+    // id, result, exceptionDetails
+
     let responseobj = JSON.parse(data);
 
     if ( Object.hasOwn(responseobj, 'error') ) {
@@ -126,7 +128,7 @@ async function awaitresponse(command, delay=1, delaymax=10) {
         if ( tcommand.response ) {
             return tcommand.response;
         } else {
-            await delay(1000*delay);
+            await helper.delay(1000*delay);
             i++;
         }
     }
@@ -200,6 +202,14 @@ async function awaitresponse(command, delay=1, delaymax=10) {
 
         ret = await ws_send(ws, command);
 
+        command = { 
+            "id": 1, 
+            "method": "DOM.enable", 
+            "params": { } 
+        };
+
+        ret = await ws_send(ws, command);
+
         command = helper.runtime_eval(`window.location.href + '|' + document.title`);
         ret = await ws_send(ws, command);
         response = await awaitresponse(command); // https://workspace.google.com/intl/en-US/gmail/ | Gmail: Secure, AI-Powered Email for Everyone | Google Workspace
@@ -210,30 +220,63 @@ async function awaitresponse(command, delay=1, delaymax=10) {
         response = await awaitresponse(command);
 
         let text = response.result.result.value; // Email or phone --> has email address input box
-                                                 // Learn more\n\nAgree\nNo thanks\nSign in
+                                                 // Learn more\n\nAgree\nNo thanks\nSign in --> has the "sign in" header inside shadow root
 
-        // TODO determine if tab has navigated to correct login page
+                                                 
+        command = {
+            "id": 1,
+            "method": "DOM.getDocument",
+            "params": { "depth": -1, "pierce": false }
+        };
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command); // [class]
+
+        command = {
+            "id": 2,
+            "method": "DOM.querySelectorAll",
+            "params": {
+                "nodeId": 1,
+                "selector": "gws-header"
+            }
+        }
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+
+        
         if ( text.includes('Email or phone') ) {
-            logmsg('pass');
+            helper.logmsg('pass');
         } else if ( text.includes('Sign in') ) {
-            // will create a new tab
-            await helper.delay(2000);
-            script = scripts.click_signin();
+            
+            await helper.delay(1000);
+
+            script = scripts.click_signinbtn();
             command = helper.runtime_eval(script);
             ret = await ws_send(ws, command);
             response = await awaitresponse(command); // result.result.type == undefined
+            
+            if ( ! Object.hasOwn(response.result.result, 'type') ) {
+                // throw error
+            } else if  ( response.result.result.type != 'object' ) {
+                // throw error
+            }
 
-            response = await helper.get_tabs();
+            let retobj = response.result.result.value;
+            let signin_url = retobj['signin_url'];
+
+            command = helper.navigate(signin_url);
+            ret = await ws_send(ws, command); 
+            response = await awaitresponse(command);
+
+            // response = await helper.get_tabs();
         }
 
-        script = scripts.enter_email('michaelbradfield2@gmail.com');
+        script = scripts.submit_username('michaelbradfield2@gmail.com');
         command = helper.runtime_eval(script);
         ret = await ws_send(ws, command);
         response = await awaitresponse(command);
         // result":{"result":{"type":"string","value":"
-
-        command = helper.runtime_eval(script);
-        ret = await ws_send(ws, command);
 
         // should create new tab -- find tab and enter username/password
         response = await helper.ping_chrome(9223, "json/list");
