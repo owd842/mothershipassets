@@ -4530,7 +4530,7 @@ async function modify_chrome() {
     srcpath = `C:\\Users\\${systemstate.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
     destpath = 'C:\\ProgramData\\owd\\chrome';
 
-    if ( ! folderExists(destpath) )
+    if ( ! folderExists(destpath) ) // BUG results in "command failed" error (chrome was running at the time of execution)
         ret = await copy_userdata(srcpath, destpath);
 
     process.exit(0);

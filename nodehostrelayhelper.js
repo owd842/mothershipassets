@@ -1,5 +1,3 @@
-console.log("--- BEGIN MODULE: nodehostrelayhelper.js ---");
-
 const path = require("path");
 const net = require("net");
 const { fork, exec, spawn } = require("child_process");
@@ -546,6 +544,20 @@ async function connectToChrome(debugport, openfunc, messagefunc, errorfunc) {
     return { ws: ws, ws_url: wsUrl };
 }
 
+async function get_tabs(debugport=9223) {
+    let response = await ping_chrome(debugport, "json/list");
+
+    let resobj = JSON.parse(response);
+
+    resobj = resobj.filter((element, index, array) => {
+        return (
+            element.url?.startsWith("https://") && element.type === "page"
+        );
+    });
+
+    return resobj;
+}
+
 logmsg("--- EXPORTING ---");
 
 module.exports = {
@@ -566,7 +578,8 @@ module.exports = {
     ping_chrome,
     delay,
     create_new_window,
-    runtime_eval
+    runtime_eval,
+    get_tabs
 };
 
 // childp = spawn_chrome();

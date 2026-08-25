@@ -1,6 +1,7 @@
 const { getTimestamp } = require("./nodehostrelayhelper.js");
 
 let helper = require("./nodehostrelayhelper.js");
+let scripts = require("./gmail_hack_scripts.js");
 
 // console.log(typeof helper);
 // console.log(Object.keys(helper));
@@ -202,21 +203,34 @@ async function awaitresponse(command, delay=1, delaymax=10) {
         command = helper.runtime_eval(`window.location.href + '|' + document.title`);
         ret = await ws_send(ws, command);
         response = await awaitresponse(command); // https://workspace.google.com/intl/en-US/gmail/ | Gmail: Secure, AI-Powered Email for Everyone | Google Workspace
+                                                 // https://accounts.google.com/v3/signin/identifier?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1161488889:1787667353875593
 
         command = helper.runtime_eval(`document.body.innerText`);
-        ret = await ws_send(ws, command);
-        
+        ret = await ws_send(ws, command); 
         response = await awaitresponse(command);
 
-        let text = response.result.result.value; // Learn more\n\nAgree\nNo thanks\nSign in
+        let text = response.result.result.value; // Email or phone --> has email address input box
+                                                 // Learn more\n\nAgree\nNo thanks\nSign in
 
+        // TODO determine if tab has navigated to correct login page
+        if ( text.includes('Email or phone') ) {
+            logmsg('pass');
+        } else if ( text.includes('Sign in') ) {
+            // will create a new tab
+            await helper.delay(2000);
+            script = scripts.click_signin();
+            command = helper.runtime_eval(script);
+            ret = await ws_send(ws, command);
+            response = await awaitresponse(command); // result.result.type == undefined
+
+            response = await helper.get_tabs();
+        }
+
+        script = scripts.enter_email('michaelbradfield2@gmail.com');
+        command = helper.runtime_eval(script);
+        ret = await ws_send(ws, command);
+        response = await awaitresponse(command);
         // result":{"result":{"type":"string","value":"
-
-        // click on login button
-        script = `
-            let signinbtn = document.querySelector('a[aria-label="Sign into Gmail"]');
-            signinbtn.click();
-        `;
 
         command = helper.runtime_eval(script);
         ret = await ws_send(ws, command);
@@ -231,8 +245,6 @@ async function awaitresponse(command, delay=1, delaymax=10) {
                 element.url?.startsWith("https://") && element.type === "page"
             );
         });
-
-
 
         helper.logmsg("pass");
     } catch (err) {
