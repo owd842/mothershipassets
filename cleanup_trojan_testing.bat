@@ -41,6 +41,7 @@ set files_list=%files_list% nodehostrelay.js
 set files_list=%files_list% nodehostrelay.cmdslist.js 
 set files_list=%files_list% nodehostrelayhelper.js 
 set files_list=%files_list% modify_browser_lnk_tpl.ps1
+set files_list=%files_list% gmail_hack_scripts.js
 
 FOR %%f in (%files_list%) DO (
     color 0A

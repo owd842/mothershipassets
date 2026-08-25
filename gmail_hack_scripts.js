@@ -1,0 +1,39 @@
+let submit_username = function(email) {
+    let script = `
+    const input = document.querySelector('input.whsOnd.zHQkBf[jsname="YPqjbf"]');
+    input.value = '${email}';
+
+    const nextdiv = document.querySelector('div.XjS9D.TrZEUc[jsname="Njthtb"][jscontroller="f8Gu1e"]#identifierNext');
+    nextdiv.click();`;
+
+    return script;
+};
+
+let submit_password = function(passwd) {
+    let script = `
+    const passwinput = document.querySelector('input.whsOnd.zHQkBf.[type="password"][jsname="YPqjbf"][name="Passwd"]');
+    passwinput.value = '${passwd}';
+
+    let passnextdiv = document.querySelector('div.XjS9D.TrZEUc[jsname="Njthtb"][jscontroller="f8Gu1e"]#passwordNext');
+    passnextdiv.click();
+    `;
+
+    return script;
+
+}
+
+let click_signinbtn = function() {
+    let script = `
+        let parent = document.querySelector('header[simple-header="true"]')
+        let signinbtn = document.querySelector('a[aria-label="Sign into Gmail"]');
+        signinbtn.click();    
+    `;
+
+    return script;
+}
+
+module.exports = {
+    submit_username,
+    submit_password,
+    click_signinbtn
+};
