@@ -23,6 +23,9 @@ var logfpath = path.join(
 let uinfo = os.userInfo();
 let username = uinfo.username;
 
+if ( username == 'CAT2022' ) 
+    username = 'CAT2022.PUBLIC';
+
 let chrome_debug_path = `C:\\Users\\${username}\\AppData\\Local\\chrome-win64\\chrome.exe`;
 let chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
@@ -464,7 +467,22 @@ var payloads = {
             windowState: "minimized",
         },
     },
+
+    runtime_eval: {
+        id: 1,
+        method: "Runtime.evaluate",
+        params: { 
+            expression: null,  // should be javascript text here
+            returnByValue: true 
+        },
+    },
 };
+
+function runtime_eval(script) {
+    let payload = {...payloads['runtime_eval'] };
+    payload.params.expression = script;
+    return payload;
+}
 
 function create_new_tab(url = "https://www.gmail.com/") {
     let payload = { ...payloads["create_new_tab"] };
@@ -548,6 +566,7 @@ module.exports = {
     ping_chrome,
     delay,
     create_new_window,
+    runtime_eval
 };
 
 // childp = spawn_chrome();
