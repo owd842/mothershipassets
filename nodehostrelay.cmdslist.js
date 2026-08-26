@@ -24,6 +24,8 @@ function ws_message(data) {
     
     // {"error":{"code":-32600,"message":"Message must have integer 'id' property"}}
 
+    // "method": "Target.attachedToTarget",
+
     // {"method":"Inspector.detached","params":{"reason":"target_closed"}} --> if you close browser window
     // {"method":"Page.lifecycleEvent","params":{"frameId":"5C0A440586EBD8417CE284734004D4B2","loaderId":"81022FBDCDEA3FB502F501034D6B7461","name":"networkIdle","timestamp":153774.07128}}
     // {"method":"Page.frameNavigated","params":{"frame":{"id":"B91B9F6D66CF9888F84A2A9463B54E8F","parentId":"4AC1E0A9A800FE522D2841E53A89C4E9","loaderId":"0F3CD7F10637C9707F275AF4BE140562","name":"","url":"about:blank","domainAndRegistry":"","securityOrigin":"://","securityOriginDetails":{"isLocalhost":false},"mimeType":"text/html","adFrameStatus":{"adFrameType":"none","explanations":[]},"secureContextType":"Secure","crossOriginIsolatedContextType":"NotIsolated","gatedAPIFeatures":[]},"type":"Navigation"}}
@@ -115,7 +117,7 @@ function isPidAlive(pid) {
     }
 }
 
-async function awaitresponse(command, delay=1, delaymax=10) {
+async function awaitresponse(command, delay=1, delaymax=2) {
     delay = delay || 1;
     delaymax = delaymax || 1;
     let i = 0;
@@ -156,8 +158,20 @@ async function awaitresponse(command, delay=1, delaymax=10) {
             await helper.delay(1000);
         }
 
+        let command = {
+            id: 1, // Unique tracking ID
+            method: 'Target.setAutoAttach',
+            params: {
+              autoAttach: true,             // Enable auto-attaching to related targets
+              waitForDebuggerOnStart: false, // Don't pause execution on launch
+              flatten: true                  // Enables "flat" session access via sessionId
+            }
+        };
+        
+        ret = await ws_send(ws, command);
+
         // let command = helper.create_new_tab("https://www.gmail.com");
-        let command = helper.create_new_window("https://www.gmail.com");
+        command = helper.create_new_window("https://www.gmail.com");
 
         ret = await ws_send(ws, command);
 
@@ -174,16 +188,28 @@ async function awaitresponse(command, delay=1, delaymax=10) {
 
         let ws_target_url = "";
         if (resobj && resobj.length <= 0) {
+            throw new Error('no response');
         } else {
             ws_target_url = resobj[0].webSocketDebuggerUrl;
         }
-
+        
         ws = helper.connectToTarget(
             ws_target_url,
             ws_open,
             ws_message,
             ws_error
         );
+
+        command = {
+            id: 1,
+            method: 'Target.attachToTarget',
+            params: {
+              targetId: ws_target_url.split('/').pop(),
+              flatten: true // Recommended for modern CDP session handling
+            }
+        };
+
+        ret = await ws_send(ws, command);
 
         command = { 
             "id": 1, 
