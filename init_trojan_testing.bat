@@ -70,6 +70,8 @@ IF NOT "%output%"=="v26.4.0" (
     echo node version not correct
 )
 
+exit
+
 copy /y %mothershipdir%\.vscode\*.* %trojandir%\.vscode 
 
 set files=nodehostrelay.cmdslist.js

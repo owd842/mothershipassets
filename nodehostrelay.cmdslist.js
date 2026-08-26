@@ -222,7 +222,6 @@ async function awaitresponse(command, delay=1, delaymax=10) {
         let text = response.result.result.value; // Email or phone --> has email address input box
                                                  // Learn more\n\nAgree\nNo thanks\nSign in --> has the "sign in" header inside shadow root
 
-                                                 
         command = {
             "id": 1,
             "method": "DOM.getDocument",
@@ -232,19 +231,93 @@ async function awaitresponse(command, delay=1, delaymax=10) {
         ret = await ws_send(ws, command); 
         response = await awaitresponse(command); // [class]
 
+        command = helper.domquerySelectorAll(1, 'gws-header');
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+        
+        let nodeid = response.result.nodeIds[0];
+
         command = {
-            "id": 2,
-            "method": "DOM.querySelectorAll",
+            "method": "DOM.describeNode",
             "params": {
-                "nodeId": 1,
-                "selector": "gws-header"
+                "nodeId": nodeid,
+                "depth": 1
             }
-        }
+        };
 
         ret = await ws_send(ws, command); 
         response = await awaitresponse(command);
 
+        nodeid = response.result.node.children[0].nodeId;
+
+        let selector = `div.TemplateHeader_headerAside.TemplateHeader_headerAsideWithSearch`;
+        command = helper.domquerySelectorAll(nodeid, selector);
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+
+        nodeid = response.result.nodeIds[0];
+
+        selector = `span.gws-button.breakpoints--mobile.breakpoints--tablet.breakpoints--desktop`;
+        command = helper.domquerySelectorAll(nodeid, selector);
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+
+        nodeid = response.result.nodeIds[0];
+
+        command = {
+            "method": "DOM.describeNode",
+            "params": {
+                "nodeId": nodeid,
+                "depth": 1
+            }
+        };
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+
+        command = {
+            "id": 1,
+            "method": "DOM.getBoxModel",
+            "params": {
+                "nodeId": nodeid
+            }
+        };
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+
+        nodeid = response.result.nodeIds[0];
+
+        command = {
+            "method": "DOM.describeNode",
+            "params": {
+                "nodeId": nodeid,
+                "depth": 1
+            }
+        };
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
         
+        nodeid = response.result.node.children[0].nodeId;
+        // response.node.parentId
+
+        command = {
+            "id": 1,
+            "method": "DOM.getBoxModel",
+            "params": {
+                "nodeId": nodeid
+            }
+        };
+
+        ret = await ws_send(ws, command); 
+        response = await awaitresponse(command);
+        
+        x = (x1 + x2 + x3 + x4) / 4
+        y = (y1 + y2 + y3 + y4) / 4
+
+        // Input.dispatchMouseEvent
+
         if ( text.includes('Email or phone') ) {
             helper.logmsg('pass');
         } else if ( text.includes('Sign in') ) {

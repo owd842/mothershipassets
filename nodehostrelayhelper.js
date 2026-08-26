@@ -490,6 +490,19 @@ function get_dom() {
 
 }
 
+function domquerySelectorAll(nodeid, selector) {
+    let command = {
+        "id": 2,
+        "method": "DOM.querySelectorAll",
+        "params": {
+            "nodeId": nodeid,
+            "selector": selector //css
+        }
+    }
+
+    return command;
+}
+
 function navigate(url) {
     let payload = {
         "id": 1,
@@ -606,7 +619,8 @@ module.exports = {
     runtime_eval,
     get_tabs,
     navigate,
-    get_dom
+    get_dom,
+    domquerySelectorAll
 };
 
 // childp = spawn_chrome();
