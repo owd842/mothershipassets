@@ -24,7 +24,15 @@ function ws_message(data) {
     
     // {"error":{"code":-32600,"message":"Message must have integer 'id' property"}}
 
-    // "method": "Target.attachedToTarget",
+    // { "method":"Target.attachedToTarget",
+    //   "params":{ 
+    //          "sessionId":"D533AA7BDBC113EF6593BDDDFD902795",
+    //          "targetInfo":{ 
+    //              "targetId":"1F2BC053D43892B0AF82E6F4319EF595",
+    //              "type":"page",
+    //              "title":"",
+    //              "url":"https://www.gmail.com/","attached":true,"canAccessOpener":false,"browserContextId":"EE845A4F7E4D9EEAB76FB782C01C7654"},
+    // "waitingForDebugger":false}}
 
     // {"method":"Inspector.detached","params":{"reason":"target_closed"}} --> if you close browser window
     // {"method":"Page.lifecycleEvent","params":{"frameId":"5C0A440586EBD8417CE284734004D4B2","loaderId":"81022FBDCDEA3FB502F501034D6B7461","name":"networkIdle","timestamp":153774.07128}}
@@ -138,6 +146,8 @@ async function awaitresponse(command, delay=1, delaymax=2) {
     return null;
 }
 
+debugport = 9223;
+
 (async () => {
     try {
         // let ret = await helper.kill_chrome();
@@ -148,18 +158,18 @@ async function awaitresponse(command, delay=1, delaymax=2) {
             throw new Error("could not launch or find chrome process");
         }
 
-        let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
+        let ret = await helper.connectToChrome(debugport, ws_open, ws_message, ws_error);
         ws = ret.ws;
         ws_url = ret.ws_url;
-        let bws = ws;
 
-        helper.logmsg(`ws_rul=${ws_url}`);
+        let bws = ws; // original browser ws connection
+
+        helper.logmsg(`ws_url=${ws_url}`);
 
         while ( ! (ws.readyState === WebSocket.OPEN) ) {
             await helper.delay(1000);
         }
 
-        /*
         let command = {
             id: 1, // Unique tracking ID
             method: 'Target.setAutoAttach',
@@ -171,14 +181,12 @@ async function awaitresponse(command, delay=1, delaymax=2) {
         };
         
         ret = await ws_send(ws, command);
-        */
 
-        // let command = helper.create_new_tab("https://www.gmail.com");
-        //command = helper.create_new_window("https://www.gmail.com");
+        command = helper.create_new_tab("https://www.gmail.com");
+        // command = helper.create_new_window("https://www.gmail.com");
+        ret = await ws_send(ws, command);
 
-        //ret = await ws_send(ws, command);
-
-        response = await helper.ping_chrome(9223, "json/list");
+        response = await helper.ping_chrome(debugport, "json/list");
 
         let resobj = JSON.parse(response);
 
@@ -196,6 +204,7 @@ async function awaitresponse(command, delay=1, delaymax=2) {
             ws_target_url = resobj[0].webSocketDebuggerUrl;
         }
         
+        // TODO remove as we are using session
         ws = helper.connectToTarget(
             ws_target_url,
             ws_open,
@@ -249,7 +258,8 @@ async function awaitresponse(command, delay=1, delaymax=2) {
         response = await awaitresponse(command);
 
         let text = response.result.result.value; // Email or phone --> has email address input box
-                                                 // Learn more\n\nAgree\nNo thanks\nSign in --> has the "sign in" header inside shadow root
+                                                 // Learn more\n\nAgree\nNo thanks\nSign in --> has 
+                                                 // the "sign in" header inside shadow root
 
         command = {
             "id": 1,

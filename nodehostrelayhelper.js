@@ -345,8 +345,11 @@ function exec_chrome(
     );
 }
 
-function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome", 
-x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false, headless=false) {
+function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, 
+    datadir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome", 
+    x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false, 
+    headless=false) {
+    
     datadir = datadir.trim();
 
     let cmdlineargs = [
@@ -355,7 +358,6 @@ x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false
         `--disable-notifications`,
         `--disable-infobars`,
         `--suppress-message-center-popups`,
-        // `--new-window ${starturl}`,
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
@@ -367,7 +369,9 @@ x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
         `--hide-crash-restore-bubble`,
-        `--disable-features=WelcomePage,PrivacySandboxSettings4`
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`,
+        `--new-window`,
+        starturl
     ];
 
     let ret = cmdlineargs.filter(item => {
@@ -454,6 +458,7 @@ var payloads = {
         params: {
             url: null,
             newWindow: false,
+            browserContextId: null,
             // "width": 10,
             // "height": 10,
             // // "left": 2000,
@@ -531,8 +536,18 @@ function runtime_eval(script) {
     return payload;
 }
 
-function create_new_tab(url = "https://www.gmail.com/") {
+function create_new_tab(url = "https://www.gmail.com/", browserContextId = null) {
     let payload = { ...payloads["create_new_tab"] };
+    
+    if ( isNullOrWhitespace(browserContextId) ) {
+        
+        if ( Object.hasOwn(payload.params, 'browserContextId') )
+            delete payload.params.browserContextId;
+
+    } else {
+        payload.params['browserContextId'] = browserContextId;
+    }
+    
     payload.params.url = url;
     return payload;
 }
