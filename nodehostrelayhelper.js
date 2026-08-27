@@ -345,25 +345,28 @@ function exec_chrome(
     );
 }
 
-function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\ProgramData\\test_owd\\chrome", 
-x_pos=2000, y_pos=2000, width=10, height=10, restore = false, headless=false) {
+function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, datadir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome", 
+x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false, headless=false) {
+    datadir = datadir.trim();
+
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
-        `--new-window ${starturl}`,
+        `--disable-notifications`,
+        `--disable-infobars`,
+        `--suppress-message-center-popups`,
+        // `--new-window ${starturl}`,
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
-        // `--profile-directory="Profile 1"`,
+        //`--profile-directory="Profile 1"`,
         //`--profile-directory=Default`,
         `--remote-allow-origins=*`,
         restore ? `--restore-last-session` : null,
-        `--ignore-certificate-errors`,
+        ignorecert ? `--ignore-certificate-errors` : null,
         `--window-position=${x_pos},${y_pos}`,
         `--window-size=${width},${height}`,
         `--hide-crash-restore-bubble`,
-        `--disable-notifications`,
-        `--suppress-message-center-popups`,
         `--disable-features=WelcomePage,PrivacySandboxSettings4`
     ];
 
@@ -389,11 +392,11 @@ function spawn_chrome(
 
     // TODO auto discover by reading chrome lnk files
 
-    const child = spawn(chrome_path, [...cmdlineargs], {
-        //detached: true, // might cause errors
+    const child = spawn(chrome_debug_path, [...cmdlineargs], {
+        // detached: true, // might cause errors
         // windowsHide: true,
         // stdio: ["ignore", out, err],
-        //shell: true,
+        // shell: true,
         cwd: path.dirname(chrome_debug_path)
     });
 
