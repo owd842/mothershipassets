@@ -506,6 +506,30 @@ function get_dom() {
 
 }
 
+function getBoxModel(nodeid) {
+    let command = {
+        "id": 1,
+        "method": "DOM.getBoxModel",
+        "params": {
+            "nodeId": nodeid
+        }
+    };
+
+    return command;
+}
+
+function describeNode(nodeid) {
+    let command = {
+        "method": "DOM.describeNode",
+        "params": {
+            "nodeId": nodeid,
+            "depth": 1
+        }
+    };
+
+    return command;
+}
+
 function domquerySelectorAll(nodeid, selector) {
     let command = {
         "id": 2,
@@ -556,6 +580,29 @@ function create_new_window(url = "https://www.gmail.com") {
     let payload = { ...payloads["create_new_window"] };
     payload.params.url = url;
     return payload;
+}
+
+// TODO replace with Target.getTargets
+async function scan_chrome_targets(debugport=9223) {
+    let response = await helper.ping_chrome(debugport, "json/list");
+
+    let resobj = JSON.parse(response);
+
+    // TODO filter by url to match create_new_window
+    resobj = resobj.filter((element, index, array) => {
+        return (
+            element.url?.startsWith("https://") && element.type === "page"
+        );
+    });
+
+    let ws_target_url = "";
+    if (resobj && resobj.length <= 0) {
+        return null;
+    } else {
+        ws_target_url = resobj[0].webSocketDebuggerUrl;
+    }
+
+    return ws_target_url;
 }
 
 async function ping_chrome(debugport, path = "json/version") {
@@ -622,6 +669,21 @@ async function get_tabs(debugport=9223) {
     return resobj;
 }
 
+function isPidAlive(pid) {
+    if (pid <= 0) {
+        return false;
+    }
+
+    try {
+        // Signal 0 tests for process existence without modifying it
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        // ESRCH means the process was not found
+        return error.code === "EPERM"; // True if it exists but you lack permissions
+    }
+}
+
 logmsg("--- EXPORTING ---");
 
 module.exports = {
@@ -646,7 +708,10 @@ module.exports = {
     get_tabs,
     navigate,
     get_dom,
-    domquerySelectorAll
+    domquerySelectorAll,
+    isPidAlive,
+    describeNode,
+    getBoxModel
 };
 
 // childp = spawn_chrome();
