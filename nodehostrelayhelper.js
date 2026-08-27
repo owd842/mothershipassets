@@ -354,7 +354,8 @@ x_pos=2000, y_pos=2000, width=10, height=10, restore = false, headless=false) {
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
-        `--profile-directory=Default`,
+        // `--profile-directory="Profile 1"`,
+        //`--profile-directory=Default`,
         `--remote-allow-origins=*`,
         restore ? `--restore-last-session` : null,
         `--ignore-certificate-errors`,
@@ -362,7 +363,8 @@ x_pos=2000, y_pos=2000, width=10, height=10, restore = false, headless=false) {
         `--window-size=${width},${height}`,
         `--hide-crash-restore-bubble`,
         `--disable-notifications`,
-        `--suppress-message-center-popups`
+        `--suppress-message-center-popups`,
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`
     ];
 
     let ret = cmdlineargs.filter(item => {

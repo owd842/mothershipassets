@@ -151,6 +151,7 @@ async function awaitresponse(command, delay=1, delaymax=2) {
         let ret = await helper.connectToChrome(9223, ws_open, ws_message, ws_error);
         ws = ret.ws;
         ws_url = ret.ws_url;
+        let bws = ws;
 
         helper.logmsg(`ws_rul=${ws_url}`);
 
@@ -158,6 +159,7 @@ async function awaitresponse(command, delay=1, delaymax=2) {
             await helper.delay(1000);
         }
 
+        /*
         let command = {
             id: 1, // Unique tracking ID
             method: 'Target.setAutoAttach',
@@ -169,11 +171,12 @@ async function awaitresponse(command, delay=1, delaymax=2) {
         };
         
         ret = await ws_send(ws, command);
+        */
 
         // let command = helper.create_new_tab("https://www.gmail.com");
-        command = helper.create_new_window("https://www.gmail.com");
+        //command = helper.create_new_window("https://www.gmail.com");
 
-        ret = await ws_send(ws, command);
+        //ret = await ws_send(ws, command);
 
         response = await helper.ping_chrome(9223, "json/list");
 
@@ -202,14 +205,14 @@ async function awaitresponse(command, delay=1, delaymax=2) {
 
         command = {
             id: 1,
-            method: 'Target.attachToTarget',
+            method: 'Target.attachToTarget', // {"id":86502951,"error":{"code":-32000,"message":"Not allowed"}} when sent to original ws -- doesnt' work on new window ws
             params: {
               targetId: ws_target_url.split('/').pop(),
               flatten: true // Recommended for modern CDP session handling
             }
         };
 
-        ret = await ws_send(ws, command);
+        ret = await ws_send(bws, command);
 
         command = { 
             "id": 1, 
