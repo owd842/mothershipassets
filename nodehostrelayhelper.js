@@ -143,17 +143,22 @@ async function activate_chrome(
     start_url = "https://www.gmail.com",
     debugport = 9223,
     headless = false,
-    unref = false
+    unref = false,
+    force = false,
+    delay = 1
 ) {
    
-    let procs = await is_chrome_active(debugport);
+    if ( ! force ) {
+        let procs = await is_chrome_active(debugport);
 
-    if ( procs && procs.length > 0 )
-        return procs;
+        if ( procs && procs.length > 0 )
+            return procs;
+    }
 
     childp = spawn_chrome(start_url, debugport, headless, unref);
 
-    await delay(2000);
+    delay = delay || 1;
+    await delay(1000*delay);
 
     procs = await is_chrome_active(debugport);
 
@@ -346,7 +351,7 @@ function exec_chrome(
 }
 
 function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, 
-    datadir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome", 
+    datadir=`C:\\Users\\${username}\\AppData\\Local\\Google\\test\\chrome`, 
     x_pos=0, y_pos=0, width=1920, height=1080, ignorecert = false, restore = false, 
     headless=false) {
     

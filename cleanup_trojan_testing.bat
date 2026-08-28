@@ -13,7 +13,7 @@ IF "%1"=="update" (
 )
 
 
-FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nul ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
+FOR /F "tokens=1,2" %%A IN ('wmic logicaldisk get name^,volumename 2^>nuls ^| findstr /I /C:"MAIN"') DO SET "DRIVE_LETTER=%%A"
 
 set mothershipdir=%DRIVE_LETTER%\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets
 cd /d %mothershipdir%

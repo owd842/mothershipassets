@@ -192,7 +192,7 @@ async function awaitresponse(command, delay=1, delaymax=2) {
     try {
         // let ret = await helper.kill_chrome();
 
-        let procs = await helper.activate_chrome("https://www.bing.com/"); // anchor
+        let procs = await helper.activate_chrome("https://www.bing.com/",debugport, false, true, true, 1);
 
         if (!procs || procs.length == 0) {
             throw new Error("could not launch or find chrome process");
