@@ -347,7 +347,7 @@ function exec_chrome(
 
 function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, 
     datadir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome", 
-    x_pos=2000, y_pos=2000, width=10, height=10, ignorecert = false, restore = false, 
+    x_pos=0, y_pos=0, width=1920, height=1080, ignorecert = false, restore = false, 
     headless=false) {
     
     datadir = datadir.trim();

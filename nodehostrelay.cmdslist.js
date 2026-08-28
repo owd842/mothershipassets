@@ -1,3 +1,5 @@
+// TODO: move ws logic to nodehostrelayhelper.js
+
 const { getTimestamp } = require("./nodehostrelayhelper.js");
 
 let helper = require("./nodehostrelayhelper.js");
@@ -280,33 +282,15 @@ async function awaitresponse(command, delay=1, delaymax=2) {
                                                  // Learn more\n\nAgree\nNo thanks\nSign in --> has 
                                                  // the "sign in" header inside shadow root
 
+        if ( ! text.includes('Sign in') ) {
+            throw new Error('sign in page expected');
+        }
+        
         command = {
             "id": 1,
             "method": "DOM.getDocument",
             "params": { "depth": -1, "pierce": true }
         };
-        ret = await ws_send(command); 
-        response = await awaitresponse(command); // [class]
-
-        command = helper.domquerySelectorAll(1, 'gws-header');
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-        
-        let nodeid = response.result.nodeIds[0];
-
-        command = helper.describeNode(nodeid); 
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-
-        nodeid = response.result.node.children[0].nodeId;
-
-        let selector = `div.TemplateHeader_headerAside.TemplateHeader_headerAsideWithSearch`;
-        command = helper.domquerySelectorAll(nodeid, selector);
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-        nodeid = response.result.nodeIds[0];
-
-        command = helper.getBoxModel(nodeid);
         ret = await ws_send(command); 
         response = await awaitresponse(command);
 
@@ -314,6 +298,12 @@ async function awaitresponse(command, delay=1, delaymax=2) {
             let root = document.querySelectorAll('gws-header')[0].shadowRoot.querySelector('slot');
             root = root.assignedNodes()[1].querySelector('div').querySelector('div.TemplateHeader_headerAside.TemplateHeader_headerAsideWithSearch');
             root = root.querySelector('span.gws-button.breakpoints--mobile.breakpoints--tablet.breakpoints--desktop');
+            
+            root.addEventListener('click', (event) => {
+                console.log('Element was clicked!');
+                // 'event.target' refers to the clicked element
+                console.log(event.target); 
+            });
             
             root.style.display = 'inline-block';
 
@@ -323,63 +313,44 @@ async function awaitresponse(command, delay=1, delaymax=2) {
         command = helper.runtime_eval(script);
         ret = await ws_send(command); 
         response = await awaitresponse(command);
-
-
-        selector = `span.gws-button.breakpoints--mobile.breakpoints--tablet.breakpoints--desktop`;
-        command = helper.domquerySelectorAll(nodeid, selector);
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-
         
+        if ( ! response?.result?.result?.type == 'object' ) {
+            throw new Error('not able to extract coords for ')
+        }
 
-        nodeid = response.result.nodeIds[0];
+        let coords = response.result.result.value;
+        let x_pos = ( coords.left + coords.right ) / 2;
+        let y_pos = ( coords.top + coords.bottom ) / 2;
 
-        command = helper.getBoxModel(nodeid);
+        command = {
+            "id": 1,
+            "method": "Input.dispatchMouseEvent",
+            "params": {
+                "type": "mousePressed", // mousePressed, mouseReleased, mouseMoved, mouseWheel
+                "x": x_pos,
+                "y": y_pos,
+                button: "left",
+                clickCount: 1              
+            }
+        };
         ret = await ws_send(command); 
         response = await awaitresponse(command);
 
         command = {
             "id": 1,
-            "method": "DOM.getContentQuads",
+            "method": "Input.dispatchMouseEvent",
             "params": {
-                "nodeId": nodeid,
+                "type": "mouseReleased", // mousePressed, mouseReleased, mouseMoved, mouseWheel
+                "x": x_pos,
+                "y": y_pos,
+                button: "left",
+                clickCount: 1              
             }
         };
         ret = await ws_send(command); 
         response = await awaitresponse(command);
 
-
-        nodeid = response.result.nodeIds[0];
-
-        command = {
-            "method": "DOM.describeNode",
-            "params": {
-                "nodeId": nodeid,
-                "depth": 1
-            }
-        };
-
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-        
-        nodeid = response.result.node.children[0].nodeId;
-        // response.node.parentId
-
-        command = {
-            "id": 1,
-            "method": "DOM.getBoxModel",
-            "params": {
-                "nodeId": nodeid
-            }
-        };
-
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
-        
-        x = (x1 + x2 + x3 + x4) / 4
-        y = (y1 + y2 + y3 + y4) / 4
-
-        // Input.dispatchMouseEvent
+        await helper.delay(10*1000);
 
         if ( text.includes('Email or phone') ) {
             helper.logmsg('pass');
