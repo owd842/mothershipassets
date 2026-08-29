@@ -1,3 +1,5 @@
+let helper = require("./nodehostrelay.helper.js");
+
 const path = require("path");
 const net = require("net");
 const { fork, exec, spawn } = require("child_process");
@@ -7,25 +9,8 @@ const crypto = require("crypto");
 const util = require("util");
 const WebSocket = require("ws");
 
-let modulename = path.basename(module.id);
-
-var scriptdirpath = path.dirname(process.argv[1]);
-var scriptfname = path.basename(process.argv[1]);
-var logfpath = path.join(
-    scriptdirpath,
-    scriptfname + "_" + getTimestamp() + ".log"
-);
-
-let uinfo = os.userInfo();
-let username = uinfo.username;
-
-if ( username == 'CAT2022' ) 
-    username = 'CAT2022.PUBLIC';
-
-let chrome_debug_path = `C:\\Users\\${username}\\AppData\\Local\\chrome-win64\\chrome.exe`;
+let chrome_debug_path = `C:\\Users\\${helper.username}\\AppData\\Local\\chrome-win64\\chrome.exe`;
 let chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function csvToJson(csvData) {
     const lines = csvData.split(/[\r\n]+/).filter((line) => line.trim() !== "");
@@ -168,82 +153,6 @@ async function getProcessList_wmic() {
     return jsondata;
 }
 
-function getCallerName() {
-    const originalFunc = Error.prepareStackTrace;
-
-    try {
-        Error.prepareStackTrace = (err, stack) => stack;
-
-        const err = new Error();
-        const currentStack = err.stack;
-
-        if (currentStack && currentStack[2]) {
-            return currentStack[2].getFunctionName() || "SYSTEM";
-        }
-    } catch (e) {
-    } finally {
-        Error.prepareStackTrace = originalFunc;
-    }
-
-    return "unknown";
-}
-
-function getRandomCode(n) {
-    const min = Math.pow(10, n - 1);
-    const max = Math.pow(10, n) - 1;
-
-    return crypto.randomInt(min, max + 1).toString();
-}
-
-function isNullOrWhitespace(str) {
-    if (typeof str === "undefined" || str === null ) {
-        return true;
-    }
-
-    if (!(typeof str === "string")) return true;
-
-    return !str || !str.trim();
-}
-
-function logmsg(msgstr) {
-    let callername = getCallerName();
-
-    let prelude = `|${modulename}|${scriptfname}|${String(
-        process.pid
-    )}|${callername}`;
-    let msgout = "";
-
-    if (msgstr instanceof Error) {
-        msgout = prelude + "|" + util.inspect(msgstr);
-    } else if (typeof msgstr === "string") {
-        msgout = prelude + "|" + msgstr;
-    }
-
-    console.log(msgout);
-
-    if (!isNullOrWhitespace(logfpath))
-        fs.appendFileSync(logfpath, msgout + "\r\n", "utf8");
-}
-
-function getTimestamp() {
-    const date = new Date();
-
-    // Extract components
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0"); //
-    const day = String(date.getDate()).padStart(2, "0"); //
-    const hours = String(date.getHours()).padStart(2, "0"); //
-    const minutes = String(date.getMinutes()).padStart(2, "0"); //
-    const seconds = String(date.getSeconds()).padStart(2, "0"); //
-    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
-
-    // Combine into final strings
-    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
-    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
-
-    return fullWithMs;
-}
-
 function isPidAlive(pid) {
     if (pid <= 0) {
         return false;
@@ -309,7 +218,7 @@ function exec_chrome(
 
 // start chrome --remote-debugging-port=9223 --user-data-dir=C:\Users\LC2022\AppData\Local\Google\test\chrome
 function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, 
-    datadir=`C:\\Users\\${username}\\AppData\\Local\\Google\\test\\chrome`, 
+    datadir=`C:\\Users\\${helper.username}\\AppData\\Local\\Google\\test\\chrome`, 
     x_pos=0, y_pos=0, width=1920, height=1080, ignorecert = false, restore = false, 
     headless=false) {
     
@@ -391,5 +300,35 @@ function spawn_chrome(
     return child;
 }
 
+// note: spawning chrome process --> results in a PID that differs from launch
+// ! can't use isPidAlive to check if pid is active
+async function activate_chrome(
+    start_url = "https://www.gmail.com",
+    debugport = 9223,
+    headless = false,
+    unref = false,
+    force = false,
+    delay = 1
+) {
+   
+    if ( ! force ) {
+        let procs = await is_chrome_active(debugport);
+
+        if ( procs && procs.length > 0 )
+            return procs;
+    }
+
+    childp = spawn_chrome(start_url, debugport, headless, unref);
+
+    delay = delay || 1;
+    await delay(1000*delay);
+
+    procs = await is_chrome_active(debugport);
+
+    return procs;
+}
+
 module.exports = {
+    activate_chrome,
+    spawn_chrome
 };
