@@ -14,7 +14,7 @@ let commands = [];
 var ws_session_list = [];
 
 // ws_session
-Object.defineProperty(module.exports, 'ws_session', {
+Object.defineProperty(globalThis, 'ws_session', {
     get() {
         if ( ! ws_session_list )
             return null;
@@ -28,7 +28,7 @@ Object.defineProperty(module.exports, 'ws_session', {
 });
 
 // ws_sessionid
-Object.defineProperty(module.exports, 'ws_sessionid', {
+Object.defineProperty(globalThis, 'ws_sessionid', {
     get() {
         return ws_session.sessionId;
     },
@@ -76,11 +76,20 @@ var payloads = {
             returnByValue: true 
         },
     },
+
+    getscreenshot: {
+        "cmd": "Page.captureScreenshot",
+        "args": {
+            "format": "jpeg",
+            "quality": 80,
+            "captureBeyondViewport": true
+        }
+    }
 };
 
 
 function ws_open() {
-    helper.logmsg(`Connected to Chrome DevTools Protocol -- ${targetUrl}`);
+    helper.logmsg(`Connected to Chrome DevTools Protocol`);
 }
 
 function ws_message(data) {
@@ -154,6 +163,18 @@ function ws_error(err) {
     helper.logmsg(err);
 }
 
+async function waitForSocket(delay=1) {
+    while ( ! (ws.readyState === WebSocket.OPEN) ) {
+        await helper.delay(1000*delay);
+    }
+}
+
+async function ws_send_cmd(command, sendToBrowser=false) {
+    let ret = await ws_send(command, sendToBrowser=false);
+    response = await awaitresponse(command);
+    return response;
+}
+
 async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdelayn=1, postdelay=1) {
     
     if ( ! sendToBrowser ) {
@@ -170,7 +191,7 @@ async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdela
 
     let jsonstr = JSON.stringify(command);
 
-    command.ts = getTimestamp();
+    command.ts = helper.getTimestamp();
     commands.push(command);
 
     helper.logmsg(`sending message: ${jsonstr}`);
@@ -206,7 +227,7 @@ async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdela
     return { error:true, msg:`WebSocket not open readyState=${ws.readyState}` };
 }
 
-async function awaitresponse(command, delay=1, delaymax=2) {
+async function awaitresponse(command, delay=1, delaymax=10) {
     delay = delay || 1;
     delaymax = delaymax || 1;
     let i = 0;
@@ -216,7 +237,7 @@ async function awaitresponse(command, delay=1, delaymax=2) {
             return c.id == id;
         });
         
-        if ( tcommand.response ) {
+        if ( tcommand?.response ) {
             return tcommand.response;
         } else {
             await helper.delay(1000*delay);
@@ -225,6 +246,13 @@ async function awaitresponse(command, delay=1, delaymax=2) {
     }
 
     return null;
+}
+
+function getscreenshot() {
+    let payload = {...payloads['getscreenshot'] };
+    payload = structuredClone(payload);
+    payload.params.expression = script;
+    return payload;
 }
 
 function get_dom(pierce=true, depth=-1) {
@@ -273,6 +301,21 @@ function click_release(x_pos, y_pos,  button='left', clickCount=1) {
     return command;
 }
 
+async function getTargetInfo() {
+    let command = { "method": "Target.getTargetInfo" };
+    let response = await ws_send_cmd(command); 
+    return response;
+}
+
+async function getBodyText() {
+    let command = runtime_eval(`document.body.textContent`);
+    let response = await ws_send_cmd(command); 
+
+    let text = response?.result.result.value;
+
+    return text;
+}
+
 async function click(x_pos, y_pos) {
     let command = click_pressed(x_pos, y_pos);
     let ret = await ws_send(command); 
@@ -281,6 +324,8 @@ async function click(x_pos, y_pos) {
     command = click_release(x_pos, y_pos);
     ret = await ws_send(command); 
     response = await awaitresponse(command);
+
+    return response;
 }
 
 function getBoxModel(nodeid) {
@@ -333,14 +378,16 @@ function navigate(url) {
 
 function runtime_eval(script) {
     let payload = {...payloads['runtime_eval'] };
+    payload = structuredClone(payload);
     payload.params.expression = script;
     return payload;
 }
 
 function create_new_tab(url = "https://www.gmail.com/", browserContextId = null) {
     let payload = { ...payloads["create_new_tab"] };
-    
-    if ( isNullOrWhitespace(browserContextId) ) {
+    payload = structuredClone(payload);
+
+    if ( helper.isNullOrWhitespace(browserContextId) ) {
         
         if ( Object.hasOwn(payload.params, 'browserContextId') )
             delete payload.params.browserContextId;
@@ -355,6 +402,8 @@ function create_new_tab(url = "https://www.gmail.com/", browserContextId = null)
 
 function create_new_window(url = "https://www.gmail.com") {
     let payload = { ...payloads["create_new_window"] };
+    payload = structuredClone(payload);
+
     payload.params.url = url;
     return payload;
 }
@@ -383,7 +432,7 @@ async function scan_chrome_targets(debugport=9223) {
 }
 
 async function ping_chrome(debugport, path = "json/version") {
-    if (!isNullOrWhitespace(path) && !path.startsWith("/")) {
+    if ( ! helper.isNullOrWhitespace(path) && !path.startsWith("/")) {
         path = "/" + path;
     }
 
@@ -424,7 +473,7 @@ async function connectToChrome(debugport) {
     ws_url = targets.webSocketDebuggerUrl;
 
     // ws_url = "ws://localhost:9222/devtools/page/"+targetid
-    ws = connectToTarget(wsUrl);
+    ws = connectToTarget(ws_url);
 
     return ws;
 }
@@ -521,5 +570,16 @@ module.exports = {
     create_new_tab,
     setAutoAttach,
     waitForSession,
-    enableDomains
+    enableDomains,
+    ws_send,
+    ws_send_cmd,
+    waitForSocket,
+    click,
+    runtime_eval,
+    getBodyText,
+    getscreenshot,
+    getTargetInfo,
+    commands,
+    ws_session_list,
+    ws
 };

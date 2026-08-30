@@ -1,28 +1,74 @@
-// TODO: move ws logic to nodehostrelayhelper.js
+// start "" /min "C:\Program Files\Adobe\Adobe Creative Cloud Experience\libs\node.exe" --inspect-brk G:\WORKING\hacking_WORK\DevOps\git_repo\mothershipassets\nodehostrelay.cmdslist.js
+/* add to launch.json
+        {
+            "name": "Attach to Command Line",
+            "type": "node",
+            "request": "attach",
+            "port": 9229,
+            "skipFiles": ["<node_internals>/**"],
+            "restart": true,
+            "preLaunchTask": "Run My Script",
+            "env": {
+                "NODE_PATH": "${workspaceFolder}/node_modules"
+            },
+        },
+
+    tasks.json
+    {
+        "version": "2.0.0",
+        "tasks": [
+            {
+            "label": "Run My Script",
+            "type": "shell",
+            "command":"${file}",
+            "isBackground": true,
+            "args": ["--inspect-brk=9229"],
+            "options": {
+                "shell": {
+                "executable": "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe"
+                }
+            }
+
+            }
+        ]
+    }
+*/
+
+debugger;
 
 let helper = require("./nodehostrelay.helper.js");
 let helper_ws = require("./nodehostrelay.helper.ws.js");
-let helper_ps = require("./nodehostrelay.helper.js");
-
+let helper_ps = require("./nodehostrelay.helper.ps.js");
 let scripts = require("./gmail_hack_scripts.js");
 
-// console.log(typeof helper);
-// console.log(Object.keys(helper));
 
 let debugport = 9223;
 
 helper.logmsg("starting cmdslist");
 
+function keepRunning() {
+    helper.logmsg("looping... " + helper.getTimestamp());
+
+    setTimeout(keepRunning, 1000);
+}
+
 async function get_gmail_signin_pos() {
-    let command = helper_ws.runtime_eval(scripts.signinbtncoords);
-    let ret = await ws_send(command); 
-    let response = await awaitresponse(command);
+    let command = helper_ws.runtime_eval(scripts.signinbtncoords());
+    let response = await helper_ws.ws_send_cmd(command); 
     
+    if ( ! response ) {
+        throw new Error('response is null');
+    }
+
+    if ( response && Object.hasOwn(response,'error') ) {
+        throw new Error(response['error']);
+    }
+
     if ( ! response?.result?.result?.type == 'object' ) {
         throw new Error('not able to extract coords for ')
     }
 
-    let coords = response.result.result.value;
+    let coords = response.result?.result.value;
     let x_pos = ( coords.left + coords.right ) / 2;
     let y_pos = ( coords.top + coords.bottom ) / 2;
 
@@ -33,40 +79,37 @@ async function get_gmail_signin_pos() {
     try {
         // let ret = await helper.kill_chrome();
 
-        let procs = await helper_ps.activate_chrome("https://www.bing.com/",debugport, false, true, true, 1);
+        let procs = await helper_ps.activate_chrome("https://www.bing.com/", debugport, false, true, true, 1);
 
         if (!procs || procs.length == 0) {
             throw new Error(`could not launch or find valid chrome process with debug port ${debugport}`);
         }
 
-        let ws = await helper_ws.connectToChrome(debugport, ws_open, ws_message, ws_error);
+        let ws = await helper_ws.connectToChrome(debugport);
+
+        await helper_ws.waitForSocket();
         
-        while ( ! (ws.readyState === WebSocket.OPEN) ) {
-            await helper.delay(1000);
-        }
-
+        let text = '';
+        let script = '';
         let response = await helper_ws.setAutoAttach();
-
-        command = helper.create_new_tab("https://www.gmail.com");   // helper.create_new_window("https://www.gmail.com");
-        ret = await ws_send(command, true);
-        response = await awaitresponse(command);
+        
+        command = helper_ws.create_new_tab("https://www.gmail.com");   // helper.create_new_window("https://www.gmail.com");
+        response = await helper_ws.ws_send_cmd(command, true);
 
         await helper_ws.waitForSession();
-       
         await helper_ws.enableDomains();
 
         command = helper_ws.runtime_eval(`window.location.href + '|' + document.title`);
-        ret = await ws_send(command);
-        response = await awaitresponse(command); // https://workspace.google.com/intl/en-US/gmail/ | Gmail: Secure, AI-Powered Email for Everyone | Google Workspace
-                                                 // https://accounts.google.com/v3/signin/identifier?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1161488889:1787667353875593
+        response = await helper_ws.ws_send_cmd(command);
 
-        command = helper_ws.runtime_eval(`document.body.innerText`);
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
+        text = await helper_ws.getBodyText(); // Email or phone --> has email address input box
+                                                  // Learn more\n\nAgree\nNo thanks\nSign in 
+                                                  // --> has the "sign in" header inside shadow root
 
-        let text = response.result.result.value; // Email or phone --> has email address input box
-                                                 // Learn more\n\nAgree\nNo thanks\nSign in 
-                                                 // --> has the "sign in" header inside shadow root
+        // https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
+        // Choose an account
+        response = await helper_ws.getTargetInfo();
+
 
         if ( ! text.includes('Sign in') ) {
             throw new Error('sign in page expected');
@@ -74,36 +117,35 @@ async function get_gmail_signin_pos() {
         
         // ? why do we need this
         command = helper_ws.get_dom();
-        ret = await ws_send(command); 
-        response = await awaitresponse(command);
+        response = await helper_ws.ws_send_cmd(command); 
 
         if ( text.includes('Email or phone') ) {    // username/password input page
             helper.logmsg('pass');
         } else if ( text.includes('Sign in') ) {     // sign in button page
-            let coords = await get_gmail_signin_pos;
+            let coords = await get_gmail_signin_pos();
             let x_pos = coords.x_pos; 
             let y_pos = coords.y_pos;
-            helper_ws.click(x_pos, y_pos);
+            response = await helper_ws.click(x_pos, y_pos);
         }
 
-        await helper.delay(100*1000);
+        text = await helper_ws.getBodyText();
+        if ( ! (text.includes('Email or phone') && text.includes('Forgot email?') ) ) {
+            throw new Error('did not reach username/password page as expected');
+        }
 
-        let script = scripts.submit_username('michaelbradfield2@gmail.com');
-        command = helper.runtime_eval(script);
-        ret = await ws_send(command);
-        response = await awaitresponse(command);
-        // result":{"result":{"type":"string","value":"
+        // opens new tab
+        script = scripts.submit_username('michaelbradfield2@gmail.com');
+        command = helper_ws.runtime_eval(script);
+        response = await helper_ws.ws_send_cmd(command);
 
-        // should create new tab -- find tab and enter username/password
-        response = await helper.ping_chrome(9223, "json/list");
+        // text = await helper_ws.getBodyText();
+        //if ( ! (text.includes('Email or phone') && text.includes('Forgot email?') ) ) {
+        //    throw new Error('did not reach username/password page as expected');
+        //}
 
-        resobj = JSON.parse(response);
-
-        resobj = resobj.filter((element, index, array) => {
-            return (
-                element.url?.startsWith("https://") && element.type === "page"
-            );
-        });
+        script = scripts.submit_password('ebed068653673bbea79bf1ee0b365362');
+        command = helper_ws.runtime_eval(script);
+        response = await helper_ws.ws_send_cmd(command);
 
         helper.logmsg("pass");
     } catch (err) {
@@ -111,10 +153,5 @@ async function get_gmail_signin_pos() {
     }
 })();
 
-function keepRunning() {
-    helper.logmsg("looping... " + helper.getTimestamp());
-
-    setTimeout(keepRunning, 1000);
-}
 
 keepRunning();

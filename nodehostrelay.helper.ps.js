@@ -105,7 +105,7 @@ async function is_chrome_active(debugport = 9223, userdatadir=null) {
 
         let check_c = true;
         
-        if ( ! isNullOrWhitespace(userdatadir) ) {
+        if ( ! helper.isNullOrWhitespace(userdatadir) ) {
             let token = 'user-data-dir';
             
             if ( Object.hasOwn(cmdlineargs, token) )
@@ -247,7 +247,7 @@ function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223,
     ];
 
     let ret = cmdlineargs.filter(item => {
-        return ! isNullOrWhitespace(item);
+        return ! helper.isNullOrWhitespace(item);
     });
 
     return ret;
@@ -287,7 +287,7 @@ function spawn_chrome(
         let text = data.toString();
 
         if (stderrfunc) stderrfunc(text);
-        else logmsg(text);
+        else helper.logmsg(text);
     });
 
     child.on("close", (code) => {
@@ -321,7 +321,7 @@ async function activate_chrome(
     childp = spawn_chrome(start_url, debugport, headless, unref);
 
     delay = delay || 1;
-    await delay(1000*delay);
+    await helper.delay(1000*delay);
 
     procs = await is_chrome_active(debugport);
 

@@ -26,7 +26,7 @@ let submit_username = function(email) {
 
 let submit_password = function(passwd) {
     let script = `
-    const passwinput = document.querySelector('input.whsOnd.zHQkBf.[type="password"][jsname="YPqjbf"][name="Passwd"]');
+    const passwinput = document.querySelector('input.whsOnd.zHQkBf[type="password"][jsname="YPqjbf"][name="Passwd"]');
     passwinput.value = '${passwd}';
 
     let passnextdiv = document.querySelector('div.XjS9D.TrZEUc[jsname="Njthtb"][jscontroller="f8Gu1e"]#passwordNext');
