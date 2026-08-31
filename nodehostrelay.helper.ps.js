@@ -245,6 +245,7 @@ function chrome_cmdlineargs(
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
         `--no-default-browser-check`,
+        `--disable-signin-promo`,
         //`--profile-directory="Profile 1"`,
         //`--profile-directory=Default`,
         `--remote-allow-origins=*`,

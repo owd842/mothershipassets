@@ -143,15 +143,7 @@ async function get_gmail_signin_pos() {
   },
 }
         */
-
-        if (!text.includes("Sign in")) {
-            throw new Error("sign in page expected");
-        }
-
-        // ? why do we need this
-        command = helper_ws.get_dom();
-        response = await helper_ws.ws_send_cmd(command);
-
+        // Sign inwith your Google Account to continue to Gmail.
         if (text.includes("Email or phone")) {
             // username/password input page
             helper.logmsg("pass");
@@ -175,10 +167,8 @@ async function get_gmail_signin_pos() {
         command = helper_ws.runtime_eval(script);
         response = await helper_ws.ws_send_cmd(command);
 
-        // text = await helper_ws.getBodyText();
-        //if ( ! (text.includes('Email or phone') && text.includes('Forgot email?') ) ) {
-        //    throw new Error('did not reach username/password page as expected');
-        //}
+        // TODO check that username was entered and page navigates to password field
+        
 
         script = scripts.submit_password("ebed068653673bbea79bf1ee0b365362");
         command = helper_ws.runtime_eval(script);
