@@ -14,28 +14,26 @@ let commands = [];
 var ws_session_list = [];
 
 // ws_session
-Object.defineProperty(globalThis, 'ws_session', {
+Object.defineProperty(globalThis, "ws_session", {
     get() {
-        if ( ! ws_session_list )
-            return null;
+        if (!ws_session_list) return null;
 
         let n = ws_session_list.length;
 
-        return ws_session_list[n-1];
+        return ws_session_list[n - 1];
     },
     configurable: true,
-    enumerable: true
+    enumerable: true,
 });
 
 // ws_sessionid
-Object.defineProperty(globalThis, 'ws_sessionid', {
+Object.defineProperty(globalThis, "ws_sessionid", {
     get() {
         return ws_session.sessionId;
     },
     configurable: true,
-    enumerable: true
+    enumerable: true,
 });
-
 
 var payloads = {
     create_new_tab: {
@@ -71,22 +69,22 @@ var payloads = {
     runtime_eval: {
         id: 1,
         method: "Runtime.evaluate",
-        params: { 
-            expression: null,  // should be javascript text here
-            returnByValue: true 
+        params: {
+            expression: null, // should be javascript text here
+            returnByValue: true,
         },
     },
 
     getscreenshot: {
-        "cmd": "Page.captureScreenshot",
-        "args": {
-            "format": "jpeg",
-            "quality": 80,
-            "captureBeyondViewport": true
-        }
-    }
+        cmd: "Page.captureScreenshot",
+        args: {
+            format: "jpeg",
+            quality: 80,
+            captureBeyondViewport: true,
+            fromSurface: true,
+        },
+    },
 };
-
 
 function ws_open() {
     helper.logmsg(`Connected to Chrome DevTools Protocol`);
@@ -97,7 +95,7 @@ function ws_message(data) {
 
     // {"id":1,"result":{"result":{"type":"undefined"}}}
     // {"id":12131489,"result":{}}
-    
+
     // {"error":{"code":-32600,"message":"Message must have integer 'id' property"}}
 
     // { "method":"Runtime.consoleAPICalled",
@@ -111,9 +109,9 @@ function ws_message(data) {
     //          "preview":{"type":"object","description":"DOMRect","overflow":true,"properties":[{"name":"x","type":"number","value":"401.4250183105469"},{"name":"y","type":"number","value":"10.199999809265137"},{"name":"width","type":"number","value":"71.375"},{"name":"height","type":"number","value":"35.587501525878906"},{"name":"top","type":"number","value":"10.199999809265137"}]}}
 
     // { "method":"Target.attachedToTarget",
-    //   "params":{ 
+    //   "params":{
     //          "sessionId":"D533AA7BDBC113EF6593BDDDFD902795",
-    //          "targetInfo":{ 
+    //          "targetInfo":{
     //              "targetId":"1F2BC053D43892B0AF82E6F4319EF595",
     //              "type":"page",
     //              "title":"",
@@ -130,32 +128,32 @@ function ws_message(data) {
 
     let responseobj = JSON.parse(data);
 
-    
-    if ( Object.hasOwn(responseobj, 'method') ) {
-
-        if ( responseobj.method == 'Target.attachedToTarget' )  {
+    if (Object.hasOwn(responseobj, "method")) {
+        if (responseobj.method == "Target.attachedToTarget") {
             let params = responseobj.params;
 
-            ws_session_list.push(params);
+            if (
+                Object.hasOwn(params.targetInfo, "type") &&
+                params.targetInfo["type"] == "page"
+            ) {
+                ws_session_list.push(params);
+            }
         }
 
         return;
     }
 
-    if ( ! Object.hasOwn(responseobj, 'id') ) {
+    if (!Object.hasOwn(responseobj, "id")) {
         return;
     }
 
     let command = commands.find((c) => {
-
-        if ( ! Object.hasOwn(c, 'id') )
-            return false;
+        if (!Object.hasOwn(c, "id")) return false;
 
         return String(c.id) == String(responseobj.id);
     });
 
-    if ( command )
-        command['response'] = responseobj;
+    if (command) command["response"] = responseobj;
 }
 
 function ws_error(err) {
@@ -163,25 +161,31 @@ function ws_error(err) {
     helper.logmsg(err);
 }
 
-async function waitForSocket(delay=1) {
-    while ( ! (ws.readyState === WebSocket.OPEN) ) {
-        await helper.delay(1000*delay);
+async function waitForSocket(delay = 1) {
+    while (!(ws.readyState === WebSocket.OPEN)) {
+        await helper.delay(1000 * delay);
     }
 }
 
-async function ws_send_cmd(command, sendToBrowser=false) {
-    let ret = await ws_send(command, sendToBrowser=false);
+async function ws_send_cmd(command, sendToBrowser = false) {
+    let ret = await ws_send(command, sendToBrowser);
     response = await awaitresponse(command);
     return response;
 }
 
-async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdelayn=1, postdelay=1) {
-    
-    if ( ! sendToBrowser ) {
-        if ( ! ws_session ) {
-            throw new Error('ws session is null');
-        } else if ( helper.isNullOrWhitespace(ws_session.sessionId) ) {
-            throw new Error('ws session id is missing');
+async function ws_send(
+    command,
+    sendToBrowser = false,
+    delayn = 1,
+    delay = 1,
+    postdelayn = 1,
+    postdelay = 1
+) {
+    if (!sendToBrowser) {
+        if (!ws_session) {
+            throw new Error("ws session is null");
+        } else if (helper.isNullOrWhitespace(ws_session.sessionId)) {
+            throw new Error("ws session id is missing");
         }
 
         command.sessionId = ws_session.sessionId;
@@ -200,12 +204,10 @@ async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdela
     delayn = delayn || 0;
 
     let i = 0;
-    while ( ! (ws.readyState === WebSocket.OPEN) ) {
+    while (!(ws.readyState === WebSocket.OPEN)) {
+        if (delayn >= 0 && i >= delayn) break;
 
-        if ( delayn >= 0 && i >= delayn )
-            break;
-
-        await helper.delay(1000*delay);
+        await helper.delay(1000 * delay);
 
         i++;
     }
@@ -216,31 +218,34 @@ async function ws_send(command, sendToBrowser=false, delayn=1, delay=1, postdela
         let i = 0;
         postdelayn = postdelayn || 0;
         postdelay = postdelay || 0;
-        while ( i <  postdelayn ) {
-            await helper.delay(1000*postdelay);
+        while (i < postdelayn) {
+            await helper.delay(1000 * postdelay);
             i++;
         }
 
         return ret;
     }
 
-    return { error:true, msg:`WebSocket not open readyState=${ws.readyState}` };
+    return {
+        error: true,
+        msg: `WebSocket not open readyState=${ws.readyState}`,
+    };
 }
 
-async function awaitresponse(command, delay=1, delaymax=10) {
+async function awaitresponse(command, delay = 1, delaymax = 10) {
     delay = delay || 1;
     delaymax = delaymax || 1;
     let i = 0;
-    while ( true && (i < delaymax) ) {
+    while (true && i < delaymax) {
         let id = command.id;
-        let tcommand = commands.find(c => {
+        let tcommand = commands.find((c) => {
             return c.id == id;
         });
-        
-        if ( tcommand?.response ) {
+
+        if (tcommand?.response) {
             return tcommand.response;
         } else {
-            await helper.delay(1000*delay);
+            await helper.delay(1000 * delay);
             i++;
         }
     }
@@ -249,67 +254,66 @@ async function awaitresponse(command, delay=1, delaymax=10) {
 }
 
 function getscreenshot() {
-    let payload = {...payloads['getscreenshot'] };
+    let payload = { ...payloads["getscreenshot"] };
     payload = structuredClone(payload);
     payload.params.expression = script;
     return payload;
 }
 
-function get_dom(pierce=true, depth=-1) {
-    let payload = { 
-        "id": 1, 
-        "method": "DOM.getDocument", 
-        "params": { 
-            "depth": depth, 
-            "pierce": pierce
-        } 
+function get_dom(pierce = true, depth = -1) {
+    let payload = {
+        id: 1,
+        method: "DOM.getDocument",
+        params: {
+            depth: depth,
+            pierce: pierce,
+        },
     };
 
     return payload;
-
 }
 
-function click_pressed(x_pos, y_pos, button='left', clickCount=1) {
+function click_pressed(x_pos, y_pos, button = "left", clickCount = 1) {
     let command = {
-        "id": 1,
-        "method": "Input.dispatchMouseEvent",
-        "params": {
-            "type": "mousePressed", // mousePressed, mouseReleased, mouseMoved, mouseWheel
-            "x": x_pos,
-            "y": y_pos,
+        id: 1,
+        method: "Input.dispatchMouseEvent",
+        params: {
+            type: "mousePressed", // mousePressed, mouseReleased, mouseMoved, mouseWheel
+            x: x_pos,
+            y: y_pos,
             button: button,
-            clickCount: clickCount
-        }
+            clickCount: clickCount,
+        },
     };
 
     return command;
 }
 
-function click_release(x_pos, y_pos,  button='left', clickCount=1) {
+function click_release(x_pos, y_pos, button = "left", clickCount = 1) {
     let command = {
-        "id": 1,
-        "method": "Input.dispatchMouseEvent",
-        "params": {
-            "type": "mouseReleased", // mousePressed, mouseReleased, mouseMoved, mouseWheel
-            "x": x_pos,
-            "y": y_pos,
+        id: 1,
+        method: "Input.dispatchMouseEvent",
+        params: {
+            type: "mouseReleased", // mousePressed, mouseReleased, mouseMoved, mouseWheel
+            x: x_pos,
+            y: y_pos,
             button: button,
-            clickCount: clickCount              
-        }
+            clickCount: clickCount,
+        },
     };
 
     return command;
 }
 
 async function getTargetInfo() {
-    let command = { "method": "Target.getTargetInfo" };
-    let response = await ws_send_cmd(command); 
+    let command = { method: "Target.getTargetInfo" };
+    let response = await ws_send_cmd(command);
     return response;
 }
 
 async function getBodyText() {
     let command = runtime_eval(`document.body.textContent`);
-    let response = await ws_send_cmd(command); 
+    let response = await ws_send_cmd(command);
 
     let text = response?.result.result.value;
 
@@ -318,11 +322,11 @@ async function getBodyText() {
 
 async function click(x_pos, y_pos) {
     let command = click_pressed(x_pos, y_pos);
-    let ret = await ws_send(command); 
+    let ret = await ws_send(command);
     let response = await awaitresponse(command);
 
     command = click_release(x_pos, y_pos);
-    ret = await ws_send(command); 
+    ret = await ws_send(command);
     response = await awaitresponse(command);
 
     return response;
@@ -330,11 +334,11 @@ async function click(x_pos, y_pos) {
 
 function getBoxModel(nodeid) {
     let command = {
-        "id": 1,
-        "method": "DOM.getBoxModel",
-        "params": {
-            "nodeId": nodeid
-        }
+        id: 1,
+        method: "DOM.getBoxModel",
+        params: {
+            nodeId: nodeid,
+        },
     };
 
     return command;
@@ -342,11 +346,11 @@ function getBoxModel(nodeid) {
 
 function describeNode(nodeid) {
     let command = {
-        "method": "DOM.describeNode",
-        "params": {
-            "nodeId": nodeid,
-            "depth": 1
-        }
+        method: "DOM.describeNode",
+        params: {
+            nodeId: nodeid,
+            depth: 1,
+        },
     };
 
     return command;
@@ -354,48 +358,49 @@ function describeNode(nodeid) {
 
 function domquerySelectorAll(nodeid, selector) {
     let command = {
-        "id": 2,
-        "method": "DOM.querySelectorAll",
-        "params": {
-            "nodeId": nodeid,
-            "selector": selector //css
-        }
-    }
+        id: 2,
+        method: "DOM.querySelectorAll",
+        params: {
+            nodeId: nodeid,
+            selector: selector, //css
+        },
+    };
 
     return command;
 }
 
 function navigate(url) {
     let payload = {
-        "id": 1,
-        "method": "Page.navigate",
-        "params": {
-            "url": `${url}`
-        }
+        id: 1,
+        method: "Page.navigate",
+        params: {
+            url: `${url}`,
+        },
     };
     return payload;
 }
 
 function runtime_eval(script) {
-    let payload = {...payloads['runtime_eval'] };
+    let payload = { ...payloads["runtime_eval"] };
     payload = structuredClone(payload);
     payload.params.expression = script;
     return payload;
 }
 
-function create_new_tab(url = "https://www.gmail.com/", browserContextId = null) {
+function create_new_tab(
+    url = "https://www.gmail.com/",
+    browserContextId = null
+) {
     let payload = { ...payloads["create_new_tab"] };
     payload = structuredClone(payload);
 
-    if ( helper.isNullOrWhitespace(browserContextId) ) {
-        
-        if ( Object.hasOwn(payload.params, 'browserContextId') )
+    if (helper.isNullOrWhitespace(browserContextId)) {
+        if (Object.hasOwn(payload.params, "browserContextId"))
             delete payload.params.browserContextId;
-
     } else {
-        payload.params['browserContextId'] = browserContextId;
+        payload.params["browserContextId"] = browserContextId;
     }
-    
+
     payload.params.url = url;
     return payload;
 }
@@ -409,16 +414,14 @@ function create_new_window(url = "https://www.gmail.com") {
 }
 
 // TODO refactor to use Target.getTargets instead of pinging http endpoint
-async function scan_chrome_targets(debugport=9223) {
+async function scan_chrome_targets(debugport = 9223) {
     let response = await helper.ping_chrome(debugport, "json/list");
 
     let resobj = JSON.parse(response);
 
     // TODO filter by url to match create_new_window
     resobj = resobj.filter((element, index, array) => {
-        return (
-            element.url?.startsWith("https://") && element.type === "page"
-        );
+        return element.url?.startsWith("https://") && element.type === "page";
     });
 
     let ws_target_url = "";
@@ -432,7 +435,7 @@ async function scan_chrome_targets(debugport=9223) {
 }
 
 async function ping_chrome(debugport, path = "json/version") {
-    if ( ! helper.isNullOrWhitespace(path) && !path.startsWith("/")) {
+    if (!helper.isNullOrWhitespace(path) && !path.startsWith("/")) {
         path = "/" + path;
     }
 
@@ -478,15 +481,13 @@ async function connectToChrome(debugport) {
     return ws;
 }
 
-async function get_tabs(debugport=9223) {
+async function get_tabs(debugport = 9223) {
     let response = await ping_chrome(debugport, "json/list");
 
     let resobj = JSON.parse(response);
 
     resobj = resobj.filter((element, index, array) => {
-        return (
-            element.url?.startsWith("https://") && element.type === "page"
-        );
+        return element.url?.startsWith("https://") && element.type === "page";
     });
 
     return resobj;
@@ -495,15 +496,15 @@ async function get_tabs(debugport=9223) {
 async function setAutoAttach() {
     let command = {
         id: 1,
-        method: 'Target.setAutoAttach',
+        method: "Target.setAutoAttach",
         params: {
-            autoAttach: true,              // Enable auto-attaching to related targets
+            autoAttach: true, // Enable auto-attaching to related targets
             waitForDebuggerOnStart: false, // Don't pause execution on launch
-            flatten: true                  // Enables "flat" session access via sessionId
-        }
+            flatten: true, // Enables "flat" session access via sessionId
+        },
     };
 
-    let  ret = await ws_send(command, true);
+    let ret = await ws_send(command, true);
 
     let response = await awaitresponse(command);
 
@@ -511,49 +512,49 @@ async function setAutoAttach() {
 }
 
 async function waitForSession() {
-    while ( ! ws_session ) {
+    while (!ws_session) {
         await helper.delay(1000);
     }
 }
 
 async function enableDomains() {
-    let command = { 
-        "id": 1, 
-        "method": "Page.enable" 
+    let command = {
+        id: 1,
+        method: "Page.enable",
     };
 
     let ret = await ws_send(command);
 
-    command = { 
-        "id": 1, 
-        "method": "Page.setLifecycleEventsEnabled", 
-        "params": { 
-            "enabled": true 
-        } 
+    command = {
+        id: 1,
+        method: "Page.setLifecycleEventsEnabled",
+        params: {
+            enabled: true,
+        },
     };
 
     ret = await ws_send(command);
 
-    command = { 
-        "id": 1, 
-        "method": "DOM.enable", 
-        "params": { } 
+    command = {
+        id: 1,
+        method: "DOM.enable",
+        params: {},
     };
 
     ret = await ws_send(command);
 
-    command = { 
-        "id": 1, 
-        "method": "Runtime.enable", 
-        "params": { } 
+    command = {
+        id: 1,
+        method: "Runtime.enable",
+        params: {},
     };
 
     ret = await ws_send(command);
 
-    command = { 
-        "id": 1, 
-        "method": "Overlay.enable", 
-        "params": { } 
+    command = {
+        id: 1,
+        method: "Overlay.enable",
+        params: {},
     };
 
     ret = await ws_send(command);
@@ -581,5 +582,5 @@ module.exports = {
     getTargetInfo,
     commands,
     ws_session_list,
-    ws
+    ws,
 };

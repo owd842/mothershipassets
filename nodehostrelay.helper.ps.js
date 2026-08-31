@@ -64,52 +64,55 @@ function isUTF16LEBuffer(buffer) {
 }
 
 function parseCmdString(str) {
-  const regex = /--([a-zA-Z0-9_-]+)(?:[=]+("[^"]+"|'[^']+'|[^\s]+))?/g;
-  const dict = {};
-  let match;
+    const regex = /--([a-zA-Z0-9_-]+)(?:[=]+("[^"]+"|'[^']+'|[^\s]+))?/g;
+    const dict = {};
+    let match;
 
-  while ((match = regex.exec(str)) !== null) {
-    const key = match[1];
-    let value = match[2];
+    while ((match = regex.exec(str)) !== null) {
+        const key = match[1];
+        let value = match[2];
 
-    if (value !== undefined) {
-      if ((value.startsWith('"') && value.endsWith('"')) || 
-          (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-    } else {
-      value = true;
+        if (value !== undefined) {
+            if (
+                (value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))
+            ) {
+                value = value.slice(1, -1);
+            }
+        } else {
+            value = true;
+        }
+
+        dict[key] = value;
     }
 
-    dict[key] = value;
-  }
-
-  return dict;
+    return dict;
 }
 
-async function is_chrome_active(debugport = 9223, userdatadir=null) {
+async function is_chrome_active(debugport = 9223, userdatadir = null) {
     // [ { Node: '', CommandLine: '', Name: 'System Idle Process', ProcessId: '' } ]
     let procs = await getProcessList_wmic();
 
     procs = procs.filter((element, index, array) => {
         let check_a = element.Name?.toLowerCase().includes("chrome");
-        
-        if ( ! check_a )
-            return false;
+
+        if (!check_a) return false;
 
         let cmdline = element.CommandLine?.toLowerCase();
 
         let cmdlineargs = parseCmdString(cmdline);
 
-        let check_b = cmdlineargs['remote-debugging-port'] == String(debugport);
+        let check_b = cmdlineargs["remote-debugging-port"] == String(debugport);
 
         let check_c = true;
-        
-        if ( ! helper.isNullOrWhitespace(userdatadir) ) {
-            let token = 'user-data-dir';
-            
-            if ( Object.hasOwn(cmdlineargs, token) )
-                check_c = cmdlineargs[token].toLowerCase() == userdatadir.toLowerCase();
+
+        if (!helper.isNullOrWhitespace(userdatadir)) {
+            let token = "user-data-dir";
+
+            if (Object.hasOwn(cmdlineargs, token))
+                check_c =
+                    cmdlineargs[token].toLowerCase() ==
+                    userdatadir.toLowerCase();
         }
 
         element.cmdlineargs = cmdlineargs;
@@ -217,18 +220,27 @@ function exec_chrome(
 }
 
 // start chrome --remote-debugging-port=9223 --user-data-dir=C:\Users\LC2022\AppData\Local\Google\test\chrome
-function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223, 
-    datadir=`C:\\Users\\${helper.username}\\AppData\\Local\\Google\\test\\chrome`, 
-    x_pos=0, y_pos=0, width=1920, height=1080, ignorecert = false, restore = false, 
-    headless=false) {
-    
+function chrome_cmdlineargs(
+    starturl = "https://www.yahoo.com",
+    debugport = 9223,
+    datadir = `C:\\Users\\${helper.username}\\AppData\\Local\\Google\\test\\chrome`,
+    x_pos = 0,
+    y_pos = 0,
+    width = 1920,
+    height = 1080,
+    ignorecert = false,
+    restore = false,
+    headless = false
+) {
     datadir = datadir.trim();
 
     let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
         `--disable-notifications`,
+        `-noerrdialogs`,
         `--disable-infobars`,
+        `--disable-popup-blocking`,
         `--suppress-message-center-popups`,
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
@@ -243,11 +255,11 @@ function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223,
         `--hide-crash-restore-bubble`,
         `--disable-features=WelcomePage,PrivacySandboxSettings4`,
         `--new-window`,
-        starturl
+        starturl,
     ];
 
-    let ret = cmdlineargs.filter(item => {
-        return ! helper.isNullOrWhitespace(item);
+    let ret = cmdlineargs.filter((item) => {
+        return !helper.isNullOrWhitespace(item);
     });
 
     return ret;
@@ -258,13 +270,24 @@ function chrome_cmdlineargs(starturl="https://www.yahoo.com", debugport=9223,
 function spawn_chrome(
     starturl = "https://www.gmail.com/",
     debugport = 9223,
+    headless = false,
     unref = false,
     stdoutfunc = null,
     stderrfunc = null,
     closefunc = null
 ) {
-
-    let cmdlineargs = chrome_cmdlineargs(starturl, debugport);
+    let cmdlineargs = chrome_cmdlineargs(
+        starturl,
+        debugport,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        headless
+    );
 
     // TODO auto discover by reading chrome lnk files
 
@@ -273,7 +296,7 @@ function spawn_chrome(
         // windowsHide: true,
         // stdio: ["ignore", out, err],
         // shell: true,
-        cwd: path.dirname(chrome_debug_path)
+        cwd: path.dirname(chrome_debug_path),
     });
 
     child.stdout.on("data", (data) => {
@@ -292,7 +315,7 @@ function spawn_chrome(
 
     child.on("close", (code) => {
         if (closefunc) closefunc(code);
-        else logmsg(`[J4D3] child process exited with code ${code}`);
+        else helper.logmsg(`[J4D3] child process exited with code ${code}`);
     });
 
     if (unref) child.unref();
@@ -310,18 +333,16 @@ async function activate_chrome(
     force = false,
     delay = 1
 ) {
-   
-    if ( ! force ) {
+    if (!force) {
         let procs = await is_chrome_active(debugport);
 
-        if ( procs && procs.length > 0 )
-            return procs;
+        if (procs && procs.length > 0) return procs;
     }
 
     childp = spawn_chrome(start_url, debugport, headless, unref);
 
     delay = delay || 1;
-    await helper.delay(1000*delay);
+    await helper.delay(1000 * delay);
 
     procs = await is_chrome_active(debugport);
 
@@ -330,5 +351,5 @@ async function activate_chrome(
 
 module.exports = {
     activate_chrome,
-    spawn_chrome
+    spawn_chrome,
 };
