@@ -50,7 +50,7 @@ let signinbtncoords = function() {
 
     return script;
 }
-    
+
 module.exports = {
     submit_username,
     submit_password,

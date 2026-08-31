@@ -77,6 +77,27 @@ async function get_gmail_signin_pos() {
     return { x_pos: x_pos, y_pos: y_pos };
 }
 
+async function search_gmail_inbox(searchterm) {
+    
+    let script = `let searchbox = document.querySelector('input.searchboxInputFontClass.gb_Je.aJh.afOp8c');
+        searchbox.value = "${searchterm}";
+
+        const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true
+        });
+
+        searchbox.dispatchEvent(enterEvent);
+    `;
+
+    let command = helper_ws.runtime_eval(script);
+    let response = await helper_ws.ws_send_cmd(command);
+    return response;
+}
+
 (async () => {
     try {
         // let ret = await helper.kill_chrome();
@@ -130,19 +151,11 @@ async function get_gmail_signin_pos() {
 
         // Choose an account
         response = await helper_ws.getTargetInfo();
-        /*
-{
-  targetInfo: {
-    targetId: "B574A44A855E6567C9CB62D9D18C644B",
-    type: "service_worker",
-    title: "Service Worker https://mail.google.com/mail/u/0/sw.js?static_routing=1&offline_allowed=1",
-    url: "https://mail.google.com/mail/u/0/sw.js?static_routing=1&offline_allowed=1",
-    attached: true,
-    canAccessOpener: false,
-    browserContextId: "E7131666D55A735272C1F487DB918E5B",
-  },
-}
-        */
+        
+        if ( helper_ws.isInboxPage(response) ) {
+            response = await search_gmail_inbox('sin has:attachment');
+        }
+
         // Sign inwith your Google Account to continue to Gmail.
         if (text.includes("Email or phone")) {
             // username/password input page

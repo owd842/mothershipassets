@@ -332,6 +332,40 @@ async function click(x_pos, y_pos) {
     return response;
 }
 
+function isInboxPage(response) {
+    /*
+        {
+        targetInfo: {
+            targetId: "85104882AD75053706129AB4E762E038",
+            type: "page",
+            title: "Inbox (1) - michaelbradfield2@gmail.com - Gmail",
+            url: "https://mail.google.com/mail/u/0/#inbox",
+            attached: true,
+            canAccessOpener: false,
+            browserContextId: "8DCA4AF3D9C99FBCD94A2E9ADCC99828",
+        },
+    */
+
+    let result = null;
+
+    if (Object.hasOwn(response,'result') )
+        result = response.result;
+    else
+        return false;
+
+    if ( Object.hasOwn(result, 'targetInfo') ) {
+        result = result.targetInfo;
+        
+        let title = result.title; 
+
+        if ( title.includes('Inbox') && title.includes('Gmail') ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function getBoxModel(nodeid) {
     let command = {
         id: 1,
@@ -580,6 +614,7 @@ module.exports = {
     getBodyText,
     getscreenshot,
     getTargetInfo,
+    isInboxPage,
     commands,
     ws_session_list,
     ws,
