@@ -149,18 +149,17 @@ async function search_gmail_inbox(searchterm) {
         // Screen D: "Choose an account" --> select from list
         // https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
 
-        // Choose an account
         response = await helper_ws.getTargetInfo();
         
         if ( helper_ws.isInboxPage(response) ) {
             response = await search_gmail_inbox('sin has:attachment');
-        }
 
-        // Sign inwith your Google Account to continue to Gmail.
-        if (text.includes("Email or phone")) {
+            command = helper_ws.getscreenshot();
+            response = await helper_ws.ws_send_cmd(command);
+        } else if ( text.includes("to continue to Gmail") && text.includes("Email or phone") ) { // Sign in with your Google Account to continue to Gmail.
             // username/password input page
             helper.logmsg("pass");
-        } else if (text.includes("Sign in")) {
+        } else if ( text.includes("Sign in") ) {
             // sign in button page
             let coords = await get_gmail_signin_pos();
             let x_pos = coords.x_pos;
@@ -169,9 +168,8 @@ async function search_gmail_inbox(searchterm) {
         }
 
         text = await helper_ws.getBodyText();
-        if (
-            !(text.includes("Email or phone") && text.includes("Forgot email?"))
-        ) {
+        
+        if ( !(text.includes("Email or phone") && text.includes("Forgot email?")) ) {
             throw new Error("did not reach username/password page as expected");
         }
 

@@ -256,7 +256,6 @@ async function awaitresponse(command, delay = 1, delaymax = 10) {
 function getscreenshot() {
     let payload = { ...payloads["getscreenshot"] };
     payload = structuredClone(payload);
-    payload.params.expression = script;
     return payload;
 }
 
@@ -412,6 +411,21 @@ function navigate(url) {
         },
     };
     return payload;
+}
+
+async function get_windowloc() {
+
+    let command = helper_ws.runtime_eval(
+        `window.location.href + '|' + document.title`
+    );
+
+    let response = await helper_ws.ws_send_cmd(command);
+    // response.result.result.value = url | title
+
+    // response.result.result.type == object
+    // response.result.result.subtype == error
+    // response.result.result.description
+
 }
 
 function runtime_eval(script) {
@@ -615,6 +629,7 @@ module.exports = {
     getscreenshot,
     getTargetInfo,
     isInboxPage,
+    get_windowloc,
     commands,
     ws_session_list,
     ws,
