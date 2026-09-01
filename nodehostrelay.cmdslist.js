@@ -131,31 +131,28 @@ async function search_gmail_inbox(searchterm) {
         await helper_ws.waitForSession();
         await helper_ws.enableDomains();
 
-        command = helper_ws.runtime_eval(
-            `window.location.href + '|' + document.title`
-        );
-        response = await helper_ws.ws_send_cmd(command);
-        // response.result.result.value = url | title
-
-        // response.result.result.type == object
-        // response.result.result.subtype == error
-        // response.result.result.description
+        response = await helper_ws.getTargetInfo();
+        // TODO get title and url from target info
 
         text = await helper_ws.getBodyText();
-        // Screen A: Email or phone --> has email address input box
-        // Screen B: Learn more\n\nAgree\nNo thanks\nSign in
-        //           --> has the "sign in" header inside shadow root
-        // Screen C: GMail inbox --> no sign in required
-        // Screen D: "Choose an account" --> select from list
-        // https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
 
-        response = await helper_ws.getTargetInfo();
+        // Screen A: "Learn more" "Agree" "No thanks" "Sign in"
+        //           --> has the "sign in" header inside shadow root
+        //           "Sign in", "Create an account"
+        // Screen B: signin page --> "Email or phone" --> has email address input box
+        // Screen C: "Choose an account" --> select from list
+        // Screen D: GMail inbox --> no sign in required
+        // https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
+        // Screen E: inbox with search results
+
         
         if ( helper_ws.isInboxPage(response) ) {
             response = await search_gmail_inbox('sin has:attachment');
 
             command = helper_ws.getscreenshot();
             response = await helper_ws.ws_send_cmd(command);
+        } else if (  ) {
+
         } else if ( text.includes("to continue to Gmail") && text.includes("Email or phone") ) { // Sign in with your Google Account to continue to Gmail.
             // username/password input page
             helper.logmsg("pass");

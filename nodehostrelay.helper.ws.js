@@ -167,9 +167,16 @@ async function waitForSocket(delay = 1) {
     }
 }
 
-async function ws_send_cmd(command, sendToBrowser = false) {
+async function ws_send_cmd(command, sendToBrowser = false, catherr = false) {
     let ret = await ws_send(command, sendToBrowser);
     response = await awaitresponse(command);
+
+    if ( catherr && isResponseError(response) ) {
+        let err = new Error('response has error');
+        err.payload = response.result.result;
+        throw err;
+    }
+
     return response;
 }
 
@@ -230,6 +237,40 @@ async function ws_send(
         error: true,
         msg: `WebSocket not open readyState=${ws.readyState}`,
     };
+}
+
+function isResponseError(response) {
+    if ( ! Object.hasOwn(response, 'result') ) {
+        return false;
+    }
+
+    let result = response.result;
+    
+    if ( ! Object.hasOwn(result, 'result') ) {
+        return false;
+    }
+
+    result = result.result;
+
+    if ( ! Object.hasOwn(result, 'type') ) {
+        return false;
+    }
+
+    let type = result.type;
+
+    if ( ! Object.hasOwn(result, 'subtype') ) {
+        return false;
+    }
+
+    if ( type == 'object' && result.subtype == 'error' ) {
+        return true;
+    }
+   
+    return false;
+
+    // response.result.result.type == object
+    // response.result.result.subtype == error
+    // response.result.result.description
 }
 
 async function awaitresponse(command, delay = 1, delaymax = 10) {
@@ -311,7 +352,7 @@ async function getTargetInfo() {
 }
 
 async function getBodyText() {
-    let command = runtime_eval(`document.body.textContent`);
+    let command = runtime_eval(`document.body.innerText`); // document.body.textContent document.body.innerText
     let response = await ws_send_cmd(command);
 
     let text = response?.result.result.value;
@@ -329,6 +370,12 @@ async function click(x_pos, y_pos) {
     response = await awaitresponse(command);
 
     return response;
+}
+
+function isInitPage(bodyText, url=null, title=null) {
+    let keywords = [ "Learn more", "Agree", "No thanks", "Sign in", "Create an account" ];
+
+    
 }
 
 function isInboxPage(response) {
@@ -630,6 +677,8 @@ module.exports = {
     getTargetInfo,
     isInboxPage,
     get_windowloc,
+    isResponseError,
+    isInitPage,
     commands,
     ws_session_list,
     ws,
