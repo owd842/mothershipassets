@@ -348,7 +348,18 @@ function click_release(x_pos, y_pos, button = "left", clickCount = 1) {
 async function getTargetInfo() {
     let command = { method: "Target.getTargetInfo" };
     let response = await ws_send_cmd(command);
-    return response;
+
+    if ( ! Object.hasOwn(response, 'result') ) {
+        return null;
+    }
+
+    let result = response.result;
+
+    if ( Object.hasOwn(result, 'targetInfo') ) {
+        return result.targetInfo;
+    }
+
+    return null;
 }
 
 async function getBodyText() {
@@ -372,13 +383,33 @@ async function click(x_pos, y_pos) {
     return response;
 }
 
-function isInitPage(bodyText, url=null, title=null) {
-    let keywords = [ "Learn more", "Agree", "No thanks", "Sign in", "Create an account" ];
+// TODO examine url and title as well as bodytext
+function isSigninPage(text, url = null, title = null) { // Sign in with your Google Account to continue to Gmail.
+    let keywords = ["Forgot email", "Email or phone"];
 
-    
+    return keywords.every(k => text.includes(k) );
 }
 
-function isInboxPage(response) {
+function isInitPage(bodyText, url=null, title=null) {
+    let keywords = [ "Learn more", "Agree", "No thanks", "Sign in", "Create an account" ];
+    let turl = "workspace.google.com"; // "https://workspace.google.com/intl/en-US/gmail/";
+    let stitle = "Google Workspace"; // "Gmail: Secure, AI-Powered Email for Everyone | Google Workspace";
+
+    if ( helper.isNullOrWhitespace(bodyText) )
+        return false;
+
+    let check_a = keywords.every( k => {
+        return bodyText.includes(k);
+    });
+
+    let check_b = helper.isNullOrWhitespace(url) ? true : url.includes(turl);
+
+    let check_c = helper.isNullOrWhitespace(title) ? true : title.includes(stitle);
+
+    return check_a && check_b && check_c;
+}
+
+function isInboxPage(targetInfo) {
     /*
         {
         targetInfo: {
@@ -391,22 +422,11 @@ function isInboxPage(response) {
             browserContextId: "8DCA4AF3D9C99FBCD94A2E9ADCC99828",
         },
     */
+    
+    let title = targetInfo.title; 
 
-    let result = null;
-
-    if (Object.hasOwn(response,'result') )
-        result = response.result;
-    else
-        return false;
-
-    if ( Object.hasOwn(result, 'targetInfo') ) {
-        result = result.targetInfo;
-        
-        let title = result.title; 
-
-        if ( title.includes('Inbox') && title.includes('Gmail') ) {
-            return true;
-        }
+    if ( title.includes('Inbox') && title.includes('Gmail') ) {
+        return true;
     }
 
     return false;
@@ -679,6 +699,7 @@ module.exports = {
     get_windowloc,
     isResponseError,
     isInitPage,
+    isSigninPage,
     commands,
     ws_session_list,
     ws,

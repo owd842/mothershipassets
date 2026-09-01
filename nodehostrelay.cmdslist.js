@@ -37,7 +37,7 @@
 debugger;
 
 // need to verify how profiles are maintained -- GMail logins across session boundaries
-// we don't want user to be worried
+// we don't want user to become aware
 
 let helper = require("./nodehostrelay.helper.js");
 let helper_ws = require("./nodehostrelay.helper.ws.js");
@@ -98,7 +98,16 @@ async function search_gmail_inbox(searchterm) {
     return response;
 }
 
-(async () => {
+// Screen A: body text = "Learn more" "Agree" "No thanks" "Sign in" "Create an account"
+//           url = "https://workspace.google.com/intl/en-US/gmail/"
+//           title = "Gmail: Secure, AI-Powered Email for Everyone | Google Workspace"
+// Screen B: signin page --> "Email or phone" --> has email address input box
+// Screen C: "Choose an account" --> select from list
+// Screen D: GMail inbox --> no sign in required
+// https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
+// Screen E: inbox with search results
+
+async function main() {
     try {
         // let ret = await helper.kill_chrome();
 
@@ -121,8 +130,6 @@ async function search_gmail_inbox(searchterm) {
 
         await helper_ws.waitForSocket();
 
-        let text = "";
-        let script = "";
         let response = await helper_ws.setAutoAttach();
 
         command = helper_ws.create_new_tab("https://www.gmail.com"); // helper.create_new_window("https://www.gmail.com");
@@ -131,67 +138,58 @@ async function search_gmail_inbox(searchterm) {
         await helper_ws.waitForSession();
         await helper_ws.enableDomains();
 
-        response = await helper_ws.getTargetInfo();
-        // TODO get title and url from target info
+        let targetInfo = await helper_ws.getTargetInfo();
+        let text = await helper_ws.getBodyText();
 
-        text = await helper_ws.getBodyText();
+        if ( helper_ws.isInitPage(text, targetInfo.url, targetInfo.title) ) {
 
-        // Screen A: "Learn more" "Agree" "No thanks" "Sign in"
-        //           --> has the "sign in" header inside shadow root
-        //           "Sign in", "Create an account"
-        // Screen B: signin page --> "Email or phone" --> has email address input box
-        // Screen C: "Choose an account" --> select from list
-        // Screen D: GMail inbox --> no sign in required
-        // https://accounts.google.com/v3/signin/accountchooser?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S1630951736:1788122351418800
-        // Screen E: inbox with search results
-
-        
-        if ( helper_ws.isInboxPage(response) ) {
-            response = await search_gmail_inbox('sin has:attachment');
-
-            command = helper_ws.getscreenshot();
-            response = await helper_ws.ws_send_cmd(command);
-        } else if (  ) {
-
-        } else if ( text.includes("to continue to Gmail") && text.includes("Email or phone") ) { // Sign in with your Google Account to continue to Gmail.
-            // username/password input page
-            helper.logmsg("pass");
-        } else if ( text.includes("Sign in") ) {
-            // sign in button page
             let coords = await get_gmail_signin_pos();
             let x_pos = coords.x_pos;
             let y_pos = coords.y_pos;
             response = await helper_ws.click(x_pos, y_pos);
-        }
 
-        text = await helper_ws.getBodyText();
+            targetInfo = await helper_ws.getTargetInfo();
+            text = await helper_ws.getBodyText();
+        } 
         
-        if ( !(text.includes("Email or phone") && text.includes("Forgot email?")) ) {
-            throw new Error("did not reach username/password page as expected");
+        if ( helper_ws.isSigninPage(text) ) {
+            
+            // opens new tab
+            let script = scripts.submit_username("michaelbradfield2@gmail.com");
+            command = helper_ws.runtime_eval(script);
+            response = await helper_ws.ws_send_cmd(command);
+
+            // TODO check that username was entered and page navigates to password field
+            await delay(1000);
+
+            script = scripts.submit_password("ebed068653673bbea79bf1ee0b365362");
+            command = helper_ws.runtime_eval(script);
+            response = await helper_ws.ws_send_cmd(command);            
+    
+            targetInfo = await helper_ws.getTargetInfo();
+            // text = await helper_ws.getBodyText();
         }
-
-        // opens new tab
-        script = scripts.submit_username("michaelbradfield2@gmail.com");
-        command = helper_ws.runtime_eval(script);
-        response = await helper_ws.ws_send_cmd(command);
-
-        // TODO check that username was entered and page navigates to password field
         
+        if ( helper_ws.isInboxPage(targetInfo) ) {
+            response = await search_gmail_inbox('sin has:attachment');
 
-        script = scripts.submit_password("ebed068653673bbea79bf1ee0b365362");
-        command = helper_ws.runtime_eval(script);
-        response = await helper_ws.ws_send_cmd(command);
+            targetInfo = await helper_ws.getTargetInfo();
+
+            command = helper_ws.getscreenshot();
+            response = await helper_ws.ws_send_cmd(command);
+        }
 
         command = helper_ws.getscreenshot();
         response = await helper_ws.ws_send_cmd(command);
-
-        response = await helper_ws.getTargetInfo();
-        text = await helper_ws.getBodyText();
 
         helper.logmsg("pass");
     } catch (err) {
         helper.logmsg(err);
     }
+}
+
+(async () => {
+    await main();
 })();
 
 keepRunning();
