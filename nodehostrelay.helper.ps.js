@@ -238,7 +238,7 @@ function chrome_cmdlineargs(
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
         `--disable-notifications`,
-        `-noerrdialogs`,
+        `--noerrdialogs`,
         `--disable-infobars`,
         `--disable-popup-blocking`,
         `--suppress-message-center-popups`,
