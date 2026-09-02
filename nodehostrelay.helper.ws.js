@@ -12,6 +12,7 @@ const WebSocket = require("ws");
 let ws = null;
 let commands = [];
 var ws_session_list = [];
+var event_funcs = [];
 
 // ws_session
 Object.defineProperty(globalThis, "ws_session", {
@@ -91,6 +92,23 @@ function ws_open() {
     helper.logmsg(`Connected to Chrome DevTools Protocol`);
 }
 
+function register_event(event, func) {
+
+    if ( ! func )
+        return; // TODO throw exception here
+
+    if ( ! Object.hasOwn(event, 'method') )
+        return; // TODO throw exception here
+
+    if ( ! Object.hasOwn(event, 'name') )
+        return; // TODO throw exception here
+
+    // "method": "Page.lifecycleEvent",
+    // "name": "DOMContentLoaded
+
+    event_funcs.push( { event: event, func: func } );
+}
+
 function ws_message(data) {
     helper.logmsg(`[J3O9] received response from Chrome: ${data}`);
 
@@ -138,6 +156,16 @@ function ws_message(data) {
                 params.targetInfo["type"] == "page"
             ) {
                 ws_session_list.push(params);
+            }
+        } else if ( responseobj.method == "Page.lifecycleEvent" ) {
+
+            for ( let i = 0; i<event_funcs.length; i++) {
+                let event = event_funcs['event'];
+
+                if ( event.name == responseobj?.name ) {
+                    let func = event_funcs['func'];
+                    func();
+                }
             }
         }
 
@@ -701,6 +729,7 @@ module.exports = {
     isResponseError,
     isInitPage,
     isSigninPage,
+    register_event,
     commands,
     ws_session_list,
     ws,

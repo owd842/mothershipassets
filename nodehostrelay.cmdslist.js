@@ -159,14 +159,7 @@ async function main() {
             command = helper_ws.runtime_eval(script);
             response = await helper_ws.ws_send_cmd(command);
 
-            /*
-              wait for event
-                "method": "Page.lifecycleEvent",
-                "name": "DOMContentLoaded
-            */
-
-            // TODO check that username was entered and page navigates to password field
-            await helper.delay(1000);
+            targetInfo = await helper_ws.getTargetInfo();
 
             script = scripts.submit_password("ebed068653673bbea79bf1ee0b365362");
             command = helper_ws.runtime_eval(script);
@@ -188,7 +181,9 @@ async function main() {
         command = helper_ws.getscreenshot();
         response = await helper_ws.ws_send_cmd(command);
 
-        const buffer = Buffer.from(screenshot.data, 'base64');
+        let data = response?.result?.data;
+
+        let buffer = Buffer.from(data, 'base64');
         fs.writeFileSync('screenshot_'+helper.getTimestamp()+'.jpg', buffer);
 
         helper.logmsg("pass");
