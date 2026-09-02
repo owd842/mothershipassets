@@ -188,6 +188,9 @@ async function main() {
         command = helper_ws.getscreenshot();
         response = await helper_ws.ws_send_cmd(command);
 
+        const buffer = Buffer.from(screenshot.data, 'base64');
+        fs.writeFileSync('screenshot_'+helper.getTimestamp()+'.jpg', buffer);
+
         helper.logmsg("pass");
     } catch (err) {
         helper.logmsg(err);
