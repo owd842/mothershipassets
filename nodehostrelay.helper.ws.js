@@ -76,8 +76,9 @@ var payloads = {
     },
 
     getscreenshot: {
-        cmd: "Page.captureScreenshot",
-        args: {
+        id : 1,
+        method: "Page.captureScreenshot",
+        params: {
             format: "jpeg",
             quality: 80,
             captureBeyondViewport: true,

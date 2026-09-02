@@ -240,7 +240,8 @@ function chrome_cmdlineargs(
         `--disable-notifications`,
         `--noerrdialogs`,
         `--disable-infobars`,
-        `--disable-popup-blocking`,
+        `--disable-session-crashed-bubble`,
+        //`--disable-popup-blocking`,
         `--suppress-message-center-popups`,
         headless ? `--headless=new` : "",
         `--no-first-run`, // You can skip Chrome's welcome and setup screens
