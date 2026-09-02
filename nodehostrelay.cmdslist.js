@@ -150,7 +150,7 @@ async function main() {
 
             targetInfo = await helper_ws.getTargetInfo();
             text = await helper_ws.getBodyText();
-        } 
+        }
         
         if ( helper_ws.isSigninPage(text) ) {
             
