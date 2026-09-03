@@ -2,27 +2,16 @@
 
 $ts = Get-Date -Format "yyyyMMddHHmmssfff"
 
-Start-Transcript -Path ( Join-Path $PSScriptRoot ( ( Split-Path $PSCommandPath -Leaf ) + "_transcript_" + $ts + "_config.json" ) )
+Start-Transcript -Path ( Join-Path $PSScriptRoot ( ( Split-Path $PSCommandPath -Leaf ) + "_transcript_" + $ts + ".log" ) )
 
 Set-Location -LiteralPath $PSScriptRoot
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-# for chrome
-# --remote-debugging-port=9223 --remote-allow-origins=* --restore-last-session --user-data-dir=%temp%\owd\chrome
-# for edge
-# --remote-debugging-port=9222 --remote-allow-origins=* --restore-last-session --profile-directory=Default
-
-# $cmd_ling_args="--remote-debugging-port=9223 --remote-allow-origins=* --restore-last-session --user-data-dir C:\Users\sebas\AppData\Local\Temp\OWD\chrome"
-# $shortcut_path="C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk"
-
-# --ignore-certificate-errors --> this causes a gui popup in chrome 
-# you are using an unsupported command-line flag: 
-
 $configpath = ( Join-Path $PSScriptRoot ( ( Split-Path $PSCommandPath -Leaf ) + "_config.json" ) )
 
 if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
-    Write-Host "INFO -- config file $configpath does not exist -- attempting cmd line arg"
+    Write-Host "WARN -- config file $configpath does not exist -- attempting to retrieve config.json from cmd line arg"
 
     if ( $args.Count > 0 ) {
         $configpath = $args[0]
@@ -31,7 +20,7 @@ if ( ! (Test-Path -Path $configpath -PathType Leaf) ) {
             exit 1
         }
     } else {
-        Write-Error "ERROR -- config file $configpath not specified"
+        Write-Error "ERROR -- config file not specified as a cmd line argument"
         exit 1
     }
 }
@@ -45,22 +34,23 @@ $config.PSObject.Properties | ForEach-Object { $hashtable[$_.Name] = $_.Value }
 $config = $hashtable
 
 if ( $config.ContainsKey("cmd_line_args") ) {
-    $cmd_ling_args=$config["cmd_line_args"]
+    $cmd_line_args=$config["cmd_line_args"]
 } else {
-    # $cmd_ling_args="--user-data-dir=`"C:\ProgramData\owd\chrome`" --profile-directory=Default --remote-allow-origins=* --restore-last-session --ignore-certificate-errors --remote-debugging-port=9223 https://apps.tpl.ca/"
     Write-Error "ERROR -- cmd_ling_args not specified"
     exit 1
 }
 
-if ( $config.ContainsKey("shortcut_path") ) {
-    $shortcut_path = $config["shortcut_path"]
+if ( $config.ContainsKey("shortcut_paths") ) {
+    $shortcut_paths = $config["shortcut_paths"]
 } else {
-    # $shortcut_path = "C:\Users\ADULT2022\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Google Chrome.lnk"
-    Write-Error "ERROR -- shortcut_path not specified"
+    Write-Error "ERROR -- shortcut_paths not specified"
     exit 1
 }
 
-Write-Host ( "starting script with cmd_ling_args=$cmd_ling_args | shortcut_path=$shortcut_path" )
+$cmd_line_args = $cmd_line_args -Join " "
+
+Write-Host ( "cmd_ling_args=$cmd_line_args" )
+Write-Host ( "shortcut_paths=$shortcut_paths" )
 
 function Modify-BrowserLink {
     param (
@@ -82,5 +72,8 @@ function Modify-BrowserLink {
     $shortcut | Select-Object -Property FullName, TargetPath, Arguments, WorkingDirectory, Description, HotKey, IconLocation, WindowStyle
 }
 
-Modify-BrowserLink $cmd_ling_args $shortcut_path
-exit 0 
+foreach ($shortcut_path in $shortcut_paths) {
+    Modify-BrowserLink $cmd_line_args $shortcut_path
+}
+
+exit 0
