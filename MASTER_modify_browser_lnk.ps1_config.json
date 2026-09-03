@@ -1,0 +1,28 @@
+{
+    "cmd_line_args":[
+        "--remote-debugging-port=9223",
+        "--user-data-dir=C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome",
+        "--disable-notifications",
+        "--noerrdialogs",
+        "--disable-infobars",
+        "--disable-session-crashed-bubble",
+        "--suppress-message-center-popups",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-signin-promo",
+        "--remote-allow-origins=*",
+        "--window-position=0,0",
+        "--window-size=1920,1080",
+        "--hide-crash-restore-bubble",
+        "--disable-features=WelcomePage,PrivacySandboxSettings4",
+        "--new-window",
+        "https://www.tpl.ca"
+    ],
+
+    "shortcut_paths":[
+        "C:\\Users\\LC2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\Google Chrome.lnk",
+        "C:\\Users\\LC2022\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\Google Chrome.lnk",
+        "C:\\Users\\LC2022\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk",
+        "C:\\Users\\LC2022\\Desktop\\Google Chrome.lnk"
+    ]
+}
