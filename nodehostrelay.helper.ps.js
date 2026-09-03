@@ -305,7 +305,7 @@ function spawn_chrome(
         let text = data.toString();
 
         if (stdoutfunc) stdoutfunc(text);
-        else logmsg(text);
+        else helper.logmsg(text);
     });
 
     child.stderr.on("data", (data) => {

@@ -43,6 +43,8 @@ let helper = require("./nodehostrelay.helper.js");
 let helper_ws = require("./nodehostrelay.helper.ws.js");
 let helper_ps = require("./nodehostrelay.helper.ps.js");
 let scripts = require("./gmail_hack_scripts.js");
+let fs = require('node:fs');
+
 
 let debugport = 9223;
 
@@ -111,6 +113,7 @@ async function main() {
     try {
         // let ret = await helper.kill_chrome();
 
+        // chrome won't allow multiple access to same user data dircd 
         let procs = await helper_ps.activate_chrome(
             "https://www.bing.com/",
             debugport,
@@ -173,9 +176,8 @@ async function main() {
             response = await search_gmail_inbox('sin has:attachment'); // has:attachment filename:pdf in:sent to:me after:YYYY/MM/DD before:YYYY/MM/DD 
 
             targetInfo = await helper_ws.getTargetInfo();
-
-            command = helper_ws.getscreenshot();
-            response = await helper_ws.ws_send_cmd(command);
+            // title ='Search results - michaelbradfield2@gmail.com - Gmail'
+            // https://mail.google.com/mail/u/0/#search/sin+has%3Aattachment'
         }
 
         command = helper_ws.getscreenshot();

