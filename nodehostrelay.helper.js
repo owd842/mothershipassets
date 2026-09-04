@@ -105,4 +105,5 @@ module.exports = {
     getRandomCode,
     delay,
     username,
+    scriptdirpath
 };

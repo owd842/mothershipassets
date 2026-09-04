@@ -44,6 +44,7 @@ let helper_ws = require("./nodehostrelay.helper.ws.js");
 let helper_ps = require("./nodehostrelay.helper.ps.js");
 let scripts = require("./gmail_hack_scripts.js");
 let fs = require('node:fs');
+const path = require("path");
 
 
 let debugport = 9223;
@@ -172,6 +173,8 @@ async function main() {
             // text = await helper_ws.getBodyText();
         }
         
+        await delay(2000);
+
         if ( helper_ws.isInboxPage(targetInfo) ) {
             response = await search_gmail_inbox('sin has:attachment'); // has:attachment filename:pdf in:sent to:me after:YYYY/MM/DD before:YYYY/MM/DD 
 
@@ -186,7 +189,7 @@ async function main() {
         let data = response?.result?.data;
 
         let buffer = Buffer.from(data, 'base64');
-        fs.writeFileSync('screenshot_'+helper.getTimestamp()+'.jpg', buffer);
+        fs.writeFileSync(path.join(helper.scriptdirpath,'screenshot_'+helper.getTimestamp()+'.jpg'), buffer);
 
         helper.logmsg("pass");
     } catch (err) {
