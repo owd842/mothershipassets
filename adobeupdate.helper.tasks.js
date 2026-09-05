@@ -141,7 +141,7 @@ async function getTaskDetail(taskname) {
 
     let args = null;
 
-    let showalltasks = isNullOrWhitespace(taskname);
+    let showalltasks = helper.isNullOrWhitespace(taskname);
     if (!showalltasks) {
         args = ["/query", "/tn", taskname, "/fo", "LIST", "/v"];
     } else {
