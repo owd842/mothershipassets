@@ -3,8 +3,9 @@
     ##################
 
     <nodejs exe fpath> <...>\adobeupdate <cmdname> <config json fpath>
+    ! no cmd line arg --> adobeupdate defaults to watchdog cmd
 
-    <nodejs exe fpath> <...>\adobeupdate launch_ping <...?> --> grab cmd line args passed from startup triggers
+    <nodejs exe fpath> <...>\adobeupdate launch_ping <...> --> grab cmd line args passed from startup triggers
     --> registry, startup folders, tasks 
 
     JobName: EXEC_BAT, run, ...

