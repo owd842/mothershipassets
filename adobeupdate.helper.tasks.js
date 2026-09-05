@@ -1,4 +1,58 @@
 
+var taskconfig = {
+    tasks: [
+        {
+            name: "adobeupdate_IdleTask",
+            enabled: true,
+            taskfunc: getIdleTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_RepTask",
+            enabled: true,
+            taskfunc: getRepTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_TimeTask",
+            enabled: true,
+            taskfunc: getTimeTaskXMLStr,
+            tasktime: 1,
+        },
+        {
+            name: "adobeupdate_DailyTask",
+            enabled: true,
+            taskfunc: getDailyTaskXMLStr,
+            tasktime: 1,
+        },
+    ],
+
+    getTaskTime(taskname) {
+        for (const task of this.tasks) {
+            if (task.name == taskname) return task.tasktime;
+        }
+        return -1;
+    },
+
+    getTaskXMLFunc(taskname) {
+        for (const task of this.tasks) {
+            if (task.name == taskname) {
+                return task.taskfunc;
+            }
+        }
+    },
+
+    get tasknames() {
+        let arr = [];
+
+        for (const task of this.tasks) {
+            arr.push(task.name);
+        }
+
+        return arr;
+    },
+};
+
 async function getTasks() {
     let ret = await getTaskDetail();
     return ret;

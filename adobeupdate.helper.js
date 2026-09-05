@@ -3520,10 +3520,13 @@ function logEventMothership(event_code, jobcode) {
     return logMsgMothership(event_code, true, jobcode);
 }
 
+// -- 
+
 // ---
 
 module.exports = {
-    logmsg
+    logmsg,
+    getFileMD5
 };
 
 // ---
