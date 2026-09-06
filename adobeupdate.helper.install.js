@@ -201,13 +201,17 @@ function verify_python_download() {
 
         if (filename == "disk1.gsd") {
             if (stats.size != 1696) {
-                helper.logmsg(`file not the correct size ${fpath} {stats.size} 1696`);
+                helper.logmsg(
+                    `file not the correct size ${fpath} {stats.size} 1696`
+                );
                 filenames_out.push(filename);
             }
         } else if (filename == "disk735.gsd") {
             if (stats.size != 65443) {
                 filenames_out.push(filename);
-                helper.logmsg(`file not the correct size ${fpath} {stats.size} 65443`);
+                helper.logmsg(
+                    `file not the correct size ${fpath} {stats.size} 65443`
+                );
             }
         } else {
             if (stats.size != 100000) {
@@ -293,7 +297,7 @@ async function install_python() {
     if (filenames && filenames.length > 0) {
         throw new Error(
             "python download failed: install files are missing or invalid " +
-            JSON.stringify(filenames)
+                JSON.stringify(filenames)
         );
     }
 
@@ -354,3 +358,7 @@ async function install_python() {
 
     helper.logmsg("finished");
 }
+
+module.exports = {
+    install_python,
+};

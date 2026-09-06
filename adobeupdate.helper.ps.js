@@ -3,7 +3,27 @@ const helper = require("./adobeupdate.helper.js");
 var process_argv = [];
 
 for (let token of process.argv) {
-    if ( ! token.includes("--inspect-brk")) process_argv.push(token);
+    if (!token.includes("--inspect-brk")) process_argv.push(token);
+}
+
+function getcmdtaskname() {
+    if (getcmdname() == "task" && process_argv.length >= 4) {
+        return process_argv[3];
+    }
+
+    return "";
+}
+
+function getcmdname() {
+    let tcmdname = process_argv.length >= 3 ? process_argv[2] : "watchdog";
+
+    if (tcmdname == "launch_ping") tcmdname = "watchdog";
+
+    return tcmdname;
+}
+
+function getscriptpid() {
+    return process.pid;
 }
 
 async function invoke_exe(
@@ -178,7 +198,6 @@ async function getProcessList_ps() {
     });
 }
 
-
 function isPidAlive(pid) {
     if (pid <= 0) {
         return false;
@@ -304,12 +323,14 @@ async function getProcessList_pslist() {
     return proclist;
 }
 
-
 module.exports = {
     process_argv,
     invoke_exe,
     writeToChildProcess,
     exec_pslist,
     isChildHealthy,
-    checkIfPipeExists
+    checkIfPipeExists,
+    getcmdname,
+    getcmdtaskname,
+    getscriptpid,
 };

