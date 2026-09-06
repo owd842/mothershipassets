@@ -1,4 +1,4 @@
-const helper = require("./adobeupdate.helper.js");
+const fs = require("fs");
 
 var process_argv = [];
 
@@ -6,20 +6,35 @@ for (let token of process.argv) {
     if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
+var __cmdtaskname = "";
 function getcmdtaskname() {
+    if (!helper.isNullOrWhitespace(__cmdtaskname)) {
+        return __cmdtaskname;
+    }
+
     if (getcmdname() == "task" && process_argv.length >= 4) {
-        return process_argv[3];
+        __cmdtaskname = process_argv[3];
+        return __cmdtaskname;
     }
 
     return "";
 }
 
+var __cmdname = "";
 function getcmdname() {
+    if (!helper.isNullOrWhitespace(__cmdname)) {
+        return __cmdname;
+    }
+
     let tcmdname = process_argv.length >= 3 ? process_argv[2] : "watchdog";
 
-    if (tcmdname == "launch_ping") tcmdname = "watchdog";
+    if (tcmdname == "launch_ping") {
+        tcmdname = "watchdog";
+    }
 
-    return tcmdname;
+    __cmdname = tcmdname;
+
+    return __cmdname;
 }
 
 function getscriptpid() {
@@ -333,4 +348,7 @@ module.exports = {
     getcmdname,
     getcmdtaskname,
     getscriptpid,
+    isPidAlive,
 };
+
+const helper = require("./adobeupdate.helper.js");

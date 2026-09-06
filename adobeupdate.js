@@ -77,27 +77,11 @@ function ensureSingleInstancePipe(initfunc) {
 let cmdarr = helper_ps.process_argv;
 let cmdarrstr = cmdarr ? cmdarr.join() : "";
 
-let scriptts = helper.getTimestamp();
-let cmdtaskname = helper_ps.getcmdtaskname();
-
-let logfpath = (() => {
-    let tcmdtaskname = !helper.isNullOrWhitespace(cmdtaskname)
-        ? "_" + cmdtaskname
-        : "";
-
-    return path.join(
-        helper_config.systemconfig.trojandir,
-        `master_${cmdname}${tcmdtaskname}_${scriptts}.log`
-    );
-})();
-
-helper.logfpath = logfpath;
-
 helper.logmsg(
     `starting --  ${helper_config.systemconfig.statestr} -- ${cmdarrstr} -- scriptmd5=${helper_config.systemconfig.scriptmd5}`
 );
 
-ensureSingleInstancePipe(cmdconfig.cmdfunc);
+ensureSingleInstancePipe(helper_cmd.cmdconfig.cmdfunc);
 
 /*
 let clientjob = {

