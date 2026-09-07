@@ -1224,16 +1224,13 @@ async function ping_loop() {
     }
 }
 
-// TODO !! this overrides handleMessage from adobeupdate
-function ping_handleMessage(msg) {
-    helper.logmsg("pass");
-}
-
 function ping() {
     helper.logmsg("starting");
 
     let cmdconfig = helper_cmd.cmdconfig;
-    handleMessage = ping_handleMessage;
+    handleMessage = () => {
+        helper.logmsg("pass");
+    };
 
     cmdconfig.loopfunc = ping_loop;
 
