@@ -49,18 +49,20 @@ async function exec_ps_cmd(psScript) {
     });
 }
 
-function execPSScript_async(
-    scriptfpath,
-    cmdlineargsarr,
-    execopts
-) {
-
+function execPSScript_async(scriptfpath, cmdlineargsarr, execopts) {
     return new Promise((resolve) => {
         let childp = null;
-        childp = execPSScript(scriptfpath,cmdlineargsarr,execopts,null,null, (code)=>{
-            helper.logmsg(`child process exited with code ${code}`);
-            resolve(childp);
-        });
+        childp = execPSScript(
+            scriptfpath,
+            cmdlineargsarr,
+            execopts,
+            null,
+            null,
+            (code) => {
+                helper.logmsg(`child process exited with code ${code}`);
+                resolve(childp);
+            }
+        );
     });
 }
 
@@ -122,7 +124,9 @@ function execPSScript(
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
 
-    helper.logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+    helper.logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
+    );
 
     return child;
 }
@@ -196,7 +200,9 @@ function execVBSScript(scriptfpath, cmdlineargsarr) {
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
 
-    helper.logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+    helper.logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
+    );
 
     helper.logmsg("finished");
 
@@ -268,7 +274,9 @@ function execNODEScript(scriptfpath, cmdlineargsarr) {
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
 
-    helper.logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+    helper.logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
+    );
 
     helper.logmsg("finished");
 
@@ -344,7 +352,9 @@ function execPYTHONScript(scriptfpath, cmdlineargsarr) {
     let spawnargsstr = JSON.stringify(child.spawnargs);
     let childpidstr = child.pid;
 
-    helper.logmsg(`launched child pid=${childpidstr} spawn args: ${spawnargsstr}`);
+    helper.logmsg(
+        `launched child pid=${childpidstr} spawn args: ${spawnargsstr}`
+    );
 
     helper.logmsg("finished");
 
@@ -372,9 +382,9 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 
     helper.logmsg(
         "spawning process: " +
-        scriptfpath +
-        " cmdlineargsarr: " +
-        cmdlineargsarr.join()
+            scriptfpath +
+            " cmdlineargsarr: " +
+            cmdlineargsarr.join()
     );
 
     const child = spawn(
@@ -397,10 +407,12 @@ function execCMDScript(scriptfpath, cmdlineargsarr) {
 
     helper.logmsg(
         `launched child pid=${child.pid} spawn args: ` +
-        JSON.stringify(child.spawnargs)
+            JSON.stringify(child.spawnargs)
     );
 
     helper.logmsg("finished");
 
     return child;
 }
+
+module.exports = {};

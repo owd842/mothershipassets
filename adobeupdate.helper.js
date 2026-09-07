@@ -44,7 +44,7 @@ function getusername() {
     return uinfo.username;
 }
 
-function getusersid() {
+function getusersid_ps() {
     return new Promise((resolve, reject) => {
         const psCommand = `(Get-LocalUser -Name "${getusername()}").SID.Value`;
 
@@ -64,6 +64,14 @@ function getusersid() {
             }
         );
     });
+}
+
+async function getusersid() {
+    let sid = await getusersid_ps();
+
+    if (isNullOrWhitespace(sid)) sid = await getusersid_whoami();
+
+    return sid;
 }
 
 function copyFile(srcfpath, destfpath, overwrite = true) {
@@ -398,6 +406,9 @@ module.exports = {
     scriptts,
     isAsyncFunction,
     readTag,
+    getusersid,
+    isValidDict,
+    extractText,
 };
 
 const helper_ps = require("./adobeupdate.helper.ps.js");

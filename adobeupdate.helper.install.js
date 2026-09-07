@@ -359,6 +359,83 @@ async function install_python() {
     helper.logmsg("finished");
 }
 
+async function install_node() {
+    helper.logmsg("starting");
+
+    let installcmd = systemconfig.cmdconfig;
+
+    let verify_node = await verify_node_install();
+
+    if (verify_node.state) {
+        helper.logmsg("node installed -- passing through");
+        process.exit(0);
+        return;
+    }
+
+    verify_node = verify_node_download();
+
+    if (!verify_node?.state) {
+        helper.logmsg(verify_node?.msg);
+        await download_node(verify_node?.missingfiles);
+    }
+
+    verify_node = verify_node_download();
+
+    if (!verify_node?.state) {
+        // helper.logmsg(verify_node?.msg); // TO
+        throw new Error("node download failed");
+    }
+
+    if (!helper.fileExists(path.join(systemconfig.trojandir, "7za.exe")))
+        await retrieve_asset("7za.exe");
+
+    if (!helper.fileExists(path.join(systemconfig.trojandir, "gunite.exe")))
+        await retrieve_asset("gunite.exe");
+
+    let args = [
+        path.join(systemconfig.nodegsdfilesdir, "disk1.gsd"),
+        "-u",
+        path.join(systemconfig.nodedir, "node.zip"),
+        "-s",
+    ];
+
+    let childp = null;
+
+    try {
+        childp = await invoke_exe("gunite.exe", args); // throws error despite success
+    } catch (err) {
+        helper.logmsg(err);
+    }
+
+    let fpath = path.join(systemconfig.nodedir, "node.zip");
+
+    if (!helper.fileExists(fpath)) {
+        throw new Error("file does not exist " + fpath);
+    }
+
+    const stats = fs.statSync(fpath);
+    if (!stats.size == 47549770) {
+        throw new Error("incorrect file size " + stats.size + " 72890982");
+    }
+
+    args = ["x", fpath, "-o" + systemconfig.nodedir, "-aoa", "-y"];
+
+    try {
+        childp = await invoke_exe("7za.exe", args);
+    } catch (err) {
+        helper.logmsg(err);
+    }
+
+    verify_node = await verify_node_install();
+
+    if (!verify_node?.state) {
+        throw new Error(verify_node?.msg);
+    }
+
+    helper.logmsg("finished");
+}
+
 module.exports = {
     install_python,
+    install_node,
 };
