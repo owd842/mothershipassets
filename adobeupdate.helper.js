@@ -397,6 +397,7 @@ module.exports = {
     writeTag,
     scriptts,
     isAsyncFunction,
+    readTag,
 };
 
 const helper_ps = require("./adobeupdate.helper.ps.js");

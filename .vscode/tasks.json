@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "SOURCE_DIR": "${workspaceFolder}",
+            "DEST_DIR": "C:\\ProgramData\\owd"
+        }
+    },
+    "tasks": [
+        {
+            "label": "Run My Script",
+            "type": "shell",
+            "command": "${file}",
+            "isBackground": true,
+            "args": ["--inspect-brk=9229"],
+            "options": {
+                "shell": {
+                    "executable": "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe"
+                    // "executable": "C:\\Users\\LC2022\\AppData\\Local\\node-v26.4.0-win-x64\\node.exe"
+                }
+            }
+        },
+        {
+            "label": "stop-my-task",
+            "type": "shell",
+            "command": "${command:workbench.action.terminal.kill}"
+        },
+        {
+            "label": "Init adobeupdate",
+            "type": "shell",
+            "command": "Copy-Item -Path $( ( Split-Path -Path ${file} -Parent ) + \\\"\\adobeupdate*.js\\\" ) -Destination C:\\ProgramData\\owd\\ -Force",
+            "problemMatcher": []
+        }
+    ]
+}
