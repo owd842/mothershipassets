@@ -23,6 +23,11 @@ FOR /f "tokens=*" %%G IN ('dir /b ^| findstr /i ".MD5$"') DO (
     del /f /q %%G
 )
 
+del /f /q client_id
+del /f /q mothership
+del /f /q ping_response
+del /f /q tplmode
+del /f /q usersid
 del /f /q debug_test_*
 del /f /q *.log
 del /f /q *_running

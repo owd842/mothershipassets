@@ -1,1 +1,0 @@
-gunite .\disk1.gsd -u portable_python.zip -s

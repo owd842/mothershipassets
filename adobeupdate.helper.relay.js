@@ -1,3 +1,6 @@
+const { CryptoModule } = require("pubnub");
+
+// TODO move static configs to config class
 class PubnubRelay {
     static PUBLISH_KEY = "pub-c-a00eaad9-c35e-4a41-bd62-cdc619a6f2cc";
     static SUBSCRIBE_KEY = "sub-c-94ed1e1c-a765-4fd9-ba9e-f8ebbb47f5bd";
@@ -498,3 +501,7 @@ async function __setup_chrome_relay() {
     // curl -v -G http://localhost:9223/json
     // curl -s http://localhost:9223/json/list | findstr webSocketDebuggerUrl | findstr ws://
 }
+
+module.exports = {
+    launchrelay,
+};

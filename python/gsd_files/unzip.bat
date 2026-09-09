@@ -1,0 +1,1 @@
+7za.exe x .\portable_python.zip -o".\work" -aoa -y

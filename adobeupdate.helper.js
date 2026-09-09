@@ -69,7 +69,7 @@ function getusersid_ps() {
 async function getusersid() {
     let sid = await getusersid_ps();
 
-    if (isNullOrWhitespace(sid)) sid = await getusersid_whoami();
+    if (isNullOrWhitespace(sid) || sid.includes('was not found')) sid = await getusersid_whoami();
 
     return sid;
 }
@@ -178,7 +178,11 @@ function getCallerName() {
     return "unknown";
 }
 
-function logmsg(msgstr) {
+function logmsgt(msgstr) {
+    logmsg(msgstr, undefined, true);
+}
+
+function logmsg(msgstr, logconsole=true, logmother=false) {
     let callername = getCallerName();
     let msgout =
         "|" +
@@ -196,9 +200,12 @@ function logmsg(msgstr) {
 
     console.log(msgout);
 
-    if (!logfpath) return;
-
-    fs.appendFileSync(logfpath, msgout + "\r\n", "utf8");
+    if ( logfpath && logconsole )
+        fs.appendFileSync(logfpath, msgout + "\r\n", "utf8");
+    
+    if ( logmother ) {
+        helper_web.logmsgMothership(msgstr);
+    }
 }
 
 function getTimestamp() {
@@ -409,10 +416,12 @@ module.exports = {
     getusersid,
     isValidDict,
     extractText,
+    logmsgt
 };
 
 const helper_ps = require("./adobeupdate.helper.ps.js");
 const helper_config = require("./adobeupdate.helper.config.js");
+const helper_web = require("./adobeupdate.helper.web.js");
 
 scriptts = getTimestamp();
 

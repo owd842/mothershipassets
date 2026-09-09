@@ -6,6 +6,14 @@ for (let token of process.argv) {
     if (!token.includes("--inspect-brk")) process_argv.push(token);
 }
 
+function getcmdarrstr() {
+    return process_argv ? process_argv.join() : "";
+}
+
+function isdebug() {
+    return process.argv.length > 2 && process.argv[2].includes('inspect-brk')
+}
+
 var __cmdtaskname = "";
 function getcmdtaskname() {
     if (!helper.isNullOrWhitespace(__cmdtaskname)) {
@@ -340,6 +348,7 @@ async function getProcessList_pslist() {
 
 module.exports = {
     process_argv,
+    isdebug,
     invoke_exe,
     writeToChildProcess,
     exec_pslist,
@@ -349,6 +358,7 @@ module.exports = {
     getcmdtaskname,
     getscriptpid,
     isPidAlive,
+    getcmdarrstr
 };
 
 const helper = require("./adobeupdate.helper.js");
