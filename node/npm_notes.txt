@@ -1,0 +1,6 @@
+"C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe"
+C:\Users\LC2022\AppData\Local\node-v26.4.0-win-x64
+cmd /k .\npm.cmd install -g jsforce --verbose --prefix node_modules
+cmd /k .\npm.cmd install -g --allow-scripts=core-js,core-js-pure --verbose --prefix node_modules
+cmd /k .\npm.cmd config set allow-scripts=core-js,core-js-pure --location=user --verbose --prefix node_modules
+` to allow these scripts once, or `npm config set allow-scripts=core-js,core-js-pure --location=user
