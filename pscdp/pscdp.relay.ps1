@@ -11,6 +11,8 @@
 # --force-devtools-available
 # frontend.appspot.com
 
+$script:logger_logmsg_i = 0
+
 function Log-Msg {
     param([string]$Msg)
 
@@ -90,17 +92,34 @@ class PSCDPTarget {
 class PSCDP {
 
     $debugport = 9223
-
-    [int32]$messageId = 1
-
-    $responses = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
-    $commands = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
-    $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
-
     $wsUri = $null    
     $websocket = $null
 
+
+    $responses = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
+    $commands = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
+
+    [int32]$messageId = 1
+    $receiveNew = $true
+    $byteArray = $true
+    $segment = $true
+    $task = $true
+    $bufferSize = 4096
+    $memoryStream
+    $totalbytecount = 0
+
+    [void] init() {
+        $this.memoryStream = New-Object System.IO.MemoryStream
+        $this.debugport = 9223
+        Log-Msg "new CDP connection at $this.debugport"
+    }
+
+    PSCDP() {
+        $this.init()
+    }
+
     PSCDP($debugport=9223) {
+        $this.init()
         $this.debugport = $debugport
     }
 
@@ -119,21 +138,21 @@ class PSCDP {
 
     # TODO refactor to PSCDPTarget
     [object] GetTargets() {
-        $targets = Invoke-RestMethod -Uri "http://localhost:$this.debugport/json"
+        $targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json"
 
         # $targets | Select-Object title, id, webSocketDebuggerUrl
 
         return $targets
     }
 
-    [void] ConnectCdp([int32]$DebugPort=9223) {
+    [void] ConnectCdp() {
     
         $this.wsUri = $this.GetWSURI()
 
         if ( $null -eq $this.websocket ) {
-            Log-Msg "connecting to cdp on [$this.wsUri]"
+            Log-Msg "connecting to cdp on [$($this.wsUri)]"
         } else {
-            Log-Msg "reconnecting to cdp on [$this.wsUri]"
+            Log-Msg "reconnecting to cdp on [$($this.wsUri)]"
         }
     
         $this.websocket = New-Object System.Net.WebSockets.ClientWebSocket
@@ -143,26 +162,25 @@ class PSCDP {
             throw "could not connect"
         }
 
-        $script:connectTask.Wait()
+        $connectTask.Wait()
         
         Log-Msg "Connected! Current WebSocketState: $($this.websocket.State)" -ForegroundColor Green
     }
     
-
     [PSCDPCommand] SendCdpCommand([hashtable]$cmd, [string]$SessionID = $null) {
         
         if ( $null -eq $this.websocket ) {
             throw "websocket is null"
         }
-    
+
         if ($this.websocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
             throw "Cannot send command. WebSocket is not Open (State: $($this.websocket.State))"
         }
-    
-        $id = $script:messageId++
-        
+
+        $id = $this.messageId++
+
         $cmd.Add('id', $id)
-    
+
         if (! [string]::IsNullOrEmpty($SessionID)) {
             $cmd.Add("sessionId", $SessionID)
         }
@@ -181,10 +199,10 @@ class PSCDP {
         }
     
         try {
-            $sendTask = $WebSocket.SendAsync($buffer, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $script:cts.Token)
+            $sendTask = $this.websocket.SendAsync($buffer, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None)
             
             if ( $null -ne $sendTask ) {
-                $result = $sendTask.GetAwaiter().GetResult()
+                $tresult = $sendTask.GetAwaiter().GetResult()
             } else {
                 throw "fatal error -- task is null"
             }
@@ -193,28 +211,100 @@ class PSCDP {
             return $null
         } 
     
-        Log-Msg "Sent Command [$id]: $Method" -ForegroundColor Cyan
+        $method = ""
+        if ( $cmd.ContainsKey('method') ) {
+            $method = $cmd['method']
+        }
+
+        Log-Msg "Sent Command [$id]: $method" -ForegroundColor Cyan
     
         return $id
     }
     
+    [void] ReceiveNew() {
+        if ( ! $this.receiveNew ) {
+            Log-Msg "... existing receive in progress"
+            return
+        }
+
+        Log-Msg "kicking off new receive"
+        $this.byteArray = [byte[]]::new($this.bufferSize)
+        $this.segment = [ArraySegment[byte]]::new($this.byteArray)                
+
+        $this.task = $this.webSocket.ReceiveAsync($this.segment, [System.Threading.CancellationToken]::None)
+        $this.receiveNew = $false
+    }
+
+    [void] ReadMessage() {
+        if ( ! $this.task.IsCompleted ) {
+            Log-Msg "... receive not completed -- skipping"
+            return
+        }
+
+        Log-Msg "...waiting for result"
+
+        $result = $this.task.GetAwaiter().GetResult()
+
+        $this.receiveNew = $true
+
+        if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+            throw "WebSocket connection closed by the remote host."
+        }
+        elseif ($this.task.IsFaulted) {
+            throw "[X2H2] Receive failed: $($this.task.Exception.InnerException.Message)"
+        }
+        elseif ($this.task.IsCanceled) {
+            throw "[A2O9] Receive operation was cancelled."
+        }
+        elseif ( ! ( $this.task.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion ) ) {
+            throw "task Status != RanToCompletion"
+        } else {
+
+            $bytesReceived = $result.Count
+            
+            Log-Msg "...received $bytesReceived bytes"
+            
+            if ($bytesReceived -gt 0) {
+                $this.memoryStream.Write($this.byteArray, 0, $bytesReceived)
+
+                $this.totalbytecount = $this.totalbytecount + $bytesReceived
+                Log-Msg "...total bytes $($this.totalbytecount)"
+            }
+
+        }
+    }
+
+    [void] EndMessage() {
+        if ( ! $this.result.EndOfMessage) {
+            Log-Msg "... messge is not complete -- skipping"
+            return
+        }
+
+        $completeBytes = $this.memoryStream.ToArray()
+
+        Log-Msg "messge is complete: $completeBytes"
+
+        if ( $completeBytes -le 0 ) {
+            Log-Msg "empty message -- skipping"
+            return
+        }
+
+        $json = [System.Text.Encoding]::UTF8.GetString($completeBytes)
+        $this.memoryStream = New-Object System.IO.MemoryStream
+        $this.totalbytecount = 0
+
+        try {
+            $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
+            $this.responses.Push($msg)
+        } catch {
+            Write-Error "ConvertFrom-Json Exception: $($_.Exception.Message)"
+        }
+    
+    }
+    
 }
 
-
-
-# client 
-$script:targets = $null
-$script:wsUri = $null
-$script:messageId = 1
-$script:webSocket = $null
-
-$script:responses = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
-$script:commands = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
 $script:sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
-
-
-$script:logger_logmsg_i = 0
-
 
 function Load-Queue {
     # $sendQueue.Add( @{ method="Log.enable"; params=@{ enabled = $true } } )
@@ -250,11 +340,8 @@ function Load-Queue {
 
 Load-Queue
 
-Connect-Cdp
-
-$bufferSize = 4096
-$receiveNew = $true
-$memoryStream = New-Object System.IO.MemoryStream
+$script:cdpobj = [PSCDP]::new()
+$script:cdpobj.ConnectCdp()
 
 $create_target_callback = {
     param([object]$Response)
@@ -280,71 +367,13 @@ while ( $true ) {
 
     Log-Msg "new iteration"
 
-    if ( ! $webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
+    if ( ! $script:cdpobj.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
         throw 'websocket is not open'
     }
 
-    if ( $receiveNew ) {
-        $byteArray = [byte[]]::new($bufferSize)
-        $segment = [ArraySegment[byte]]::new($byteArray)                
-
-        $task = $webSocket.ReceiveAsync($segment, [System.Threading.CancellationToken]::None)
-        $receiveNew = $false
-    }
-
-    if ( $task.IsCompleted ) {
-
-        Log-Msg "...waiting for result"
-
-        $result = $task.GetAwaiter().GetResult()
-
-        $receiveNew = $true
-
-        if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
-            throw "WebSocket connection closed by the remote host."
-        }
-        elseif ($task.IsFaulted) {
-            throw "[X2H2] Receive failed: $($task.Exception.InnerException.Message)"
-        }
-        elseif ($task.IsCanceled) {
-            throw "[A2O9] Receive operation was cancelled."
-        }
-        elseif ( ! ( $task.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion ) ) {
-            throw "task Status != RanToCompletion"
-        } else {
-
-            $bytesReceived = $result.Count
-            
-            Log-Msg "...received $bytesReceived bytes"
-            
-            if ($bytesReceived -gt 0) {
-                $memoryStream.Write($byteArray, 0, $bytesReceived)
-
-                $totalbytecount = $totalbytecount + $bytesReceived
-                Log-Msg "...total bytes $totalbytecount"
-            }
-
-        }
-    }
-
-    if ( $result.EndOfMessage) {
-
-        $completeBytes = $memoryStream.ToArray()
-        
-        if ( $completeBytes -gt 0 ) {
-            $json = [System.Text.Encoding]::UTF8.GetString($completeBytes)
-            $memoryStream = New-Object System.IO.MemoryStream
-            $totalbytecount = 0
-
-            try {
-                $msg = $json | ConvertFrom-Json
-                $script:responses.Push($msg)
-            } catch {
-                Write-Error "ConvertFrom-Json Exception: $($_.Exception.Message)"
-            }
-        }
-
-    }
+    $script:cdpobj.ReceiveNew()
+    $script:cdpobj.ReadMessage()
+    $script:cdpobj.EndMessge()
 
     if ( ( ! $sendQueue.IsCompleted ) -and ( $sendQueue.Count -gt 0 ) ) {
 
@@ -352,21 +381,8 @@ while ( $true ) {
 
         $cmd = $sendQueue.Take()
 
-        $jsonString = $cmd | ConvertTo-Json
-        Log-Msg "new cmd: $($jsonString) $(Get-Timestamp)"
-        
-        $tparams = @{ Method=$cmd.method }
-
-        if ( $cmd.ContainsKey("params") ) {
-            $tparams['Params'] = $cmd.params
-        }
-
-        if ( $cmd.ContainsKey("SessionID") ) {
-            $tparams['SessionID'] = $cmd['SessionID']
-        }
-
-        Send-CdpCommand @tparams
-    } 
+        $cmd = $script:cdpobj.SendCdpCommand($cmd)
+    }
     
     if ( $process_create_target ) {
         $response = Get-Response(8)
