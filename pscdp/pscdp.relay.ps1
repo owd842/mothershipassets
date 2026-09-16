@@ -3,7 +3,7 @@
 # $ta = [psobject].Assembly.GetType('System.Management.Automation.TypeAccelerators')
 
 # ungoogled chromium
-# start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --auto-open-devtools-for-tabs --remote-debugging-address=0.0.0.0 --remote-allow-origins=* --force-devtools-available
+# start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --remote-debugging-address=0.0.0.0 --remote-allow-origins=*
 # https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
 # --auto-open-devtools-for-tabs
 # --remote-debugging-address=0.0.0.0
@@ -12,7 +12,6 @@
 # frontend.appspot.com
 
 $script:logger_logmsg_i = 0
-
 function Log-Msg {
     param([string]$Msg)
 
@@ -32,9 +31,12 @@ function Get-Timestamp {
     return $ret
 }
 
+
 $script:msedge_debugport = 9222
 $script:chrome_debugport = 9223
+
 class PSCDPCommand {
+    [string]$name
     [int32]$id
     [string]$method
     [hashtable]$params
@@ -42,7 +44,25 @@ class PSCDPCommand {
     [string]$sessionId
 
     [hashtable] GetDict() {
-        return $null
+
+        if ( [string]::IsNullOrWhiteSpace($this.method) ) {
+            throw 'method is missing'
+        }
+
+        $obj = @{
+            id=$this.id
+            method=$this.method
+        }
+
+        if ( $null -ne $this.params ) {
+            $obj.Add('params', $this.params)
+        }
+
+        if ( ! [string]::IsNullOrWhiteSpace($this.sessionId) ) {
+            $obj.Add('sessionId', $this.sessionId)
+        }
+
+        return $obj
     }
 
     [void] SetID([int32]$id) {
@@ -95,9 +115,9 @@ class PSCDP {
     $wsUri = $null    
     $websocket = $null
 
-
     $responses = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
-    $commands = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
+    $commands = [System.Collections.Concurrent.ConcurrentStack[PSCDPCommand]]::new()
+    $results = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -107,6 +127,7 @@ class PSCDP {
     $bufferSize = 4096
     $memoryStream
     $totalbytecount = 0
+    $result = $null
 
     [void] init() {
         $this.memoryStream = New-Object System.IO.MemoryStream
@@ -118,7 +139,7 @@ class PSCDP {
         $this.init()
     }
 
-    PSCDP($debugport=9223) {
+    PSCDP($debugport) {
         $this.init()
         $this.debugport = $debugport
     }
@@ -166,8 +187,42 @@ class PSCDP {
         
         Log-Msg "Connected! Current WebSocketState: $($this.websocket.State)" -ForegroundColor Green
     }
-    
-    [PSCDPCommand] SendCdpCommand([hashtable]$cmd, [string]$SessionID = $null) {
+
+    [PSCDPCommand] GetCommand([string]$name) {
+        $cmd = $this.commands | Where-Object { $_.name -eq $name } | Select-Object -First 1
+        return $cmd
+    }
+
+    [object] GetResponse([string]$name) { #TODO refactor to return PSCDPResponse object
+
+        try {
+            $cmd = $this.GetCommand($name)
+            
+            if ( $null -eq $cmd ) {
+                return $null
+            }
+
+            $id = $cmd.id
+
+            if ( ( $null -eq $this.responses ) -or ( $this.responses.Count -le 0 ) ) {
+                return $null
+            }
+
+            $response = $this.responses | Where-Object { $_.id -eq $id}
+
+            return $response
+        } catch {
+            Write-Error $_.Exception.Message
+        }
+
+        return $null
+    }
+
+    [PSCDPCommand] SendCdpCommand([hashtable]$cmd) {
+        return $this.SendCdpCommand($cmd,$null)
+    }
+
+    [PSCDPCommand] SendCdpCommand([hashtable]$cmd, [string]$sessionID) {
         
         if ( $null -eq $this.websocket ) {
             throw "websocket is null"
@@ -181,7 +236,7 @@ class PSCDP {
 
         $cmd.Add('id', $id)
 
-        if (! [string]::IsNullOrEmpty($SessionID)) {
+        if (! [string]::IsNullOrEmpty($sessionID)) {
             $cmd.Add("sessionId", $SessionID)
         }
         
@@ -218,10 +273,10 @@ class PSCDP {
 
         Log-Msg "Sent Command [$id]: $method" -ForegroundColor Cyan
     
-        return $id
+        return $obj
     }
     
-    [void] ReceiveNew() {
+    [void] InitReceive() {
         if ( ! $this.receiveNew ) {
             Log-Msg "... existing receive in progress"
             return
@@ -243,11 +298,11 @@ class PSCDP {
 
         Log-Msg "...waiting for result"
 
-        $result = $this.task.GetAwaiter().GetResult()
+        $this.result = $this.task.GetAwaiter().GetResult()
 
         $this.receiveNew = $true
 
-        if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+        if ($this.result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
             throw "WebSocket connection closed by the remote host."
         }
         elseif ($this.task.IsFaulted) {
@@ -260,7 +315,7 @@ class PSCDP {
             throw "task Status != RanToCompletion"
         } else {
 
-            $bytesReceived = $result.Count
+            $bytesReceived = $this.result.Count
             
             Log-Msg "...received $bytesReceived bytes"
             
@@ -282,9 +337,9 @@ class PSCDP {
 
         $completeBytes = $this.memoryStream.ToArray()
 
-        Log-Msg "messge is complete: $completeBytes"
+        Log-Msg "messge is complete"
 
-        if ( $completeBytes -le 0 ) {
+        if ( $completeBytes.count -le 0 ) {
             Log-Msg "empty message -- skipping"
             return
         }
@@ -295,7 +350,32 @@ class PSCDP {
 
         try {
             $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
-            $this.responses.Push($msg)
+            
+            $isresult = $false
+
+            $msght = @{}
+            $msg.psobject.Properties | ForEach-Object {
+                
+                if ( $_.Name -eq "result" ) {
+                    $isresult = $true
+                }
+
+                $msght[$_.Name] = $_.Value
+            }
+
+            $this.responses.Push($msght)
+
+            # check if msg is a response to an issued cmd
+            if ( $isresult ) {
+                $cmd = $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
+            
+                if ( $null -ne $cmd ) {
+                    $cmd.response = $msght
+                }
+
+                $this.results.Push($msght)
+            }
+
         } catch {
             Write-Error "ConvertFrom-Json Exception: $($_.Exception.Message)"
         }
@@ -333,9 +413,9 @@ function Load-Queue {
         # #"windowState": "minimized"
         # #"hidden": True --> has problems/issues
     }
-    $sendQueue.Add( @{ method="Target.createTarget"; params=$params } )
+    $sendQueue.Add( @{ name="browse_to_yahoo"; method="Target.createTarget"; params=$params } )
 
-    $sendQueue.Add( @{ method="Target.getTargets" } )
+    $sendQueue.Add( @{ name="get_yahoo_target"; method="Target.getTargets" } )
 }
 
 Load-Queue
@@ -357,7 +437,7 @@ $create_target_callback = {
         flatten=$true 
     }
 
-    $sendQueue.Add( @{ method="Target.attachToTarget"; params=$params } )
+    $sendQueue.Add( @{ name="get_session_id"; method="Target.attachToTarget"; params=$params } )
 }
 
 $process_create_target = $true
@@ -371,9 +451,9 @@ while ( $true ) {
         throw 'websocket is not open'
     }
 
-    $script:cdpobj.ReceiveNew()
+    $script:cdpobj.InitReceive()
     $script:cdpobj.ReadMessage()
-    $script:cdpobj.EndMessge()
+    $script:cdpobj.EndMessage()
 
     if ( ( ! $sendQueue.IsCompleted ) -and ( $sendQueue.Count -gt 0 ) ) {
 
@@ -385,7 +465,12 @@ while ( $true ) {
     }
     
     if ( $process_create_target ) {
-        $response = Get-Response(8)
+        try {
+            $name="get_yahoo_target"
+            $response = $script:cdpobj.GetResponse("get_yahoo_target")
+        } catch {
+            Write-Error $_.Exception.Message
+        }
 
         if ( $null -ne $response ) {
             & $create_target_callback -Response $response
@@ -394,7 +479,7 @@ while ( $true ) {
     }
 
     if ( $init_session_id ) {
-        $response = Get-Response(9)
+        $response = $script:cdpobj.GetResponse("get_session_id")
 
         if ( $null -ne $response ) {
             $script:sessionId = $response.result.sessionId
@@ -402,7 +487,7 @@ while ( $true ) {
             $init_session_id = $false
 
             if ( $null -ne $script:sessionId ) {
-                Log-Msg $script:sessionId
+                Log-Msg "sessionid: $($script:sessionId)"
 
                 $sendQueue.Add( @{ method="Page.navigate"; params=@{ url = "https://www.investing.com" }; SessionID=$sessionId } )
             }
@@ -414,10 +499,7 @@ while ( $true ) {
     Start-Sleep -Milliseconds 50
 }
 
-
-
 exit
-
 
 <#
 if ( $null -eq $readtask ) {
