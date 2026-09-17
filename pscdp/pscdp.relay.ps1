@@ -1,3 +1,5 @@
+# 20260917
+
 <# https://zenn.dev/mima_ita/articles/f1fc037e6eb134 #>
 
 # $ta = [psobject].Assembly.GetType('System.Management.Automation.TypeAccelerators')
@@ -115,9 +117,9 @@ class PSCDP {
     $wsUri = $null    
     $websocket = $null
 
-    $responses = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
-    $commands = [System.Collections.Concurrent.ConcurrentStack[PSCDPCommand]]::new()
-    $results = [System.Collections.Concurrent.ConcurrentStack[object]]::new()
+    $responses = [System.Collections.Generic.List[object]]::new()
+    $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $results = [System.Collections.Generic.List[object]]::new()
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -132,7 +134,7 @@ class PSCDP {
     [void] init() {
         $this.memoryStream = New-Object System.IO.MemoryStream
         $this.debugport = 9223
-        Log-Msg "new CDP connection at $this.debugport"
+        Log-Msg "new CDP connection at $($this.debugport)"
     }
 
     PSCDP() {
@@ -193,10 +195,10 @@ class PSCDP {
         return $cmd
     }
 
-    [object] GetResponse([string]$name) { #TODO refactor to return PSCDPResponse object
+    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResponse object
 
         try {
-            $cmd = $this.GetCommand($name)
+            $cmd = $this.GetCommand($cmdname)
             
             if ( $null -eq $cmd ) {
                 return $null
@@ -204,13 +206,21 @@ class PSCDP {
 
             $id = $cmd.id
 
-            if ( ( $null -eq $this.responses ) -or ( $this.responses.Count -le 0 ) ) {
+            if ( ( $null -eq $this.results ) -or ( $this.results.Count -le 0 ) ) {
                 return $null
             }
 
-            $response = $this.responses | Where-Object { $_.id -eq $id}
+            $arr = $this.results.ToArray()
+            for ($i = 0; $i -lt $arr.Count; $i++) {
+                $t = $arr[$i]
 
-            return $response
+                if ( ($t.id).ToString() -eq ($id).ToString() ) {
+                    return $t
+                }
+
+            }
+            
+            return $null
         } catch {
             Write-Error $_.Exception.Message
         }
@@ -242,7 +252,7 @@ class PSCDP {
         
         $obj = [PSCDPCommand]$cmd
         
-        $this.commands.Push($obj)
+        $this.commands.Add($obj)
 
         $payload = $obj.ToJson() 
     
@@ -282,7 +292,7 @@ class PSCDP {
             return
         }
 
-        Log-Msg "kicking off new receive"
+        Log-Msg "...kicking off new receive"
         $this.byteArray = [byte[]]::new($this.bufferSize)
         $this.segment = [ArraySegment[byte]]::new($this.byteArray)                
 
@@ -337,7 +347,7 @@ class PSCDP {
 
         $completeBytes = $this.memoryStream.ToArray()
 
-        Log-Msg "messge is complete"
+        Log-Msg "...message is complete"
 
         if ( $completeBytes.count -le 0 ) {
             Log-Msg "empty message -- skipping"
@@ -363,7 +373,7 @@ class PSCDP {
                 $msght[$_.Name] = $_.Value
             }
 
-            $this.responses.Push($msght)
+            $this.responses.Add($msght)
 
             # check if msg is a response to an issued cmd
             if ( $isresult ) {
@@ -373,7 +383,7 @@ class PSCDP {
                     $cmd.response = $msght
                 }
 
-                $this.results.Push($msght)
+                $this.results.Add($msght)
             }
 
         } catch {
@@ -384,6 +394,7 @@ class PSCDP {
     
 }
 
+$script:sessionId = $null
 $script:sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
 
 function Load-Queue {
@@ -447,6 +458,10 @@ while ( $true ) {
 
     Log-Msg "new iteration"
 
+    if ( $null -eq $script:cdpobj.webSocket ) {
+        throw "websocket is null"
+    }
+
     if ( ! $script:cdpobj.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
         throw 'websocket is not open'
     }
@@ -463,26 +478,26 @@ while ( $true ) {
 
         $cmd = $script:cdpobj.SendCdpCommand($cmd)
     }
-    
+
     if ( $process_create_target ) {
         try {
             $name="get_yahoo_target"
-            $response = $script:cdpobj.GetResponse("get_yahoo_target")
+            $result = $script:cdpobj.GetResult("get_yahoo_target")
         } catch {
             Write-Error $_.Exception.Message
         }
 
-        if ( $null -ne $response ) {
-            & $create_target_callback -Response $response
+        if ( $null -ne $result ) {
+            & $create_target_callback -Response $result
             $process_create_target = $false
         }
     }
 
     if ( $init_session_id ) {
-        $response = $script:cdpobj.GetResponse("get_session_id")
+        $result = $script:cdpobj.GetResult("get_session_id")
 
-        if ( $null -ne $response ) {
-            $script:sessionId = $response.result.sessionId
+        if ( $null -ne $result ) {
+            $script:sessionId = $result['result'].sessionId
 
             $init_session_id = $false
 
