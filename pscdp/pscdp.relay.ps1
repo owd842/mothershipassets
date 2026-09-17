@@ -7,6 +7,7 @@
 # ungoogled chromium
 # start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --remote-debugging-address=0.0.0.0 --remote-allow-origins=*
 # https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
+# --headless=new
 # --auto-open-devtools-for-tabs
 # --remote-debugging-address=0.0.0.0
 # --remote-allow-origins=* 
@@ -37,6 +38,7 @@ function Get-Timestamp {
 $script:msedge_debugport = 9222
 $script:chrome_debugport = 9223
 
+
 class PSCDPCommand {
     [string]$name
     [int32]$id
@@ -44,6 +46,12 @@ class PSCDPCommand {
     [hashtable]$params
     [object]$response
     [string]$sessionId
+    [scriptblock]$callback
+    [bool]$isinvoked = $false
+
+    [bool]HasCallback() {
+        return ( $null -ne $this.callback )
+    }
 
     [hashtable] GetDict() {
 
@@ -114,7 +122,7 @@ class PSCDPTarget {
 class PSCDP {
 
     $debugport = 9223
-    $wsUri = $null    
+    $wsUri = $null
     $websocket = $null
 
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
@@ -138,7 +146,6 @@ class PSCDP {
     [void] init() {
         $this.memoryStream = New-Object System.IO.MemoryStream
         $this.debugport = 9223
-        Log-Msg "new CDP connection at $($this.debugport)"
     }
 
     PSCDP() {
@@ -179,7 +186,8 @@ class PSCDP {
     }
 
     [void] ConnectCdp() {
-    
+        Log-Msg "new CDP connection at $($this.debugport)"
+
         $this.wsUri = $this.GetWSURI()
 
         if ( $null -eq $this.websocket ) {
@@ -200,20 +208,28 @@ class PSCDP {
         Log-Msg "Connected! Current WebSocketState: $($this.websocket.State)" -ForegroundColor Green
     }
 
+    [PSCDPCommand] GetCommandByID([string]$id) {
+        $cmd = $this.commands | Where-Object { $_.id -eq $id } | Select-Object -First 1
+        return $cmd
+    }
+
     [PSCDPCommand] GetCommand([string]$name) {
         $cmd = $this.commands | Where-Object { $_.name -eq $name } | Select-Object -First 1
         return $cmd
     }
 
-    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResponse object
+    [object] GetResultByID($id) {
+        $cmd = $this.GetCommandByID($id)
 
+        if ( $null -eq $cmd ) {
+            return $null
+        }
+
+        return $this.GetResultByCmd($cmd)
+    }
+
+    [object] GetResultByCmd([PSCDPCommand]$cmd) { #TODO refactor to return PSCDPResponse object
         try {
-            $cmd = $this.GetCommand($cmdname)
-            
-            if ( $null -eq $cmd ) {
-                return $null
-            }
-
             $id = $cmd.id
 
             if ( ( $null -eq $this.results ) -or ( $this.results.Count -le 0 ) ) {
@@ -236,6 +252,17 @@ class PSCDP {
         }
 
         return $null
+    }
+
+    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResponse object
+
+        $cmd = $this.GetCommand($cmdname)
+
+        if ( $null -eq $cmd ) {
+            return $null
+        }
+
+        return $this.GetResultByCmd($cmd)
     }
 
     [PSCDPCommand] SendCdpCommand([hashtable]$cmd) {
@@ -372,22 +399,42 @@ class PSCDP {
             $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
             
             $isresult = $false
+            $newtarget = $false
 
             $msght = @{}
             $msg.psobject.Properties | ForEach-Object {
                 
                 if ( $_.Name -eq "result" ) {
                     $isresult = $true
+                } elseif ( $_.Name -eq "method" )  {
+                    if ( $_.Value -eq 'Target.attachedToTarget' ) {
+                        $newtarget = $true
+                    }
                 }
 
                 $msght[$_.Name] = $_.Value
             }
 
+            <#
+                "method": "Target.attachedToTarget",
+                "params": {
+                    "sessionId": "A4B7D2E9F83C1D062E5F4A7B890C12D3",
+                    "targetInfo": {
+                        "targetId": "8FA2C3E4D5B6A7F8E90123456789ABCD",
+                        "type": "page",
+            #>
             $this.responses.Add($msght)
+
+            # check if new target attached, get sessionid
+            if ( $newtarget ) {
+                if ( $msght['params']['targetInfo']['type'] -eq "page" ) {
+                    $this.sessionId = $msght['params']['sessionId']
+                }
+            }   
 
             # check if msg is a response to an issued cmd
             if ( $isresult ) {
-                $cmd = $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
+                $cmd = $this.GetCommandByID($msg.result.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
             
                 if ( $null -ne $cmd ) {
                     $cmd.response = $msght
@@ -402,6 +449,32 @@ class PSCDP {
     
     }
     
+    [void] NextCmd() {
+
+        if ( $this.sendQueue.IsCompleted -or ( $this.sendQueue.Count -le 0 ) ) {
+            return
+        }
+
+        Log-Msg ( "sending cmd -- cmds count: " + $this.sendQueue.Count )
+
+        $cmd = $this.sendQueue.Take()
+        $cmd = $this.SendCdpCommand($cmd)
+    }
+
+    [void] ExecCallbacks() {
+
+        for ( $i = 0; $i -lt $this.commands.Count; $i++) {
+            $cmd = $this.commands[$i]
+
+            if ( $cmd.HasCallback() -and ( ! $cmd.isinvoked ) ) {
+                $cmd.callback.Invoke($cmd.response)
+                $cmd.isinvoked = $true
+            }
+
+        }
+
+    }
+
     [void] LoadQueue() {
         $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
         $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true } } )
@@ -415,7 +488,6 @@ class PSCDP {
             flatten = $true
         }
         $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } )
-    
     
         if ( [string]::IsNullOrWhiteSpace($this.initpage) ) {
 
@@ -433,124 +505,35 @@ class PSCDP {
 
             $this.sendQueue.Add( @{ name="navigate_init_page"; method="Target.createTarget"; params=$params } )
         }
-
-        # $this.sendQueue.Add( @{ name="get_yahoo_target"; method="Target.getTargets" } )
     }
 }
 
-function Load-Queue {
-    # $sendQueue.Add( @{ method="Log.enable"; params=@{ enabled = $true } } )
-    $sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
-    $sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true } } )
-    $sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true } } )
-    $sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )
-    $sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
-
-    $params = @{
-        autoAttach = $true
-        waitForDebuggerOnStart = $false
-        flatten = $true
-    }
-    $sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } )
-
-
-    $params = @{
-        url = "https://www.yahoo.com"
-        newWindow = $false
-        # browserContextId = $null
-        # "width": 10,
-        # "height": 10,
-        # // "left": 2000,
-        # "top": 2000
-        # #"windowState": "minimized"
-        # #"hidden": True --> has problems/issues
-    }
-    $sendQueue.Add( @{ name="browse_to_yahoo"; method="Target.createTarget"; params=$params } )
-
-    $sendQueue.Add( @{ name="get_yahoo_target"; method="Target.getTargets" } )
-}
-
-Load-Queue
 $script:pubnubws = [PSCDP]::new($script:msedge_debugport)
+$script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
-$script:cdpobj = [PSCDP]::new()
-$script:cdpobj.ConnectCdp()
+#$script:pubnubws = [PSCDP]::new()
+#$script:pubnubws.ConnectCdp()
 
-$create_target_callback = {
-    param([object]$Response)
-
-    $targetInfo = $Response.result.targetInfos | Where-Object { $_.type -eq "page" -and ( $_.title.Contains("Yahoo!") -or $_.url.Contains("yahoo") ) } | Select-Object -First 1
-
-    if ( $null -eq $targetInfo ) {
-        return $null
-    }
-
-    $params = @{ 
-        targetId=$targetInfo.targetId 
-        flatten=$true 
-    }
-
-    $sendQueue.Add( @{ name="get_session_id"; method="Target.attachToTarget"; params=$params } )
-}
-
-$process_create_target = $true
-$init_session_id = $true
 
 while ( $true ) {
 
     Log-Msg "new iteration"
 
-    if ( $null -eq $script:cdpobj.webSocket ) {
+    if ( $null -eq $script:pubnubws.webSocket ) {
         throw "websocket is null"
     }
 
-    if ( ! $script:cdpobj.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
+    if ( ! $script:pubnubws.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
         throw 'websocket is not open'
     }
 
-    $script:cdpobj.InitReceive()
-    $script:cdpobj.ReadMessage()
-    $script:cdpobj.EndMessage()
+    $script:pubnubws.InitReceive()
+    $script:pubnubws.ReadMessage()
+    $script:pubnubws.EndMessage()
 
-    if ( ( ! $sendQueue.IsCompleted ) -and ( $sendQueue.Count -gt 0 ) ) {
-
-        Log-Msg ( "sending cmd -- cmds: " + $sendQueue.Count )
-
-        $cmd = $sendQueue.Take()
-
-        $cmd = $script:cdpobj.SendCdpCommand($cmd)
-    }
-
-    if ( $process_create_target ) {
-        try {
-            $name="get_yahoo_target"
-            $result = $script:cdpobj.GetResult("get_yahoo_target")
-        } catch {
-            Write-Error $_.Exception.Message
-        }
-
-        if ( $null -ne $result ) {
-            & $create_target_callback -Response $result
-            $process_create_target = $false
-        }
-    }
-
-    if ( $init_session_id ) {
-        $result = $script:cdpobj.GetResult("get_session_id")
-
-        if ( $null -ne $result ) {
-            $script:sessionId = $result['result'].sessionId
-
-            $init_session_id = $false
-
-            if ( $null -ne $script:sessionId ) {
-                Log-Msg "sessionid: $($script:sessionId)"
-
-                $sendQueue.Add( @{ method="Page.navigate"; params=@{ url = "https://www.investing.com" }; SessionID=$sessionId } )
-            }
-        }
-    }
+    $script:pubnubws.ExecCallbacks()
+    $script:pubnubws.NextCmd()
 
     Log-Msg "...sleeping"
 
