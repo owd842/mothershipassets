@@ -117,6 +117,7 @@ class PSCDP {
     $wsUri = $null    
     $websocket = $null
 
+    $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
@@ -131,6 +132,9 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
+    $sessionId = $null
+    $initpage = $null
+
     [void] init() {
         $this.memoryStream = New-Object System.IO.MemoryStream
         $this.debugport = 9223
@@ -144,6 +148,12 @@ class PSCDP {
     PSCDP($debugport) {
         $this.init()
         $this.debugport = $debugport
+    }
+
+    PSCDP($debugport, $initpage) {
+        $this.init()
+        $this.debugport = $debugport
+        $this.initpage = $initpage
     }
 
     [string] GetWSUrI() {
@@ -392,10 +402,41 @@ class PSCDP {
     
     }
     
-}
+    [void] LoadQueue() {
+        $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
+        $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true } } )
+        $this.sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true } } )
+        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )
+        $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
+    
+        $params = @{
+            autoAttach = $true
+            waitForDebuggerOnStart = $false
+            flatten = $true
+        }
+        $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } )
+    
+    
+        if ( [string]::IsNullOrWhiteSpace($this.initpage) ) {
 
-$script:sessionId = $null
-$script:sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
+            $params = @{
+                url = $this.initpage
+                newWindow = $false
+                # browserContextId = $null
+                # "width": 10,
+                # "height": 10,
+                # // "left": 2000,
+                # "top": 2000
+                # #"windowState": "minimized"
+                # #"hidden": True --> has problems/issues
+            }
+
+            $this.sendQueue.Add( @{ name="navigate_init_page"; method="Target.createTarget"; params=$params } )
+        }
+
+        # $this.sendQueue.Add( @{ name="get_yahoo_target"; method="Target.getTargets" } )
+    }
+}
 
 function Load-Queue {
     # $sendQueue.Add( @{ method="Log.enable"; params=@{ enabled = $true } } )
@@ -430,6 +471,8 @@ function Load-Queue {
 }
 
 Load-Queue
+$script:pubnubws = [PSCDP]::new($script:msedge_debugport)
+$script:pubnubws.ConnectCdp()
 
 $script:cdpobj = [PSCDP]::new()
 $script:cdpobj.ConnectCdp()
