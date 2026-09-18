@@ -120,6 +120,29 @@ class PSCDPTarget {
 
 }
 
+$script:pass_action = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    Log-Msg "pass"
+}
+
+$script:write_test_msg = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+    
+    $params = @{
+        expression="(function() { console.log(`"Debug info`"); return 42; })()"
+        returnByValue=$true
+    }
+
+    $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; addsessionid=$true; callback=$script:pass_action } )
+
+    $cdpobj.SendPBMessage("test $(Get-Timestamp)")
+}
+
 $script:init_sessionid_action = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -127,8 +150,7 @@ $script:init_sessionid_action = {
 
     $cdpobj.sessionId = $Response['result'].sessionId
 
-    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true } )
-
+    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:write_test_msg } )
 }
 
 $script:get_targets_action = {
@@ -154,6 +176,14 @@ $script:get_targets_action = {
 
 }
 
+$script:scriptaction = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    Log-Msg "pass" 
+}
+
 class PSCDP {
 
     $debugport = 9223
@@ -164,6 +194,7 @@ class PSCDP {
     $responses = [System.Collections.Generic.List[object]]::new()
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
+    $errors = [System.Collections.Generic.List[object]]::new()
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -409,6 +440,7 @@ class PSCDP {
         Log-Msg "...waiting for result"
 
         $this.result = $this.task.GetAwaiter().GetResult()
+        # TODO: throws error -- The remote party closed the WebSocket connection without completing the close handshake.
 
         $this.receiveNew = $true
 
@@ -441,7 +473,7 @@ class PSCDP {
 
     [void] EndMessage() {
         if ( ! $this.result.EndOfMessage) {
-            Log-Msg "... messge is not complete -- skipping"
+            Log-Msg "... message is not complete -- skipping"
             return
         }
 
@@ -465,10 +497,12 @@ class PSCDP {
         try {
             $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
             
+            $iserror = $false # TODO add to errors list
             $isresult = $false
             $newtarget = $false
             $bindingCalled = $false
             $consoleAPICalled = $false
+            $executionContextCreated = $false
 
             $msght = @{}
             $msg.psobject.Properties | ForEach-Object {
@@ -482,7 +516,11 @@ class PSCDP {
                         $bindingCalled = $true
                     } elseif ( $_.Value -eq 'Runtime.consoleAPICalled' ) {
                         $consoleAPICalled = $true
+                    } elseif ( $_.Value -eq 'Runtime.executionContextCreated' ) {
+                        $executionContextCreated = $true
                     }
+                } elseif ( $_.Name -eq "error" ) {
+                    $iserror = $true
                 }
 
                 $msght[$_.Name] = $_.Value
@@ -509,13 +547,30 @@ class PSCDP {
             }
 
             if ( $bindingCalled ) {
-                if ( $msght['params'].name -eq "pubnub_binding" ) {
+                if ( $msght['params'].name -eq "pubnub_binding" ) { # $msght['params'].payload
                     $payload = $msght['params'].payload
                 }
             }
 
             if ( $consoleAPICalled ) {
-                Log-Msg "pass" # $msght
+                $msghtstr = $msght.GetEnumerator() | ForEach-Object { "{0}={1}" -f $_.Key, $_.Value } | Out-String
+                Log-Msg $msghtstr 
+                Log-Msg ($msght['params'].args | Out-String)
+            }
+
+            if ( $iserror ) {
+                $this.errors.Add($msght)
+            }
+
+            if ( $executionContextCreated ) {
+                try {
+                    $url =$msg.params.context.origin
+                    if ( ! [string]::IsNullOrWhiteSpace($url) -and $url.Contains("orgfarm-bd12a2161b-dev-ed") ) {
+                        Log-Msg "pass"
+                    }
+                } catch {
+                    Log-Msg "pass"
+                }
             }
 
         } catch {
@@ -596,7 +651,33 @@ class PSCDP {
 
     }
 
-    
+
+    <#
+        {
+            "id": 1,
+            "method": "Runtime.callFunctionOn",
+            "params": {
+                "functionDeclaration": "function(a, b) { return a + b; }",
+                "executionContextId": 1,
+                "arguments": [
+                    { "value": 5 },
+                    { "value": 10 }
+                ],
+                "returnByValue": true
+            }
+        }
+    #>
+    [void] SendPBMessage([string]$msgstr) {
+        $params = @{
+            functionDeclaration="function f() { sendMessage(`"$msgstr`")}"
+            executionContextId=1
+            returnByValue=$true
+        }
+
+
+        $this.sendQueue.Add( @{ method="Runtime.callFunctionOn"; params=$params; addsessionid=$true; callback=$script:scriptaction } )
+    }
+
 }
 
 $script:pubnubws = [PSCDP]::new($script:msedge_debugport)
@@ -606,8 +687,7 @@ $script:pubnubws.ConnectCdp()
 
 #$script:pubnubws = [PSCDP]::new()
 #$script:pubnubws.ConnectCdp()
-
-
+    
 while ( $true ) {
 
     Log-Msg "new iteration"
