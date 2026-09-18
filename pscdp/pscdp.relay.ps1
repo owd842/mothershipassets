@@ -48,7 +48,8 @@ class PSCDPCommand {
     [string]$sessionId
     [scriptblock]$callback
     [bool]$isinvoked = $false
-
+    [bool]$addsessionid = $false
+    
     [bool]HasCallback() {
         return ( $null -ne $this.callback )
     }
@@ -125,6 +126,9 @@ $script:init_sessionid_action = {
     )
 
     $cdpobj.sessionId = $Response['result'].sessionId
+
+    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true } )
+
 }
 
 $script:get_targets_action = {
@@ -321,7 +325,11 @@ class PSCDP {
     }
 
     [PSCDPCommand] SendCdpCommand([hashtable]$cmd) {
-        return $this.SendCdpCommand($cmd,$null)
+        if ( $cmd.addsessionid ) {
+            $cmd.sessionId = $this.sessionId
+        }
+
+        return $this.SendCdpCommand($cmd,$this.sessionId)
     }
 
     [PSCDPCommand] SendCdpCommand([hashtable]$cmd, [string]$sessionID) {
@@ -339,7 +347,7 @@ class PSCDP {
         $cmd.Add('id', $id)
 
         if (! [string]::IsNullOrEmpty($sessionID)) {
-            $cmd.Add("sessionId", $SessionID)
+            $cmd['sessionId'] = $sessionID
         }
         
         $obj = [PSCDPCommand]$cmd
@@ -459,6 +467,8 @@ class PSCDP {
             
             $isresult = $false
             $newtarget = $false
+            $bindingCalled = $false
+            $consoleAPICalled = $false
 
             $msght = @{}
             $msg.psobject.Properties | ForEach-Object {
@@ -468,20 +478,16 @@ class PSCDP {
                 } elseif ( $_.Name -eq "method" )  {
                     if ( $_.Value -eq 'Target.attachedToTarget' ) {
                         $newtarget = $true
+                    } elseif ( $_.Value -eq 'Runtime.bindingCalled' ) {
+                        $bindingCalled = $true
+                    } elseif ( $_.Value -eq 'Runtime.consoleAPICalled' ) {
+                        $consoleAPICalled = $true
                     }
                 }
 
                 $msght[$_.Name] = $_.Value
             }
 
-            <#
-                "method": "Target.attachedToTarget",
-                "params": {
-                    "sessionId": "A4B7D2E9F83C1D062E5F4A7B890C12D3",
-                    "targetInfo": {
-                        "targetId": "8FA2C3E4D5B6A7F8E90123456789ABCD",
-                        "type": "page",
-            #>
             $this.responses.Add($msght)
 
             # check if new target attached, get sessionid
@@ -500,6 +506,16 @@ class PSCDP {
                 }
 
                 $this.results.Add($msght)
+            }
+
+            if ( $bindingCalled ) {
+                if ( $msght['params'].name -eq "pubnub_binding" ) {
+                    $payload = $msght['params'].payload
+                }
+            }
+
+            if ( $consoleAPICalled ) {
+                Log-Msg "pass" # $msght
             }
 
         } catch {
@@ -534,11 +550,6 @@ class PSCDP {
 
     }
 
-    # Runtime.addBinding
-    #   "params": {
-    # "name": "pubnub_binding"
-
-    # Runtime.bindingCalled
     <#
     {
     "method": "Runtime.bindingCalled",
@@ -583,8 +594,10 @@ class PSCDP {
 
         $this.sendQueue.Add( @{ method="Target.getTargets"; callback=$script:get_targets_action })
 
-        $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="pubnub_binding" }; addsessionid=$true } )
- }
+    }
+
+    
+}
 
 $script:pubnubws = [PSCDP]::new($script:msedge_debugport)
 $script:pubnubws.initpage = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub"
