@@ -119,6 +119,37 @@ class PSCDPTarget {
 
 }
 
+$script:init_sessionid_action = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cdpobj.sessionId = $Response['result'].sessionId
+}
+
+$script:get_targets_action = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $url = 'orgfarm-bd12a2161b-dev-ed'
+
+    # $_.title.Contains("Yahoo!")
+    $targetInfo = $Response.result.targetInfos | Where-Object { $_.type -eq "page" -and ( $_.url.Contains($url) ) } | Select-Object -First 1
+
+    if ( $null -eq $targetInfo ) {
+        return $null
+    }
+
+    $params = @{ 
+        targetId=$targetInfo.targetId 
+        flatten=$true 
+    }
+
+    $cdpobj.sendQueue.Add( @{ method="Target.attachToTarget"; params=$params; callback=$init_sessionid_action } )
+
+}
+
 class PSCDP {
 
     $debugport = 9223
@@ -142,6 +173,30 @@ class PSCDP {
 
     $sessionId = $null
     $initpage = $null
+
+    [void] CheckSocket() {
+
+        if ( $this.IsSocketHealthy() ) {
+            return
+        }
+
+        if ( $null -eq $this.webSocket ) {
+            throw "websocket is null"
+        }
+
+        if ( ! $this.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
+            throw 'websocket is not open'
+        }
+        
+    }
+
+    [bool] IsSocketHealthy() {
+        if ( ( ! $null -eq $this.webSocket ) -and ( $this.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) ) {
+            return $true
+        }
+
+        return $false
+    }
 
     [void] init() {
         $this.memoryStream = New-Object System.IO.MemoryStream
@@ -309,7 +364,7 @@ class PSCDP {
                 throw "fatal error -- task is null"
             }
         } catch {
-            Write-Error $_.Exception.Message
+            Write-Error "[J7E3]: $($_.Exception.Message)"
             return $null
         } 
     
@@ -395,6 +450,10 @@ class PSCDP {
         $this.memoryStream = New-Object System.IO.MemoryStream
         $this.totalbytecount = 0
 
+        if ( [string]::IsNullOrWhiteSpace($json) ) {
+            return
+        }
+
         try {
             $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
             
@@ -427,14 +486,14 @@ class PSCDP {
 
             # check if new target attached, get sessionid
             if ( $newtarget ) {
-                if ( $msght['params']['targetInfo']['type'] -eq "page" ) {
+                if ( $msght['params'].Value.targetInfo.type -eq "page" ) {
                     $this.sessionId = $msght['params']['sessionId']
                 }
-            }   
+            }
 
             # check if msg is a response to an issued cmd
             if ( $isresult ) {
-                $cmd = $this.GetCommandByID($msg.result.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
+                $cmd = $this.GetCommandByID($msg.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
             
                 if ( $null -ne $cmd ) {
                     $cmd.response = $msght
@@ -466,14 +525,30 @@ class PSCDP {
         for ( $i = 0; $i -lt $this.commands.Count; $i++) {
             $cmd = $this.commands[$i]
 
-            if ( $cmd.HasCallback() -and ( ! $cmd.isinvoked ) ) {
-                $cmd.callback.Invoke($cmd.response)
+            if ( $cmd.HasCallback() -and ( ! $cmd.isinvoked ) -and ( $null -ne $cmd.response) ) {
+                $cmd.callback.Invoke($cmd.response,$this)
                 $cmd.isinvoked = $true
             }
 
         }
 
     }
+
+    # Runtime.addBinding
+    #   "params": {
+    # "name": "pubnub_binding"
+
+    # Runtime.bindingCalled
+    <#
+    {
+    "method": "Runtime.bindingCalled",
+    "params": {
+        "name": "pubnub_binding",
+        "payload": "{\"channel\":\"chat-room\",\"message\":\"Hello from the webpage!\"}",
+        "executionContextId": 1
+    }
+    }
+    #>
 
     [void] LoadQueue() {
         $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
@@ -505,10 +580,14 @@ class PSCDP {
 
             $this.sendQueue.Add( @{ name="navigate_init_page"; method="Target.createTarget"; params=$params } )
         }
-    }
-}
+
+        $this.sendQueue.Add( @{ method="Target.getTargets"; callback=$script:get_targets_action })
+
+        $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="pubnub_binding" }; addsessionid=$true } )
+ }
 
 $script:pubnubws = [PSCDP]::new($script:msedge_debugport)
+$script:pubnubws.initpage = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub"
 $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
@@ -520,13 +599,7 @@ while ( $true ) {
 
     Log-Msg "new iteration"
 
-    if ( $null -eq $script:pubnubws.webSocket ) {
-        throw "websocket is null"
-    }
-
-    if ( ! $script:pubnubws.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
-        throw 'websocket is not open'
-    }
+    $script:pubnubws.CheckSocket()
 
     $script:pubnubws.InitReceive()
     $script:pubnubws.ReadMessage()
