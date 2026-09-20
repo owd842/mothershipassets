@@ -1,4 +1,6 @@
-# 20260917
+Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
+
+# 20260920
 
 <# https://zenn.dev/mima_ita/articles/f1fc037e6eb134 #>
 
@@ -13,6 +15,7 @@
 # --remote-allow-origins=* 
 # --force-devtools-available
 # frontend.appspot.com
+# msedge requires --user-data-dir="%TEMP%\edge-debug-profile"
 
 $script:logger_logmsg_i = 0
 function Log-Msg {
@@ -187,7 +190,7 @@ $script:get_targets_action = {
 function Process-PubNubEvent {
     param([hashtable]$Message)
     Log-Msg "pass"
-    
+
     # GetFrontendUrls --> send back 
     #  $script:clientws.targets
     
@@ -287,7 +290,13 @@ class PSCDP {
 
     # TODO refactor to PSCDPTarget
     [object] GetTargets() {
-        $this.targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json"
+        try {
+            $this.targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json" -ErrorAction Stop
+        } catch [System.Net.WebException] {
+            Log-Msg "[N3U8]: $($_.Exception.Message)"
+            return $null
+        }        
+
 
         # $targets | Select-Object title, id, webSocketDebuggerUrl
         $this.targets = $this.targets | Where-Object { $_.type -eq "page" }
@@ -299,6 +308,10 @@ class PSCDP {
         Log-Msg "new CDP connection at $($this.debugport)"
 
         $this.wsUri = $this.GetWSURI()
+
+        if ( [string]::IsNullOrWhiteSpace($this.wsUri) ) {
+            throw "wsUri is empty"
+        }
 
         if ( $null -eq $this.websocket ) {
             Log-Msg "connecting to cdp on [$($this.wsUri)]"
@@ -566,11 +579,14 @@ class PSCDP {
                 $this.results.Add($msght)
             }
 
+            # TODO needs error checking to ensure objects have properties being accessed
             if ( $bindingCalled ) {
                 if ( $msght['params'].name -eq "onPubNubEvent" ) { # $msght['params'].payload
                     Log-Msg "processing incomming PubNub event"
                     $payload = $msght['params'].payload # works - able to receive pubnub messages from browser
-                    Process-PubNubEvent -Message $msght
+                    Process-PubNubEvent -Message $payload
+                    # name = onPubNubEvent
+                    # payload = "{"type":"message 1234","message":{"msgstr":"test 41234 10:11:46.449"}}"
                 }
             }
 
