@@ -120,6 +120,14 @@ class PSCDPTarget {
 
 }
 
+$script:SendPBMessage_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    Log-Msg "pass" 
+}
+
 $script:pass_action = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -128,7 +136,7 @@ $script:pass_action = {
     Log-Msg "pass"
 }
 
-$script:write_test_msg = {
+$script:write_test_pb_msg = {
     param(
         [object]$Response, [PSCDP]$cdpobj
     )
@@ -140,7 +148,7 @@ $script:write_test_msg = {
 
     $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; addsessionid=$true; callback=$script:pass_action } )
 
-    $cdpobj.SendPBMessage("test $(Get-Timestamp)")
+    $cdpobj.SendPBMessage("test 41234 $(Get-Timestamp)")
 }
 
 $script:init_sessionid_action = {
@@ -150,7 +158,7 @@ $script:init_sessionid_action = {
 
     $cdpobj.sessionId = $Response['result'].sessionId
 
-    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:write_test_msg } )
+    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:write_test_pb_msg } )
 }
 
 $script:get_targets_action = {
@@ -176,12 +184,22 @@ $script:get_targets_action = {
 
 }
 
-$script:scriptaction = {
-    param(
-        [object]$Response, [PSCDP]$cdpobj
-    )
+function Process-PubNubEvent {
+    param([hashtable]$Message)
+    Log-Msg "pass"
+    
+    # GetFrontendUrls --> send back 
+    #  $script:clientws.targets
+    
+    # --> write response back to pubnub 
+    # $cdpobj.SendPBMessage("test 41234 $(Get-Timestamp)") 
+    # $script:pubnubws.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
 
-    Log-Msg "pass" 
+    # HTTP request
+    # issue Invoke-WebRequest to client frontend url with path
+    # https://chrome-devtools-frontend.appspot.com/serve_rev/@199a3a541d76237379e353b348e64045584db057/inspector.html?ws=localhost:9223/devtools/page/AF0A1A7626286253F21401C651C983B0
+    # retrieve HTTP with headers, body, etc. and forward to pubnub
+
 }
 
 class PSCDP {
@@ -189,6 +207,7 @@ class PSCDP {
     $debugport = 9223
     $wsUri = $null
     $websocket = $null
+    $targets = $null
 
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
@@ -259,20 +278,21 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $targets = $this.GetTargets()
+        $this.targets = $this.GetTargets()
 
-        $this.wsUri = ($targets | Where-Object { $_.type -eq "page" } | Select-Object -First 1).webSocketDebuggerUrl
+        $this.wsUri = ($this.targets | Select-Object -First 1).webSocketDebuggerUrl
         
         return $this.wsUri
     }
 
     # TODO refactor to PSCDPTarget
     [object] GetTargets() {
-        $targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json"
+        $this.targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json"
 
         # $targets | Select-Object title, id, webSocketDebuggerUrl
+        $this.targets = $this.targets | Where-Object { $_.type -eq "page" }
 
-        return $targets
+        return $this.targets
     }
 
     [void] ConnectCdp() {
@@ -547,8 +567,10 @@ class PSCDP {
             }
 
             if ( $bindingCalled ) {
-                if ( $msght['params'].name -eq "pubnub_binding" ) { # $msght['params'].payload
-                    $payload = $msght['params'].payload
+                if ( $msght['params'].name -eq "onPubNubEvent" ) { # $msght['params'].payload
+                    Log-Msg "processing incomming PubNub event"
+                    $payload = $msght['params'].payload # works - able to receive pubnub messages from browser
+                    Process-PubNubEvent -Message $msght
                 }
             }
 
@@ -674,20 +696,21 @@ class PSCDP {
             returnByValue=$true
         }
 
-
-        $this.sendQueue.Add( @{ method="Runtime.callFunctionOn"; params=$params; addsessionid=$true; callback=$script:scriptaction } )
+        $this.sendQueue.Add( @{ method="Runtime.callFunctionOn"; params=$params; addsessionid=$true; callback=$script:SendPBMessage_callback } )
     }
 
 }
 
-$script:pubnubws = [PSCDP]::new($script:msedge_debugport)
-$script:pubnubws.initpage = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub"
+$script:clientws = [PSCDP]::new($script:chrome_debugport)
+$script:clientws.ConnectCdp()
+
+$script:pubnubws = [PSCDP]::new($script:msedge_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
 $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
 #$script:pubnubws = [PSCDP]::new()
 #$script:pubnubws.ConnectCdp()
-    
+
 while ( $true ) {
 
     Log-Msg "new iteration"
@@ -701,12 +724,27 @@ while ( $true ) {
     $script:pubnubws.ExecCallbacks()
     $script:pubnubws.NextCmd()
 
+    # ---
+
+    $script:clientws.CheckSocket()
+
+    $script:clientws.InitReceive()
+    $script:clientws.ReadMessage()
+    $script:clientws.EndMessage()
+
+    $script:clientws.ExecCallbacks()
+    $script:clientws.NextCmd()
+
     Log-Msg "...sleeping"
 
     Start-Sleep -Milliseconds 50
 }
 
 exit
+
+# http://localhost:9223/json --> list of targets, filter on type: page
+# devtoolsFrontendUrl
+# send back to host
 
 <#
 if ( $null -eq $readtask ) {

@@ -1,0 +1,30 @@
+<html>
+    <head> </head>
+
+    <body>
+        <script>
+            const xhr = new XMLHttpRequest();
+
+            // 2. Configure the request (Method, URL, Asynchronous true/false)
+            xhr.open("GET", "http://localhost:8080/GetFrontendUrls", true);
+
+            // 3. Set up a listener to handle the server response
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    // Success! Parse and use the data
+                    const data = JSON.parse(xhr.responseText);
+                    console.log(data);
+                } else {
+                    // The server returned an error code (e.g., 404 or 500)
+                    console.error("Server error:", xhr.status, xhr.statusText);
+                }
+            };
+
+            xhr.onerror = function () {
+                console.error("Network connection failed.");
+            };
+
+            xhr.send();
+        </script>
+    </body>
+</html>
