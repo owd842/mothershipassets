@@ -188,7 +188,8 @@ $script:get_targets_action = {
 }
 
 function Process-PubNubEvent {
-    param([hashtable]$Message)
+    param([string]$Message)
+    $payload = $Message | ConvertFrom-Json -AsHashtable
     Log-Msg "pass"
 
     # GetFrontendUrls --> send back 
@@ -753,7 +754,7 @@ while ( $true ) {
 
     Log-Msg "...sleeping"
 
-    Start-Sleep -Milliseconds 50
+    Start-Sleep -Milliseconds 1000
 }
 
 exit
