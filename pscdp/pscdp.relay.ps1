@@ -2,9 +2,7 @@ Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Defi
 
 # 20260920
 
-<# https://zenn.dev/mima_ita/articles/f1fc037e6eb134 #>
-
-# $ta = [psobject].Assembly.GetType('System.Management.Automation.TypeAccelerators')
+# https://zenn.dev/mima_ita/articles/f1fc037e6eb134
 
 # ungoogled chromium
 # start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --remote-debugging-address=0.0.0.0 --remote-allow-origins=*
@@ -15,7 +13,28 @@ Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Defi
 # --remote-allow-origins=* 
 # --force-devtools-available
 # frontend.appspot.com
-# msedge requires --user-data-dir="%TEMP%\edge-debug-profile"
+# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required
+
+function Get-Identity {
+    $ScriptName = $MyInvocation.MyCommand
+
+    # 2. Get the computer name
+    $ComputerName = $env:COMPUTERNAME
+    
+    # 3. Get the logged-in username
+    $UserName = $env:USERNAME
+    
+    $ht = @{
+        ScriptName   = $ScriptName
+        ComputerName = $ComputerName
+        UserName     = $UserName
+        UserAgent    = "PowerShell $PSVersionTable"
+    }
+    
+    return $ht
+}
+
+$script:identitykvpstr = Get-Identity | ConvertTo-Json
 
 $script:logger_logmsg_i = 0
 function Log-Msg {
@@ -123,6 +142,7 @@ class PSCDPTarget {
 
 }
 
+# TODO check when exception result is returned
 $script:SendPBMessage_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -131,7 +151,7 @@ $script:SendPBMessage_callback = {
     Log-Msg "pass" 
 }
 
-$script:pass_action = {
+$script:runtime_evaluate_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
     )
@@ -139,19 +159,19 @@ $script:pass_action = {
     Log-Msg "pass"
 }
 
-$script:write_test_pb_msg = {
+$script:runtime_addBinding_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
     )
-    
+
+    $cdpobj.addbinding_ok = $true
+
     $params = @{
-        expression="(function() { console.log(`"Debug info`"); return 42; })()"
+        expression="(function() { console.log(`"Debug info "+ $(Get-Timestamp) + " `"); return " + $(Get-Random -Minimum 1 -Maximum 100) + "; })()"
         returnByValue=$true
     }
 
-    $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; addsessionid=$true; callback=$script:pass_action } )
-
-    $cdpobj.SendPBMessage("test 41234 $(Get-Timestamp)")
+    $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; addsessionid=$true; callback=$script:runtime_evaluate_callback } )
 }
 
 $script:init_sessionid_action = {
@@ -161,7 +181,7 @@ $script:init_sessionid_action = {
 
     $cdpobj.sessionId = $Response['result'].sessionId
 
-    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:write_test_pb_msg } )
+    $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:runtime_addBinding_callback } )
 }
 
 $script:get_targets_action = {
@@ -187,10 +207,11 @@ $script:get_targets_action = {
 
 }
 
+# TODO implement incmming commands
 function Process-PubNubEvent {
     param([string]$Message)
-    $payload = $Message | ConvertFrom-Json -AsHashtable
-    Log-Msg "pass"
+    $payload = $Message | ConvertFrom-Json
+    Log-Msg $payload
 
     # GetFrontendUrls --> send back 
     #  $script:clientws.targets
@@ -228,6 +249,8 @@ class PSCDP {
     $memoryStream
     $totalbytecount = 0
     $result = $null
+    $addbinding_ok = $false
+    $executionContextId = $null
 
     $sessionId = $null
     $initpage = $null
@@ -601,14 +624,11 @@ class PSCDP {
                 $this.errors.Add($msght)
             }
 
+            # TODO verify $msg has params, context, etc.
             if ( $executionContextCreated ) {
-                try {
-                    $url =$msg.params.context.origin
-                    if ( ! [string]::IsNullOrWhiteSpace($url) -and $url.Contains("orgfarm-bd12a2161b-dev-ed") ) {
-                        Log-Msg "pass"
-                    }
-                } catch {
-                    Log-Msg "pass"
+                $url = $msg.params.context.origin
+                if ( ! [string]::IsNullOrWhiteSpace($url) -and $url.Contains("orgfarm-bd12a2161b-dev-ed") ) {
+                    $this.executionContextId = $msg.params.context.id
                 }
             }
 
@@ -659,7 +679,7 @@ class PSCDP {
         $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
         $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true } } )
         $this.sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true } } )
-        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )
+        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )    # generates Runtime.executionContextCreated
         $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
     
         $params = @{
@@ -707,15 +727,26 @@ class PSCDP {
         }
     #>
     [void] SendPBMessage([string]$msgstr) {
+        if ( [string]::IsNullOrEmpty($this.executionContextId) ) {
+            throw 'executionContextId is empty'
+        }
+
         $params = @{
-            functionDeclaration="function f() { sendMessage(`"$msgstr`")}"
-            executionContextId=1
+            functionDeclaration="function f() { sendMessage(`"$msgstr`")}" # change to send JSON payload
+            executionContextId=$this.executionContextId
             returnByValue=$true
         }
 
         $this.sendQueue.Add( @{ method="Runtime.callFunctionOn"; params=$params; addsessionid=$true; callback=$script:SendPBMessage_callback } )
     }
 
+    [void] Broadcast() {
+        if ( ! ( $this.addbinding_ok -and ( ! [string]::IsNullOrEmpty($this.executionContextId) ) ) ) {
+            return
+        }
+
+        $this.SendPBMessage("ping -- $(Get-Timestamp)")
+    }
 }
 
 $script:clientws = [PSCDP]::new($script:chrome_debugport)
@@ -741,6 +772,8 @@ while ( $true ) {
     $script:pubnubws.ExecCallbacks()
     $script:pubnubws.NextCmd()
 
+    $script:pubnubws.Broadcast()
+
     # ---
 
     $script:clientws.CheckSocket()
@@ -754,7 +787,7 @@ while ( $true ) {
 
     Log-Msg "...sleeping"
 
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 200
 }
 
 exit
