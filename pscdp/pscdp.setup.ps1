@@ -21,3 +21,14 @@
 # scheduled task seems to be the safer approach
 # two tasks: one for msedge launch, another for ps1 script launch
 
+# ungoogled chromium
+# start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --remote-debugging-address=0.0.0.0 --remote-allow-origins=*
+# https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
+# --headless=new
+# --auto-open-devtools-for-tabs
+# --remote-debugging-address=0.0.0.0
+# --remote-allow-origins=* 
+# --force-devtools-available
+# --disable-features=StartupLaunch
+# frontend.appspot.com
+# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required (some pcs, not all)
