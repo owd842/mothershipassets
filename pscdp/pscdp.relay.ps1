@@ -1,5 +1,13 @@
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
+# ! modify shortcuts (lnk) to point to correct binary with cmd line args enabling CDP
+# ! needs windows task to pre-launch msedge, chrome + headless msedge for pubnubws
+# C:\Users\LC2022\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar
+# replace chrome with uchrome
+# alternative for msedge: use vilvadi
+
+# script needs to ping websockets to check which browser running
+# clientws should connect to active client browser 
 
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
 # $createdNew = $false
