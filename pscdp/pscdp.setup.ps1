@@ -30,5 +30,4 @@
 # --remote-allow-origins=* 
 # --force-devtools-available
 # --disable-features=StartupLaunch
-# frontend.appspot.com
-# msedge requires --user-data-dir="%TEMP%\edge-debug-profile" # on tpl, not required (some pcs, not all)
+# --user-data-dir="%TEMP%\edge-debug-profile"
