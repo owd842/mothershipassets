@@ -361,6 +361,7 @@ function Process-CDP {
         $ret = @{
             headers=$httpres.Headers
             body=$bodystr
+            requesturl=$devurl
         }
 
     } catch {
