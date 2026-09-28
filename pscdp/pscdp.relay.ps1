@@ -346,20 +346,6 @@ function Process-CDP {
 
     $devurl = $cmd.url
 
-    $uri = [System.Uri]$devurl
-    $hostName = $uri.Host
-
-    if ( $hostName.Contains("chrome-devtools-frontend") ) {
-        $hostName = "chrome-devtools-frontend.appspot.com"
-    }
-
-    $fullPath = $uri.AbsolutePath
-
-    $devurl = "https://$hostName$fullPath"
-
-    # chrome-devtools-frontend.8pp2p8t.qjz9zk
-    # chrome-devtools-frontend.appspot.com
-
     if ( [string]::IsNullOrEmpty($devurl) ) {
         return $null
     }
