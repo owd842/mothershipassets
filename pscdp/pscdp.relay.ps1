@@ -990,7 +990,8 @@ class PSCDP {
         $this.sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true } } )
         $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )    # generates Runtime.executionContextCreated message
         $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
-    
+        # Network.enable
+        
         $params = @{
             autoAttach = $true
             waitForDebuggerOnStart = $false
