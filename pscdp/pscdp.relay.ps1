@@ -368,11 +368,44 @@ $script:captureScreenshot_callback = {
         targetId=$target.targetId
     }
 
-    $result = ${ imagedata=$Response.result.data }
+    $imagedata=$Response.result.data
 
-    $resultout['result'] = $result
+    $chunkSize = 512
+    $imagelength = $imagedata.length
+    $chunkcount = [int] ( $imagelength / $chunkSize )
+    $remainderlength = $imagelength % $chunkSize
 
-    $script:pubnubws.SendPBMessage($resultout)
+    $chunks = [System.Collections.Generic.List[string]]::new()
+
+    for ($i = 0; $i -lt $chunkcount; $i++ ) {
+        $chunks.Add( $imagedata.Substring( $i*$chunkSize, $chunkSize ) )
+    }
+
+    if ( $remainderlength -gt 0 ) {
+        $chunks.Add( $imagedata.Substring( $chunkcount*$chunkSize ) )
+    }
+
+    if ( $null -eq $chunks -or $chunks.length -le 0 ) {
+        Log-Msg "pass"
+    }
+
+    for ($i = 0; $i -lt $chunks.length; $i++ ) {
+
+        $result = ${ imagedata="" }
+        $result['imagedata'] = $chunks[$i]
+
+        $resultout['result'] = $result
+
+        $resultout['ts']=$(Get-Timestamp)
+
+        $resultout['chunkcount'] = $chunkcount
+        $resultout['chunksize'] = $chunksize
+        $resultout['chunkindex'] = $i
+        $resultout['remainderlength'] = $remainderlength
+        
+        $script:pubnubws.SendPBMessage($resultout)
+    }
+
 }
 
 function Transform-PSCustomObject($obj) {
@@ -511,6 +544,8 @@ function Process-PubNubEvent {
         Log-Msg "pass"
 
         return
+    } elseif ( $cmd.builtincmd -eq "GetTargetText" ) {
+
     }
 
     $resultout['result'] = $result
@@ -655,25 +690,30 @@ class PSCDP {
         $this.pubnuburl = $pubnuburl
     }
 
-    [string] GetWSUrI() {
+    [System.Uri] GetWSUrI() {
 
-        if (! [string]::IsNullOrWhiteSpace($this.wsUri)) {
+        if ( $null -ne $this.wsUri ) {
             return $this.wsUri
         }
 
-        $ttargets = $this.GetTargets()
+        $endpoint = "http://localhost:$($this.debugport)/json/list"
 
-        if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
-            $twsUri = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1).webSocketDebuggerUrl
-        } else {
-            $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
-        }
+        $target = Invoke-RestMethod -Uri $endpoint -ErrorAction Stop
 
-        return $twsUri
+        $twsUri = $target.webSocketDebuggerUrl
+        
+        $twsUri = New-Object System.Uri($twsUri)
+
+        $this.wsUri = $twsUri
+
+        return $this.wsUri
     }
 
     [System.Collections.Generic.List[PSCDPTarget]] GetTargets() {
-        $ttargets = Invoke-RestMethod -Uri "http://localhost:$($this.debugport)/json/list" -ErrorAction Stop
+
+        $endpoint = "http://localhost:$($this.debugport)/json/list"
+
+        $ttargets = Invoke-RestMethod -Uri $endpoint -ErrorAction Stop
 
         $stargets = [System.Collections.Generic.List[PSCDPTarget]]::new()
 
@@ -699,11 +739,7 @@ class PSCDP {
     [void] ConnectCdp() {
         Log-Msg "new CDP connection at $($this.debugport)"
 
-        $this.wsUri = $this.GetWSURI()
-
-        if ( [string]::IsNullOrWhiteSpace($this.wsUri) ) {
-            throw "wsUri is empty"
-        }
+        $this.wsUri = $this.GetWSUrI()
 
         if ( $null -eq $this.websocket ) {
             Log-Msg "connecting to cdp on [$($this.wsUri)]"
@@ -712,6 +748,8 @@ class PSCDP {
         }
     
         $this.websocket = New-Object System.Net.WebSockets.ClientWebSocket
+
+
         $connectTask = $this.websocket.ConnectAsync($this.wsUri, [System.Threading.CancellationToken]::None)
 
         if ( $null -eq $this.websocket) {
