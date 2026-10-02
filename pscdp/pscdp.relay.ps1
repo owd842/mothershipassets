@@ -231,8 +231,7 @@ class PSCDPResponse {
 
 }
 
-# TODO create custom new method to generate new object using hashtable 
-# PSCDPTarget.GetProperties().Name
+# TODO what happens to $this.targets when target is destroyed
 class PSCDPTarget {
     [string]$title
     [string]$url
@@ -408,6 +407,29 @@ $script:captureScreenshot_callback = {
 
 }
 
+$script:getTargets_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cmd = $Response.cmd
+
+    $resultout = @{
+        builtincmd=$cmd.builtincmd
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+        targetId=$target.targetId
+    }
+
+    $resultout['result'] = $Response.result.targetInfos
+
+    $script:pubnubws.SendPBMessage($resultout)
+}
+
 function Transform-PSCustomObject($obj) {
     $ht = @{}
 
@@ -507,17 +529,21 @@ function Process-PubNubEvent {
         $result = Process-CDP($cmd)
     } elseif ( $cmd.builtincmd -eq "ExecCDPCommand" ) {
         $result = Exec-CDP($cmd)
-    } elseif ( $cmd.builtincmd -eq "RefreshTargets" ) {
-        $targets = $script:clientws.targets # TODO doesn't have sessionId populated
+    } elseif ( $cmd.builtincmd -eq "GetTargets" ) {
+        $targets = $script:clientws.targets
 
         $ttargets = $targets | ForEach-Object { $_.GetDict() }
-        <#
-        if ($null -ne $byteArray -and $byteArray.Length -gt 0) {
-            $screenshot = [System.Convert]::ToBase64String($target.pngBytes) # convert bytes to base64
-        }
-        #>
 
         $result = $ttargets
+    } elseif ( $cmd.builtincmd -eq "RefreshTargets" ) {
+
+        $script:clientws.AddQueue( @{ 
+            method="Target.getTargets"; 
+            params=@{ filter=@( @{ type="page"; exclude=$false } ) } 
+            callback=$script:getTargets_callback 
+        } ) 
+        
+        return
     } elseif ( $cmd.builtincmd -eq "GetTargetScreenCapture" ) {
         $targetId = $cmd.targetId
 
@@ -535,13 +561,7 @@ function Process-PubNubEvent {
             callback=$script:captureScreenshot_callback 
         }
 
-        try {
-            $script:clientws.AddQueue( $pbmsg )
-        } catch {
-            Log-Msg $_
-        }
-
-        Log-Msg "pass"
+        $script:clientws.AddQueue( $pbmsg )
 
         return
     } elseif ( $cmd.builtincmd -eq "GetTargetText" ) {
@@ -696,12 +716,14 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $endpoint = "http://localhost:$($this.debugport)/json/list"
+        $ttargets = $this.GetTargets()
 
-        $target = Invoke-RestMethod -Uri $endpoint -ErrorAction Stop
+        if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            $twsUri = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1).webSocketDebuggerUrl
+        } else {
+            $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
+        }
 
-        $twsUri = $target.webSocketDebuggerUrl
-        
         $twsUri = New-Object System.Uri($twsUri)
 
         $this.wsUri = $twsUri
@@ -775,7 +797,7 @@ class PSCDP {
     
         $this.sendQueue.Add( @{ method="Target.setDiscoverTargets"; params=@{ discover=$true} } ) 
 
-        $this.sendQueue.Add( @{ method="Target.getTargets"} ) 
+        $this.sendQueue.Add( @{ method="Target.getTargets"; params=@{ filter=@( @{ type="page"; exclude=$false } ) } } ) 
     }
 
     [PSCDPCommand] GetCommandByID([string]$id) {
@@ -1001,6 +1023,7 @@ class PSCDP {
         $isresult = $false
         $attachedToTarget = $false # Target.attachedToTarget
         $targetCreated = $false
+        $targetDestroyed = $false
         $bindingCalled = $false
         $consoleAPICalled = $false
         $executionContextCreated = $false
@@ -1020,6 +1043,8 @@ class PSCDP {
                     $attachedToTarget = $true
                 } elseif ( $_.Value -eq 'Target.targetCreated' ) {
                     $targetCreated = $true
+                } elseif ( $_.Value -eq 'Target.targetDestroyed' ) {
+                    $targetDestroyed = $true
                 } elseif ( $_.Value -eq 'Runtime.bindingCalled' ) {
                     $bindingCalled = $true
                 } elseif ( $_.Value -eq 'Runtime.consoleAPICalled' ) {
@@ -1149,6 +1174,16 @@ class PSCDP {
             }
         }
 
+        if ( $targetDestroyed ) {
+            $targetInfo = $msg.params.targetInfo
+            $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
+
+            $index = $this.targets.FindIndex( { $_.targetId -eq $targetInfo.targetId } )
+
+            if ( $index -ge 0 ) {
+                $this.targets.RemoveAt($index)
+            }
+        }
     }
     
     [void] NextCmd() {
