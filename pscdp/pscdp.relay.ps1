@@ -407,6 +407,7 @@ $script:captureScreenshot_callback = {
 
 }
 
+# TODO implement logic to refresh targets list
 $script:getTargets_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
