@@ -449,7 +449,11 @@ $script:evaluate_callback = {
         targetId=$target.targetId
     }
 
-    $resultout['result'] = $Response.result.result.value
+    $resltstr = $Response.result.result.value
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($resltstr)
+    $base64str = [Convert]::ToBase64String($bytes)
+
+    $resultout['result'] = $base64str
 
     $script:pubnubws.SendPBMessage($resultout)
 }
