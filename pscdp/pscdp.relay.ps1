@@ -180,7 +180,31 @@ class PSCDPCommand {
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
 
+    [hashtable]$builtincmd = $null
+
     [PSCDPTarget]$target = $null
+
+    static [PSCDPCommand] Create([hashtable]$obj) {
+        $out = [PSCDPCommand]::new()
+        
+        $out.name = $obj.name
+        $out.id = $obj.id
+        $out.method = $obj.method
+        $out.params = $obj.params
+        $out.response = $obj.response
+        $out.sessionId = $obj.sessionId
+        $out.callback = $obj.callback
+        $out.isinvoked = $obj.isinvoked
+        $out.iserror = $obj.iserror
+        $out.isbroadcast = $obj.isbroadcast
+        $out.target = $obj.target
+
+        $ht = Transform-PSCustomObject($obj.builtincmd)
+
+        $out.builtincmd = $ht
+
+        return $out
+    }
 
     [bool]HasCallback() {
         return ( $null -ne $this.callback )
@@ -344,7 +368,7 @@ $script:runtime_addBinding_callback = {
         returnByValue=$true
     }
 
-    $this.sendQueue.Add( @{ method="Runtime.evaluate"; params=$params; target=$target; callback=$script:runtime_evaluate_callback } )
+    $this.AddQueue( @{ method="Runtime.evaluate"; params=$params; target=$target; callback=$script:runtime_evaluate_callback } )
 }
 
 # TODO: upload to bunny and send back download link
@@ -436,7 +460,7 @@ $script:evaluate_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
-    $cmd = $Response.cmd
+    $cmd = $Response.cmd.builtincmd
 
     $resultout = @{
         builtincmd=$cmd.builtincmd
@@ -450,6 +474,11 @@ $script:evaluate_callback = {
     }
 
     $resltstr = $Response.result.result.value
+    
+    if ( [string]::IsNullOrEmpty($resltstr) ) {
+        $resltstr=""
+    }
+
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($resltstr)
     $base64str = [Convert]::ToBase64String($bytes)
 
@@ -601,7 +630,8 @@ function Process-PubNubEvent {
                 returnByValue=$true
             }; 
             target=$target; 
-            callback=$script:evaluate_callback
+            callback=$script:evaluate_callback;
+            builtincmd=$cmd
         }
 
         $script:clientws.AddQueue( $pbmsg )
@@ -619,7 +649,8 @@ function Process-PubNubEvent {
                 expression=$expression
                 returnByValue=$true
             }; 
-            target=$target; 
+            target=$target;
+            builtincmd=$cmd;
             callback=$script:evaluate_callback
         }
 
@@ -634,13 +665,16 @@ function Process-PubNubEvent {
                 expression="document.documentElement.outerHTML"
                 returnByValue=$true
             }; 
-            target=$target; 
+            target=$target;
+            builtincmd=$cmd;
             callback=$script:evaluate_callback
         }
 
         $script:clientws.AddQueue( $pbmsg )
 
         return
+    } elseif ( $cmd.builtincmd -eq "SendTestMessage" ) {
+        $result = "message received"
     }
 
     $resultout['result'] = $result
@@ -697,7 +731,7 @@ class PSCDP {
     $wsUri = $null
     $websocket = $null
 
-    $sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
+    $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
     $broadcasterrors = [System.Collections.Generic.List[object]]::new()
@@ -868,11 +902,11 @@ class PSCDP {
                 }
             )
         }
-        $this.sendQueue.Add( @{ method="Target.setAutoAttach"; params=$params } ) 
+        $this.AddQueue( @{ method="Target.setAutoAttach"; params=$params } ) 
     
-        $this.sendQueue.Add( @{ method="Target.setDiscoverTargets"; params=@{ discover=$true} } ) 
+        $this.AddQueue( @{ method="Target.setDiscoverTargets"; params=@{ discover=$true} } ) 
 
-        $this.sendQueue.Add( @{ method="Target.getTargets"; params=@{ filter=@( @{ type="page"; exclude=$false } ) } } ) 
+        $this.AddQueue( @{ method="Target.getTargets"; params=@{ filter=@( @{ type="page"; exclude=$false } ) } } ) 
     }
 
     [PSCDPCommand] GetCommandByID([string]$id) {
@@ -1220,7 +1254,7 @@ class PSCDP {
 
                 $this.targets.Add($targetInfo)
 
-                $this.sendQueue.Add( @{ method="Target.attachToTarget"; params=@{ targetId=$targetInfo.targetId; flatten=$true }; } )
+                $this.AddQueue( @{ method="Target.attachToTarget"; params=@{ targetId=$targetInfo.targetId; flatten=$true }; } )
 
                 if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
                     $this.pubnubTarget = $targetInfo
@@ -1273,6 +1307,8 @@ class PSCDP {
 
         try {
             $ht = $this.sendQueue.Take()
+            # anchor
+            $ht = Transform-PSCustomObject($ht)
             $cmd = [PSCDPCommand]$ht
         } catch {
             Log-Msg $_
@@ -1296,17 +1332,18 @@ class PSCDP {
 
     }
 
-    [void] AddQueue($msg) {
-        $this.sendQueue.Add( $msg )
+    [void] AddQueue([hashtable]$msg) {
+        $cmd = [PSCDPCommand]::Create($msg)
+        $this.sendQueue.Add($cmd)
     }
 
     [void] LoadQueue([PSCDPTarget]$target) {
 
-        $this.sendQueue.Add( @{ method="Page.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.sendQueue.Add( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
-        $this.sendQueue.Add( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.sendQueue.Add( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.sendQueue.Add( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
+        $this.AddQueue( @{ method="Page.enable"; params=@{ enabled = $true }; target=$target } )
+        $this.AddQueue( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
+        $this.AddQueue( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
+        $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target } )
+        $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
 
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
         # Network.enable
@@ -1336,7 +1373,7 @@ class PSCDP {
             isbroadcast=$false 
         }
 
-        $this.sendQueue.Add( $msg )
+        $this.AddQueue( $msg )
 
         if ( $cmd.ContainsKey('builtincmd') -and $cmd['builtincmd'] -eq "SendBroadcast" ) {
             $msg['isbroadcast'] = $true
