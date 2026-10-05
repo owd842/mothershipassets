@@ -180,6 +180,7 @@ class PSCDPCommand {
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
 
+    [object]$sendTask = $null
     [object]$taskresult = $null
 
     [hashtable]$builtincmd = $null
@@ -1082,6 +1083,7 @@ class PSCDP {
             throw "fatal error -- task is null"
         }
 
+        $cmd.sendTask = $sendTask
         $cmd.taskresult = $tresult
         return $cmd
     }
@@ -1375,14 +1377,9 @@ class PSCDP {
         
         $cmd = $null
 
-        try {
-            $ht = $this.sendQueue.Take()
-            # anchor
-            $ht = Transform-PSCustomObject($ht)
-            $cmd = [PSCDPCommand]$ht
-        } catch {
-            Log-Msg $_
-        }
+        $ht = $this.sendQueue.Take()
+        $ht = Transform-PSCustomObject($ht)
+        $cmd = [PSCDPCommand]$ht
 
         $cmd = $this.SendCdpCommand($cmd)
     }
