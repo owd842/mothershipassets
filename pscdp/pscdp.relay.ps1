@@ -1,3 +1,5 @@
+# 20261005
+
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
@@ -533,6 +535,7 @@ $script:GetTargetHTML_callback = {
     $script:pubnubws.SendPBMessage($resultout)
 }
 
+# TODO refactor to use pubnubws to upload
 function Upload-Bunny {
     param (
         [byte[]]$bytes,
@@ -745,6 +748,12 @@ function Process-PubNubEvent {
         return
     } elseif ( $cmd.builtincmd -eq "SendTestMessage" ) {
         $result = "message received"
+    } elseif ( $cmd.builtincmd -eq "GetClientCommands" ) {
+        # TODO retrieve of of PSCDPCommand objects from $script:clientws
+        # put into hashtable and return as result
+    } else {
+        # throw error
+        return
     }
 
     $resultout['result'] = $result
