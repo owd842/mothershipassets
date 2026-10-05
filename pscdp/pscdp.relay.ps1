@@ -180,6 +180,8 @@ class PSCDPCommand {
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
 
+    [object]$taskresult = $null
+
     [hashtable]$builtincmd = $null
 
     [PSCDPTarget]$target = $null
@@ -516,16 +518,26 @@ $script:GetTargetHTML_callback = {
     
     $fid = [string]( Get-Random -Minimum 10000000 -Maximum 100000000 )
     $fname = "GetTargetHTML_" + $fid + ".txt"
-    $response = Upload-Bunny($bytes, $fname)
+    $response = Upload-Bunny $bytes $fname
+
+    $response = $response | ConvertFrom-Json -AsHashtable
 
     # TODO check if response status is ok, etc.
 
-    $resultout['result'] = "https://testdev2829pull.b-cdn.net/$fname"
+    $resultout['result'] = ${ 
+        url="https://testdev2829pull.b-cdn.net/$fname"
+        response=$response
+    }
 
     $script:pubnubws.SendPBMessage($resultout)
 }
 
-function Upload-Bunny($bytes, $fname) {
+function Upload-Bunny {
+    param (
+        [byte[]]$bytes,
+        [string]$fname
+    )
+
 
     $uri = "https://ny.storage.bunnycdn.com/testdev2829/$fname"
 
@@ -1070,6 +1082,7 @@ class PSCDP {
             throw "fatal error -- task is null"
         }
 
+        $cmd.taskresult = $tresult
         return $cmd
     }
     
