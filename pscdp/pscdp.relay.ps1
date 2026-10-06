@@ -211,6 +211,36 @@ class PSCDPCommand {
         return $out
     }
 
+    [hashtable]GetHashtable() {
+
+        $isexec = $false
+        $execstatus = "UNKNOWN"
+
+        if ( $null -ne $this.taskresult -and $null -ne $this.sendTask ) {
+            $isexec = $true
+            $execstatus = [string]$this.sendTask.Status
+        }
+
+        $obj = $null
+
+        $obj = @{
+            name=$this.name
+            id=$this.id
+            method=$this.method
+            params=$this.params
+            response=$this.response
+            sessionId=$this.sessionId
+            callback=$this.callback
+            isinvoked=$this.isinvoked
+            iserror=$this.iserror
+            isbroadcast=$this.isbroadcast
+            isexec=$isexec
+            execstatus=$execstatus
+        }
+
+        return $obj
+    }
+
     [bool]HasCallback() {
         return ( $null -ne $this.callback )
     }
@@ -749,11 +779,13 @@ function Process-PubNubEvent {
     } elseif ( $cmd.builtincmd -eq "SendTestMessage" ) {
         $result = "message received"
     } elseif ( $cmd.builtincmd -eq "GetClientCommands" ) {
-        # TODO retrieve of of PSCDPCommand objects from $script:clientws
-        # put into hashtable and return as result
+
+        $result = $script:clientws.commands | ForEach-Object { 
+            $_.GetHashtable()
+        }
+        
     } else {
-        # throw error
-        return
+        throw "unsupported command"
     }
 
     $resultout['result'] = $result
