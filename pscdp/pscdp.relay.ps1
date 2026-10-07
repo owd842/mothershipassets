@@ -1,4 +1,4 @@
-# 20261005
+# 2026107-1355
 
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
@@ -228,7 +228,7 @@ class PSCDPCommand {
             id=$this.id
             method=$this.method
             #params=$this.params
-            response=$this.response # TODO convert response to safe hashtable before sending
+            #response=$this.response # TODO convert response to safe hashtable before sending
             sessionId=$this.sessionId
             #callback=$this.callback
             isinvoked=$this.isinvoked
@@ -238,8 +238,22 @@ class PSCDPCommand {
             execstatus=$execstatus
         }
 
+        $obj['hascallback']=$false
+
+        if ( $null -ne $this.callback ) {
+            $obj['hascallback']=$true
+        }
+
         if ( $null -ne $this.target ) {
             $obj['targetid']=$this.target.targetId
+        } else {
+            $obj['targetid']=$null
+        }
+
+        $obj['response'] = $null
+
+        if ( $null -ne $this.response ) {
+            $obj['response'] = $this.response.GetHashtable()
         }
 
         return $obj
@@ -348,7 +362,6 @@ class PSCDPResponse {
     [bool]$iserror = $false
     [int32]$id = -1
     [hashtable]$result = @{}
-    [hashtable]$errorht = @{}
 
     static [PSCDPCommandErrorType] GetErrorType([hashtable]$msght) {
 
@@ -376,7 +389,10 @@ class PSCDPResponse {
     static [PSCDPResponse] Create([hashtable]$msght) {
         [PSCDPResponse]$obj = [PSCDPResponse]::new()
 
+        $terrorType = [PSCDPResponse]::GetErrorType($msght)
+
         $obj.id = $msght['id']
+
         try {
             $tresult = $msght['result']
 
@@ -390,9 +406,6 @@ class PSCDPResponse {
                     $obj.result = @{}
                     $obj.iserror = $true
                     $obj.errorType = [PSCDPCommandErrorType]::TransformError
-                    $obj.errorht = @{
-                        description="unable to transform result object into hashtable"
-                    }
                 }
             }
 
@@ -400,7 +413,36 @@ class PSCDPResponse {
             Log-Msg $_
         }
 
+        $obj.errorType = $terrorType
+        $obj.iserror = $true
+
+        if ( $terrorType -eq [PSCDPCommandErrorType]::NoError ) {
+            $obj.iserror = $false
+        }
+
         return $obj
+    }
+
+    [hashtable] GetHashtable() {
+        $obj = $this.result # check if response is error, if so parse error and
+                            # return error object
+
+        return $obj
+    }
+
+    [string] GetResultStr() {
+
+        $resultstr = ""
+
+        try {
+            $resultstr = $this.result | ConvertTo-Json -Depth 10
+        } catch {
+            Log-Msg $_
+        }
+
+        # anchor
+
+        return $resultstr
     }
 }
 
@@ -606,7 +648,7 @@ $script:getTargets_callback = {
 
 $script:evaluate_callback = {
     param(
-        [object]$Response, [PSCDP]$cdpobj
+        [PSCDPResponse]$Response, [PSCDP]$cdpobj
     )
 
     $cmd = $Response.cmd.builtincmd
@@ -619,29 +661,11 @@ $script:evaluate_callback = {
         resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
         ts=$(Get-Timestamp)
         result=$null
-        targetId=$target.targetId
+        targetId=$Response.cmd.target.targetId # TODO target and sessionid are both coming through as null, needs fix
     }
 
-    $resltstr = ""
+    $resltstr = $Response.GetResultStr() # anchor
 
-    try {
-        if ( ! $cmd.iserror ) {
-            $resltstr = $Response.result.result.value
-        } else {
-            $obj = $Response.result.exceptionDetails
-            $obj = Transform-PSCustomObject($obj)
-
-            $ht = @{ 
-                description=$Response.result.result.description
-                exceptionDetails=$obj
-            }
-
-            $resltstr = $ht | ConvertTo-Json
-        }
-    } catch {
-        $resltstr = "FATA SYSTEM ERROR"
-    }
-    
     
     if ( $null -eq $resltstr ) {
         $resltstr=""
@@ -1606,7 +1630,7 @@ class PSCDP {
             throw 'executionContextId is empty'
         }
 
-        $json = $cmd | ConvertTo-Json # TODO wrap in try catch and report error as needed
+        $json = $cmd | ConvertTo-Json -Depth 10 # TODO wrap in try catch and report error as needed
         $tbytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $jsonb = "`"" + [System.Convert]::ToBase64String($tbytes) + "`""
 
