@@ -175,7 +175,7 @@ class PSCDPCommand {
     [int32]$id
     [string]$method
     [hashtable]$params
-    [hashtable]$response
+    [PSCDPResponse]$response
     [string]$sessionId
     [scriptblock]$callback
     [bool]$isinvoked = $false
@@ -238,6 +238,10 @@ class PSCDPCommand {
             execstatus=$execstatus
         }
 
+        if ( $null -ne $this.target ) {
+            $obj['targetid']=$this.target.targetId
+        }
+
         return $obj
     }
 
@@ -290,10 +294,12 @@ enum PSCDPCommandErrorType {
     JavaScriptError
     CDPError
     GeneralError
+    NoError
+    TransformError
 
     <# CDPError
     {
-    "id": 1,
+        "id": 1,
         "error": {
             "code": -32602,
             "message": "Invalid parameters",
@@ -335,7 +341,9 @@ enum PSCDPCommandErrorType {
 
 class PSCDPResponse {
 
-    [PSCDPCommandErrorType]$errorType = $null
+    [PSCDPCommandErrorType]$errorType = [PSCDPCommandErrorType]::NoError
+
+    [PSCDPCommand]$cmd = $null
 
     [bool]$iserror = $false
     [int32]$id = -1
@@ -344,42 +352,53 @@ class PSCDPResponse {
 
     static [PSCDPCommandErrorType] GetErrorType([hashtable]$msght) {
 
-        $errtype = $null
-
         try {
 
             if ( $msght.ContainsKey('error') ) {
-                $iserror = $true
-                throw ""
+                return [PSCDPCommandErrorType]::CDPError
             }
 
-            if ( ! $msg.ContainsKey('result') ) {
-                throw ""
+            if ( ! $msght.ContainsKey('result') ) {
+                return [PSCDPCommandErrorType]::NoError
             }
     
-            if ( ! [string]::IsNullOrEmpty($msg.result.exceptionDetails.exceptionId) ) {
-                $iserror = $true
-                throw ""
-            }
-    
-            # javascript error
-            if ( $msg.result.result.subtype -eq "error" ) {
-                $iserror = $true
-                throw ""
+            if ( ! [string]::IsNullOrEmpty($msght.result.exceptionDetails.exceptionId) ) {
+                return [PSCDPCommandErrorType]::JavaScriptError
             }
     
         } catch {
-            
+            return [PSCDPCommandErrorType]::GeneralError
         }
 
         return [PSCDPCommandErrorType]::GeneralError
     }
     
     static [PSCDPResponse] Create([hashtable]$msght) {
-        [PSCDPResponse]$obj = @{}
+        [PSCDPResponse]$obj = [PSCDPResponse]::new()
 
         $obj.id = $msght['id']
-        $obj.result = $msght['result']
+        try {
+            $tresult = $msght['result']
+
+            if ( $null -eq $tresult ) {
+                $obj.result = @{}
+            } else {
+
+                if ( $tresult -is [pscustomobject] ) {
+                    $obj.result = Transform-PSCustomObject($tresult)
+                } else {
+                    $obj.result = @{}
+                    $obj.iserror = $true
+                    $obj.errorType = [PSCDPCommandErrorType]::TransformError
+                    $obj.errorht = @{
+                        description="unable to transform result object into hashtable"
+                    }
+                }
+            }
+
+        } catch {
+            Log-Msg $_
+        }
 
         return $obj
     }
@@ -486,7 +505,7 @@ $script:runtime_evaluate_callback = {
 
 $script:runtime_addBinding_callback = {
     param(
-        [object]$Response, [PSCDP]$cdpobj
+        [PSCDPResponse]$Response, [PSCDP]$cdpobj
     )
 
     $target = $Response.cmd.target
@@ -1425,6 +1444,7 @@ class PSCDP {
 
             if ( $null -ne $cmd ) {
                 $cmd.response = [PSCDPResponse]::Create($msght) # anchor
+                $cmd.response.cmd = $cmd
                 $cmd.iserror = $iserror
             }
 
