@@ -1,4 +1,4 @@
-# 2026107-1355
+# 2026108-1534
 
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
@@ -206,7 +206,13 @@ class PSCDPCommand {
         $out.targetid = $obj.targetid
         $out.target = $obj.target
 
-        $ht = Transform-PSCustomObject($obj.builtincmd)
+        if ( $obj.builtincmd -is [pscustomobject] ) {
+            $ht = Transform-PSCustomObject($obj.builtincmd)
+        } elseif ( $obj.builtincmd -is [hashtable] ) {
+            $ht = $obj.builtincmd
+        } else {
+            $ht = [hashtable]$null
+        }
 
         $out.builtincmd = $ht
 
@@ -229,8 +235,7 @@ class PSCDPCommand {
             name=$this.name
             id=$this.id
             method=$this.method
-            #params=$this.params
-            #response=$this.response # TODO convert response to safe hashtable before sending
+            params=$this.params
             sessionId=$this.sessionId
             #callback=$this.callback
             isinvoked=$this.isinvoked
@@ -665,7 +670,7 @@ $script:evaluate_callback = {
         resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
         ts=$(Get-Timestamp)
         result=$null
-        targetId=$Response.cmd.target.targetId # TODO target and sessionid are both coming through as null, needs fix
+        targetId=$Response.cmd.target.targetId
     }
 
     $resltstr = $Response.GetResultStr()
