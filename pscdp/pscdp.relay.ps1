@@ -248,6 +248,8 @@ class PSCDPCommand {
 
         if ( $null -ne $this.target ) {
             $obj['targetid']=$this.target.targetId
+        } elseif ( $null -ne $this.targetid ) {
+            $obj['targetid'] = $this.targetid
         } else {
             $obj['targetid']=$null
         }
