@@ -1010,6 +1010,7 @@ class PSCDP {
     $wsUri = $null
     $websocket = $null
 
+    # TODO cleanup and refactor using PSCDP<...> types
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
