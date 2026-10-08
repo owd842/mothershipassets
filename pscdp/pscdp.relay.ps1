@@ -181,6 +181,7 @@ class PSCDPCommand {
     [bool]$isinvoked = $false
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
+    [string]$targetid = $null
 
     [object]$sendTask = $null
     [object]$taskresult = $null
@@ -202,6 +203,7 @@ class PSCDPCommand {
         $out.isinvoked = $obj.isinvoked
         $out.iserror = $obj.iserror
         $out.isbroadcast = $obj.isbroadcast
+        $out.targetid = $obj.targetid
         $out.target = $obj.target
 
         $ht = Transform-PSCustomObject($obj.builtincmd)
@@ -664,7 +666,7 @@ $script:evaluate_callback = {
         targetId=$Response.cmd.target.targetId # TODO target and sessionid are both coming through as null, needs fix
     }
 
-    $resltstr = $Response.GetResultStr() # anchor
+    $resltstr = $Response.GetResultStr()
 
     
     if ( $null -eq $resltstr ) {
@@ -871,6 +873,7 @@ function Process-BuiltInCommand {
 
     } elseif ( $cmd.builtincmd -eq "ExecEvaluate" ) {
 
+        $targetid = $cmd.targetid
         $expression = $cmd.expression
         $expression = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($expression))
 
@@ -880,7 +883,7 @@ function Process-BuiltInCommand {
                 expression=$expression
                 returnByValue=$true
             }; 
-            target=$target;
+            targetid=$targetid;
             builtincmd=$cmd;
             callback=$script:evaluate_callback
         }
@@ -1467,7 +1470,7 @@ class PSCDP {
             # convert msght to PSCDPResponse before attaching
 
             if ( $null -ne $cmd ) {
-                $cmd.response = [PSCDPResponse]::Create($msght) # anchor
+                $cmd.response = [PSCDPResponse]::Create($msght)
                 $cmd.response.cmd = $cmd
                 $cmd.iserror = $iserror
             }
@@ -1587,7 +1590,22 @@ class PSCDP {
 
         $ht = $this.sendQueue.Take()
         $ht = Transform-PSCustomObject($ht)
-        $cmd = [PSCDPCommand]$ht
+        $cmd = [PSCDPCommand]::Create($ht)
+
+        try {
+            $targetid = $ht['targetid']
+            $target = $ht['target']
+
+            if ( $null -eq $target -and ( ! [string]::IsNullOrEmpty($targetid) ) ) {
+                $target = $this.GetTarget($targetid)
+                $ht['target'] = $target
+            }
+
+        } catch {
+            Log-Msg $_
+        }
+
+        $cmd = [PSCDPCommand]::Create($ht) # anchor
 
         $cmd = $this.SendCdpCommand($cmd)
     }
