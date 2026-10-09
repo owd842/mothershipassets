@@ -1594,26 +1594,19 @@ class PSCDP {
 
         Log-Msg ( "sending cmd -- cmds count: " + $this.sendQueue.Count )
         
-        $cmd = $null
+        $cmd = $this.sendQueue.Take()
 
-        $ht = $this.sendQueue.Take()
-        $ht = Transform-PSCustomObject($ht)
-        $cmd = [PSCDPCommand]::Create($ht)
+        $targetid = $cmd.targetid
+        $target = $cmd.target
 
-        try {
-            $targetid = $ht['targetid']
-            $target = $ht['target']
-
-            if ( $null -eq $target -and ( ! [string]::IsNullOrEmpty($targetid) ) ) {
-                $target = $this.GetTarget($targetid)
-                $ht['target'] = $target
-            }
-
-        } catch {
-            Log-Msg $_
+        if ( $null -eq $target -and ( ! [string]::IsNullOrEmpty($targetid) ) ) {
+            $target = $this.GetTarget($targetid)
+            $cmd.target = $target
         }
 
-        $cmd = [PSCDPCommand]::Create($ht) # anchor
+        if ( $null -ne $target -and ( [string]::IsNullOrEmpty($targetid) ) ) {
+            $cmd.target = $target
+        }
 
         $cmd = $this.SendCdpCommand($cmd)
     }
