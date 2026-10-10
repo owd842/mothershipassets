@@ -319,6 +319,7 @@ enum PSCDPCommandErrorType {
     GeneralError
     NoError
     TransformError
+    ExceptionError
 
     <# CDPError
     {
@@ -379,17 +380,17 @@ class PSCDPResponse {
             if ( $msght.ContainsKey('error') ) {
                 return [PSCDPCommandErrorType]::CDPError
             }
-
-            if ( ! $msght.ContainsKey('result') ) {
-                return [PSCDPCommandErrorType]::NoError
-            }
     
             if ( ! [string]::IsNullOrEmpty($msght.result.exceptionDetails.exceptionId) ) {
                 return [PSCDPCommandErrorType]::JavaScriptError
             }
+
+            if ( $msght.ContainsKey('result') ) {
+                return [PSCDPCommandErrorType]::NoError
+            }
     
         } catch {
-            return [PSCDPCommandErrorType]::GeneralError
+            return [PSCDPCommandErrorType]::ExceptionError
         }
 
         return [PSCDPCommandErrorType]::GeneralError
@@ -637,7 +638,7 @@ $script:getTargets_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
-    $cmd = $Response.cmd
+    $cmd = $Response.cmd.builtincmd
 
     $resultout = @{
         builtincmd=$cmd.builtincmd
@@ -647,7 +648,7 @@ $script:getTargets_callback = {
         resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
         ts=$(Get-Timestamp)
         result=$null
-        targetId=$target.targetId
+        targetId=$Response.cmd.target.targetId
     }
 
     $resultout['result'] = $Response.result.targetInfos
@@ -837,7 +838,8 @@ function Process-BuiltInCommand {
         $script:clientws.AddQueue( @{ 
             method="Target.getTargets"; 
             params=@{ filter=@( @{ type="page"; exclude=$false } ) } 
-            callback=$script:getTargets_callback 
+            callback=$script:getTargets_callback
+            builtincmd=$cmd
         } ) 
         
         return
