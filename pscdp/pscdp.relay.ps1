@@ -243,6 +243,7 @@ class PSCDPCommand {
             isbroadcast=$this.isbroadcast
             isexec=$isexec
             execstatus=$execstatus
+            builtincmd=$this.builtincmd
         }
 
         $obj['hascallback']=$false
