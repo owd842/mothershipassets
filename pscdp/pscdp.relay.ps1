@@ -579,56 +579,73 @@ $script:captureScreenshot_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
-    $cmd = $Response.cmd
+    $cmd = $Response.cmd.builtincmd
     $target = $Response.cmd.target
 
     $resultout = @{
-        builtincmd="GetTargetScreenCapture"
+        builtincmd=$cmd.builtincmd
         source="pscdp.relay.ps1"
         destination=$cmd.source
         cmdid=$cmd.cmdid
         resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
         ts=$(Get-Timestamp)
         result=$null
-        targetId=$target.targetId
+        targetId=$cmd.targetid
     }
 
-    $imagedata=$Response.result.data
+    try {
+        $imagedata=$Response.result.data
 
-    $chunkSize = 512
-    $imagelength = $imagedata.length
-    $chunkcount = [int] ( $imagelength / $chunkSize )
-    $remainderlength = $imagelength % $chunkSize
+        $chunkSize = 512
+        $imagelength = $imagedata.length
+        $chunkcount = [int] ( $imagelength / $chunkSize )
+        $remainderlength = $imagelength % $chunkSize
 
-    $chunks = [System.Collections.Generic.List[string]]::new()
+        $chunks = [System.Collections.Generic.List[string]]::new()
 
-    for ($i = 0; $i -lt $chunkcount; $i++ ) {
-        $chunks.Add( $imagedata.Substring( $i*$chunkSize, $chunkSize ) )
-    }
+        $tchunkcount = $chunkcount
 
-    if ( $remainderlength -gt 0 ) {
-        $chunks.Add( $imagedata.Substring( $chunkcount*$chunkSize ) )
-    }
+        if ( $remainderlength -gt 0 ) {
+            $tchunkcount = $chunkcount - 1
+        }
 
-    if ( $null -eq $chunks -or $chunks.length -le 0 ) {
-        Log-Msg "pass"
-    }
+        for ($i = 0; $i -lt $tchunkcount; $i++ ) {
+            $substr = ""
+            try {
+                $substr = $imagedata.Substring( $i*$chunkSize, $chunkSize )
+            } catch {
+                Log-Msg $_
+            }
 
-    for ($i = 0; $i -lt $chunks.length; $i++ ) {
+            $chunks.Add( $substr )
+        }
 
-        $result = ${ imagedata="" }
-        $result['imagedata'] = $chunks[$i]
+        if ( $remainderlength -gt 0 ) {
+            $chunks.Add( $imagedata.Substring( ($chunkcount-1)*$chunkSize ) )
+        }
 
-        $resultout['result'] = $result
+        if ( $null -eq $chunks -or $chunks.length -le 0 ) {
+            Log-Msg "pass"
+        }
 
-        $resultout['ts']=$(Get-Timestamp)
+        for ($i = 0; $i -lt $chunks.Count; $i++ ) {
 
-        $resultout['chunkcount'] = $chunkcount
-        $resultout['chunksize'] = $chunksize
-        $resultout['chunkindex'] = $i
-        $resultout['remainderlength'] = $remainderlength
-        
-        $script:pubnubws.SendPBMessage($resultout)
+            $result = @{ imagedata="" }
+            $result['imagedata'] = $chunks[$i]
+
+            $resultout['result'] = $result
+
+            $resultout['ts']=$(Get-Timestamp)
+
+            $resultout['chunkcount'] = $chunkcount
+            $resultout['chunksize'] = $chunksize
+            $resultout['chunkindex'] = $i
+            $resultout['remainderlength'] = $remainderlength
+            
+            $script:pubnubws.SendPBMessage($resultout)
+        }
+    } catch {
+        Log-Msg $_
     }
 
 }
@@ -858,7 +875,8 @@ function Process-BuiltInCommand {
                 captureBeyondViewport=$true
             }; 
             target=$target; 
-            callback=$script:captureScreenshot_callback 
+            callback=$script:captureScreenshot_callback;
+            builtincmd=$cmd
         }
 
         $script:clientws.AddQueue( $pbmsg )
