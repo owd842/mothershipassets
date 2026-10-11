@@ -471,13 +471,13 @@ class PSCDPTarget {
     [bool]$canAccessOpener
     [string]$browserContextId
     [string]$pid
+    [string]$executionContextId # needed to execute Runtime.callFunctionOn
 
     [string]$sessionId
 
     [byte[]]$pngBytes
     $addbinding_ok = $false     # set when Runtime.addBinding result arrives with success
     $console_log_check = $false    
-    $executionContextId = $null # needed to execute Runtime.callFunctionOn
 
     [hashtable] GetDict() {
         $ht = @{
@@ -493,6 +493,7 @@ class PSCDPTarget {
             canAccessOpener=$this.canAccessOpener
             browserContextId=$this.browserContextId
             sessionId=$this.sessionId
+            executionContextId=$this.executionContextId
         }
 
         return $ht
