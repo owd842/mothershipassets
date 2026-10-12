@@ -473,7 +473,7 @@ class PSCDPTarget {
     [bool]$canAccessOpener
     [string]$browserContextId
     [string]$pid
-    [int32]$executionContextId # needed to execute Runtime.callFunctionOn 
+    [int32]$executionContextId = -1 # needed to execute Runtime.callFunctionOn 
     
     [string]$sessionId
 
@@ -919,7 +919,7 @@ function Process-BuiltInCommand {
     } elseif ( $cmd.builtincmd -eq "ExecEvaluate" ) {
 
         $targetid = $cmd.targetid
-        $target = $$script:clientws.GetTarget($targetid)
+        $target = $script:clientws.GetTarget($targetid)
 
         $expression = $cmd.expression
         $expression = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($expression))
@@ -927,20 +927,15 @@ function Process-BuiltInCommand {
         $params = @{
             expression=$expression
             returnByValue=$true
-            #contextId=
         }
 
-        if ( $null -ne $target ) {
-
+        if ( $null -ne $target -and $target.executionContextId -ge 0 ) {
+            $params.Add('contextId',$target.executionContextId)
         }
 
         $pbmsg = @{ 
             method="Runtime.evaluate"; 
-            params=@{ 
-                expression=$expression
-                returnByValue=$true
-                contextId=
-            }; 
+            params=$params
             targetid=$targetid;
             builtincmd=$cmd;
             callback=$script:evaluate_callback
