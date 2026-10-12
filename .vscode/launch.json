@@ -42,7 +42,7 @@
             "request": "launch",
             "name": "Launch NodeJS Script",
             "skipFiles": ["<node_internals>/**"],
-            "runtimeExecutable": "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe",
+            "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe", // "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe",
             // "C:\\Users\\KIDS2022\\AppData\\Local\\node.exe",
             // "C:\\Program Files\\Adobe\\Adobe Creative Cloud Experience\\libs\\node.exe",
             // "C:\\Program Files\\nodejs\\node.exe",
