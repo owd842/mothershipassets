@@ -288,6 +288,10 @@ class PSCDPCommand {
             $obj.Add('params', $this.params)
         }
 
+        if ( $null -ne $this.target ) {
+            $this.sessionId = $this.target.sessionId
+        }
+
         if ( ! [string]::IsNullOrWhiteSpace($this.sessionId) ) {
             $obj.Add('sessionId', $this.sessionId)
         }
@@ -451,8 +455,6 @@ class PSCDPResponse {
             Log-Msg $_
         }
 
-        # anchor
-
         return $resultstr
     }
 }
@@ -471,13 +473,14 @@ class PSCDPTarget {
     [bool]$canAccessOpener
     [string]$browserContextId
     [string]$pid
-    [string]$executionContextId # needed to execute Runtime.callFunctionOn
-
+    [int32]$executionContextId # needed to execute Runtime.callFunctionOn 
+    
     [string]$sessionId
 
     [byte[]]$pngBytes
     $addbinding_ok = $false     # set when Runtime.addBinding result arrives with success
     $console_log_check = $false    
+    $runtime_enable_ok = $false
 
     [hashtable] GetDict() {
         $ht = @{
@@ -494,6 +497,9 @@ class PSCDPTarget {
             browserContextId=$this.browserContextId
             sessionId=$this.sessionId
             executionContextId=$this.executionContextId
+            console_log_check=$this.console_log_check
+            runtime_enable_ok=$this.runtime_enable_ok
+            addbinding_ok=$this.addbinding_ok
         }
 
         return $ht
@@ -522,6 +528,16 @@ class PSCDPTarget {
 
         return [PSCDPTarget]$ht
     }
+}
+
+$script:runtime_enable_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $target = $Response.cmd.target
+
+    $target.runtime_enable_ok = $true
 }
 
 $script:SendPBMessage_callback = {
@@ -903,14 +919,27 @@ function Process-BuiltInCommand {
     } elseif ( $cmd.builtincmd -eq "ExecEvaluate" ) {
 
         $targetid = $cmd.targetid
+        $target = $$script:clientws.GetTarget($targetid)
+
         $expression = $cmd.expression
         $expression = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($expression))
+
+        $params = @{
+            expression=$expression
+            returnByValue=$true
+            #contextId=
+        }
+
+        if ( $null -ne $target ) {
+
+        }
 
         $pbmsg = @{ 
             method="Runtime.evaluate"; 
             params=@{ 
                 expression=$expression
                 returnByValue=$true
+                contextId=
             }; 
             targetid=$targetid;
             builtincmd=$cmd;
@@ -944,6 +973,16 @@ function Process-BuiltInCommand {
             $_.GetHashtable()
         }
         
+    } elseif ( $cmd.builtincmd -eq "LoadQueue" ) {
+
+        $targetid = $cmd.targetid
+        
+        $target = $script:clientws.GetTarget($targetid)
+
+        $script:clientws.LoadQueue($target)
+
+        return
+
     } else {
         throw "unsupported command [$($cmd.builtincmd)]"
     }
@@ -1453,6 +1492,10 @@ class PSCDP {
 
         try { $sessionId = $msg.params.sessionId } catch { } # notifications don't have an ID field
 
+        if ( [string]::IsNullOrWhiteSpace($sessionId) ) {
+            try { $sessionId = $msg.sessionId } catch { }
+        }
+
         $msght = @{}
         $msg.psobject.Properties | ForEach-Object {
 
@@ -1592,8 +1635,9 @@ class PSCDP {
 
             if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
                 $this.pubnubTarget = $targetInfo # ? should not be necessary
-                $this.LoadQueue($targetInfo)
             }
+
+            $this.LoadQueue($targetInfo)
         }
 
         if ( $targetDestroyed ) {
@@ -1658,8 +1702,11 @@ class PSCDP {
         $this.AddQueue( @{ method="Page.enable"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target } )
-        $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
+        $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target; callback=$script:runtime_enable_callback } )
+
+        if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
+            $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
+        }
 
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
         # Network.enable
