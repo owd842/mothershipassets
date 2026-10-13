@@ -767,6 +767,33 @@ $script:GetTargetHTML_callback = {
     $script:pubnubws.SendPBMessage($resultout)
 }
 
+$script:getdom_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    # DOM.querySelector
+    # DOM.getOuterHTML
+    # DOM.describeNode
+    # DOM.resolveNode
+    
+    # children
+    # attributes
+    # documentURL
+    # baseURL
+
+    # backendNodeId
+    # nodeName --> tag name
+    # nodeValue
+
+    # shadowRoots
+    # shadowRootType
+
+    # nodeType --> internal --> what kind of node --> html element, text, comment, etc.
+
+    Log-Msg "pass"
+}
+
 # TODO refactor to use pubnubws to upload
 function Upload-Bunny {
     param (
@@ -978,6 +1005,24 @@ function Process-BuiltInCommand {
 
         return
 
+    } elseif ( $cmd.builtincmd -eq "RefreshDOM" ) {
+
+        $targetid = $cmd.targetid
+        
+        $pbmsg = @{ 
+            method="DOM.getDocument";
+            params = @{
+              depth=1;
+              pierce=$true;
+            };
+            targetid=$targetid;
+            builtincmd=$cmd;
+            callback=$script:getdom_callback
+          }
+          
+        $script:clientws.AddQueue( $pbmsg )
+
+        return
     } else {
         throw "unsupported command [$($cmd.builtincmd)]"
     }

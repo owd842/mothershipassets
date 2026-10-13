@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HTML Web Component Example</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #f4f4f9;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Using the custom Web Component tag in HTML -->
+  <click-counter button-text="Clicks:"></click-counter>
+
+  <script>
+    // 2. Defining the Web Component logic using JavaScript
+    class ClickCounter extends HTMLElement {
+      constructor() {
+        super(); // Always call super() first to inherit HTMLElement properties
+
+        // Attach a Shadow DOM for style and markup encapsulation
+        this.attachShadow({ mode: 'open' });
+
+        // Initialize state
+        this.count = 0;
+
+        // Define internal component HTML structure and scoped CSS
+        this.shadowRoot.innerHTML = `
+          <style>
+            :host {
+              display: inline-block;
+            }
+            button {
+              background: #0076ff;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              font-size: 1rem;
+              border-radius: 5px;
+              cursor: pointer;
+              transition: background 0.2s;
+            }
+            button:hover {
+              background: #0056b3;
+            }
+          </style>
+          <button id="counter-btn"></button>
+        `;
+      }
+
+      // Lifecycle callback: Called when the element is appended to the DOM
+      connectedCallback() {
+        this.button = this.shadowRoot.querySelector('#counter-btn');
+        this.prefix = this.getAttribute('button-text') || 'Count:';
+        
+        this.updateText();
+
+        // Listen for user clicks inside the shadow root
+        this.button.addEventListener('click', () => {
+          this.count++;
+          this.updateText();
+        });
+      }
+
+      // Helper method to keep UI updated
+      updateText() {
+        this.button.textContent = `${this.prefix} ${this.count}`;
+      }
+    }
+
+    // 3. Register the custom element globally with the browser
+    // The tag name MUST contain a dash (-)
+    customElements.define('click-counter', ClickCounter);
+  </script>
+
+</body>
+</html>
