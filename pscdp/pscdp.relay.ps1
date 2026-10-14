@@ -792,7 +792,7 @@ $script:getdom_callback = {
         targetId=$Response.cmd.target.targetId
     }
 
-    $jsonstr = $result | ConvertTo-Json -Depth 10
+    $jsonstr = $result | ConvertTo-Json -Depth 10 # TODO might not be adequate -- 
 
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonstr)
     $base64str = [Convert]::ToBase64String($bytes)
