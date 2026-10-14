@@ -769,19 +769,52 @@ $script:GetTargetHTML_callback = {
 
 $script:getdom_callback = {
     param(
-        [object]$Response, [PSCDP]$cdpobj
+        [PSCDPResponse]$Response, [PSCDP]$cdpobj
     )
 
     $obj = $Response.result.root
 
-    $sresult = Transform-PSCustomObject($obj)
+    $result = ProcessDOMObj($obj)
+
+    $cmd = $Response.cmd.builtincmd
+
+    $resultout = @{
+        builtincmd=$cmd.builtincmd
+        source="pscdp.relay.ps1"
+        destination=$cmd.source
+        cmdid=$cmd.cmdid
+        resultid=$(Get-Random -Minimum 10000000 -Maximum 99999999)
+        ts=$(Get-Timestamp)
+        result=$null
+        targetId=$Response.cmd.target.targetId
+    }
+
+    $jsonstr = $result | ConvertTo-Json
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonstr)
+    $base64str = [Convert]::ToBase64String($bytes)
+
+    $resultout['result'] = $base64str
+
+    $script:pubnubws.SendPBMessage($resultout)
+
+    # DOM.querySelector
+    # DOM.getOuterHTML
+    # DOM.describeNode
+    # DOM.resolveNode
+    
+    # anchor
+}
+
+function ProcessDOMObj {
+    param([PSCustomObject]$obj)
 
     $result = @{}
 
-
-    # TODO implement function to construct object
     try {
-        $keys = @("backendNodeId", "nodeType", "nodeName","documentURL","baseURL","attributes")        
+        $sresult = Transform-PSCustomObject($obj)
+
+        $keys = @("backendNodeId", "nodeType", "nodeName","documentURL","baseURL")        
         $keys.ForEach({ $result[$_] = $sresult[$_] })
 
         $sattributes = $sresult['attributes']
@@ -789,19 +822,23 @@ $script:getdom_callback = {
 
         if ( $null -ne $sattributes -and $sattributes -is [array] ) {
             
+            $key = $null
+
             for ( $i = 0; $i -lt $sattributes.Length; $i++ ) {
-                $key = $null
                 $value = $sattributes[$i]
 
                 if ($i % 2 -eq 0) {
                     $key = $value
                 } else {
-                    $attributes[$key] = $value
+                    $attributes.Add($key, $value)
                 }
 
             }
 
-            $result['attributes'] = $sattributes
+            if ( $null -ne $attributes -and $attributes.Count -gt 0 ) {
+                $result.Add('attributes', $attributes)
+            }
+
         }
 
         $schildren = $sresult['children']
@@ -813,41 +850,20 @@ $script:getdom_callback = {
             for ( $i = 0; $i -lt $schildren.Length; $i++ ) {
                 $childobj = $schildren[$i]
 
-                $child = Transform-PSCustomObject($childobj)
+                $child = ProcessDOMObj($childobj)
 
                 $children[$i] = $child
             }
+
+            $result.Add('children', $children)
         }
 
-        $result['children'] = $children
 
     } catch {
-
+        return $null
     }
 
-    # $Response.result.root
-
-    # DOM.querySelector
-    # DOM.getOuterHTML
-    # DOM.describeNode
-    # DOM.resolveNode
-    
-    # children
-    # attributes
-    # documentURL
-    # baseURL
-
-    # backendNodeId
-    # nodeName --> tag name
-    # nodeValue
-
-    # shadowRoots
-    # shadowRootType
-
-    # nodeType --> internal --> what kind of node --> html element, text, comment, etc.
-
-    # anchor
-    Log-Msg "pass"
+    return $result
 }
 
 # TODO refactor to use pubnubws to upload

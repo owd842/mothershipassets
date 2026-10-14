@@ -1,3 +1,8 @@
+    # DOM.querySelector
+    # DOM.getOuterHTML
+    # DOM.describeNode
+    # DOM.resolveNode
+
 nodeId=1
 backendNodeId=1
 nodeType=9
