@@ -710,7 +710,6 @@ $script:evaluate_callback = {
     }
 
     $resltstr = $Response.GetResultStr()
-
     
     if ( $null -eq $resltstr ) {
         $resltstr=""
@@ -776,6 +775,10 @@ $script:getdom_callback = {
 
     $result = ProcessDOMObj($obj)
 
+    if ( $null -eq $result ) {
+        $result = @{} # TODO insert error flag
+    }
+
     $cmd = $Response.cmd.builtincmd
 
     $resultout = @{
@@ -789,7 +792,7 @@ $script:getdom_callback = {
         targetId=$Response.cmd.target.targetId
     }
 
-    $jsonstr = $result | ConvertTo-Json
+    $jsonstr = $result | ConvertTo-Json -Depth 10
 
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonstr)
     $base64str = [Convert]::ToBase64String($bytes)
@@ -860,6 +863,7 @@ function ProcessDOMObj {
 
 
     } catch {
+        Log-Msg $_ # TODO convert exception to hashtable and return
         return $null
     }
 
