@@ -1,0 +1,35 @@
+nodeId=1
+backendNodeId=1
+nodeType=9
+nodeName=#document
+localName=
+nodeValue=
+childNodeCount=2
+children=System.Object[]
+documentURL=https://accounts.google.com/v3/signin/identifier?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=GlifWebSignIn&flowEntry=ServiceLogin&dsh=S50788499:1791984716594672
+baseURL=https://accounts.google.com/v3/signin/
+xmlVersion=
+compatibilityMode=NoQuirksMode
+
+children --> array of hashtable
+
+nodeId=2; 
+parentId=1; 
+backendNodeId=2; 
+nodeType=10; 
+nodeName=html; 
+localName=; 
+nodeValue=; 
+publicId=; 
+systemId=
+
+nodeId=3; 
+parentId=1; 
+backendNodeId=3; 
+nodeType=1; 
+nodeName=HTML; 
+localName=html; 
+nodeValue=; 
+childNodeCount=2; 
+attributes=System.Object[]; --> array --> 0,1 2,3 --> pairs key=value
+frameId=F14D35DBAB3F99D7E0C9A9C666DA78D5

@@ -1,4 +1,4 @@
-# 20261013-1100
+# 20261014-1021
 
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
@@ -772,6 +772,61 @@ $script:getdom_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
+    $obj = $Response.result.root
+
+    $sresult = Transform-PSCustomObject($obj)
+
+    $result = @{}
+
+
+    # TODO implement function to construct object
+    try {
+        $keys = @("backendNodeId", "nodeType", "nodeName","documentURL","baseURL","attributes")        
+        $keys.ForEach({ $result[$_] = $sresult[$_] })
+
+        $sattributes = $sresult['attributes']
+        $attributes = @{}
+
+        if ( $null -ne $sattributes -and $sattributes -is [array] ) {
+            
+            for ( $i = 0; $i -lt $sattributes.Length; $i++ ) {
+                $key = $null
+                $value = $sattributes[$i]
+
+                if ($i % 2 -eq 0) {
+                    $key = $value
+                } else {
+                    $attributes[$key] = $value
+                }
+
+            }
+
+            $result['attributes'] = $sattributes
+        }
+
+        $schildren = $sresult['children']
+
+        if ( $null -ne $schildren -and $schildren -is [array] ) {
+            
+            $children = [hashtable[]]::new($schildren.Length)
+
+            for ( $i = 0; $i -lt $schildren.Length; $i++ ) {
+                $childobj = $schildren[$i]
+
+                $child = Transform-PSCustomObject($childobj)
+
+                $children[$i] = $child
+            }
+        }
+
+        $result['children'] = $children
+
+    } catch {
+
+    }
+
+    # $Response.result.root
+
     # DOM.querySelector
     # DOM.getOuterHTML
     # DOM.describeNode
@@ -791,6 +846,7 @@ $script:getdom_callback = {
 
     # nodeType --> internal --> what kind of node --> html element, text, comment, etc.
 
+    # anchor
     Log-Msg "pass"
 }
 
