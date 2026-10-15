@@ -461,7 +461,6 @@ class PSCDPResponse {
     }
 }
 
-# TODO what happens to $this.targets when target is destroyed
 class PSCDPTarget {
     [string]$title
     [string]$url
@@ -474,15 +473,18 @@ class PSCDPTarget {
     [bool]$attached
     [bool]$canAccessOpener
     [string]$browserContextId
-    [string]$pid
+    # [string]$pid # TODO fix this is reserved keyword in powershell
     [int32]$executionContextId = -1 # needed to execute Runtime.callFunctionOn 
     
     [string]$sessionId
 
     [byte[]]$pngBytes
-    $addbinding_ok = $false     # set when Runtime.addBinding result arrives with success
-    $console_log_check = $false    
-    $runtime_enable_ok = $false
+
+    # set when result arrives with success
+    $addbinding_ok = $false             # Runtime.addBinding
+    $console_log_check = $false         # Runtime.evaluate -- send test console.log func call
+    $runtime_enable_ok = $false         # Runtime.enable
+    $emulation_enable_ok = $false       # Emulation.setFocusEmulationEnabled
 
     [hashtable] GetDict() {
         $ht = @{
@@ -502,6 +504,7 @@ class PSCDPTarget {
             console_log_check=$this.console_log_check
             runtime_enable_ok=$this.runtime_enable_ok
             addbinding_ok=$this.addbinding_ok
+            emulation_enable_ok=$this.emulation_enable_ok
         }
 
         return $ht
@@ -590,6 +593,16 @@ $script:runtime_addBinding_callback = {
     }
 
     $this.AddQueue( @{ method="Runtime.evaluate"; params=$params; target=$target; callback=$script:runtime_evaluate_callback } )
+}
+
+$script:emulation_enable_callback = {
+    param(
+        [PSCDPResponse]$Response, [PSCDP]$cdpobj
+    )
+
+    $target = $Response.cmd.target
+
+    $target.emulation_enable_ok = $true
 }
 
 # TODO: upload to bunny and send back download link
@@ -1823,7 +1836,11 @@ class PSCDP {
         $this.AddQueue( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target; callback=$script:runtime_enable_callback } )
-        # Emulation.setFocusEmulationEnabled
+
+        if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
+            $this.AddQueue( @{ method="Emulation.setFocusEmulationEnabled"; params=@{ enabled = $true }; target=$target; callback=$script:emulation_enable_callback } )
+        }
+        
         
         if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
             $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
