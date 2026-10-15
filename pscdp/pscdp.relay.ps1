@@ -1,4 +1,6 @@
-# 20261014-1021
+# 20261014-2139
+
+# Emulation.setFocusEmulationEnabled
 
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
@@ -1819,7 +1821,8 @@ class PSCDP {
         $this.AddQueue( @{ method="Page.setLifecycleEventsEnabled"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target; callback=$script:runtime_enable_callback } )
-
+        # Emulation.setFocusEmulationEnabled
+        
         if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
             $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
         }
