@@ -1285,6 +1285,8 @@ class PSCDP {
         }
 
         $ttargets = $this.GetTargets()
+        
+        $this.targets = $ttargets
 
         if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
             $twsUri = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1).webSocketDebuggerUrl
