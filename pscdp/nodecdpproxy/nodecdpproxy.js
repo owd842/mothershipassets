@@ -71,7 +71,7 @@ function sendMessageAndWait(messagePayload, timeoutMs = 5000) {
                 }
 
                 // TODO handle response from pscdp.relay.ps1
-                // handle chunks -- concat
+                // handle chunks -- reassemble
             },
 
             status: function (event) {

@@ -821,7 +821,6 @@ $script:getdom_callback = {
     # DOM.describeNode
     # DOM.resolveNode
     
-    # anchor
 }
 
 function ProcessDOMObj {
@@ -1031,6 +1030,39 @@ function Process-BuiltInCommand {
         $result = Get-FrontendUrls
     } elseif ( $cmd.builtincmd -eq "ProcessCDP" ) {
         $result = Process-CDP($cmd)
+
+        $ischunked = $result['ischunked']
+
+        if ( ! $ischunked ) {
+            $resultout['result'] = $result
+        } else {
+            $chunkobj = $resultout['chunkobj']
+
+            $chunksize = $chunkobj['chunksize']
+            $chunks = $chunkobj['chunks']
+            $chunkcount = $chunkobj['chunkcount']
+            $remainderlength = $chunkobj['remainderlength']
+
+            for ( $i=0; $i -lt $chunkcount; $i++ ) {
+                $result = @{ imagedata="" }
+                $result['imagedata'] = $chunks[$i]
+
+                $resultout['result'] = $result
+
+                $resultout['ts']=$(Get-Timestamp)
+
+                $resultout['chunkcount'] = $chunkcount
+                $resultout['chunksize'] = $chunksize
+                $resultout['chunkindex'] = $i
+                $resultout['remainderlength'] = $remainderlength
+                
+                $script:pubnubws.SendPBMessage($resultout)
+            }
+
+            return
+        }
+
+
     } elseif ( $cmd.builtincmd -eq "ExecCDPCommand" ) {
         $result = Exec-CDP($cmd)
     } elseif ( $cmd.builtincmd -eq "GetTargets" ) {
