@@ -1,3 +1,5 @@
+// 20261016-1619
+
 const https = require("node:https");
 const fs = require("node:fs");
 const zlib = require("zlib");
@@ -148,7 +150,7 @@ function modifyCSPTag(inputhtml) {
     return ret;
 }
 
-function forwardRequest(req, res) {
+async function forwardRequest(req, res) {
     let path = req.url;
     let method = req.method;
     let headers = req.headers;
@@ -189,7 +191,13 @@ function forwardRequest(req, res) {
     let chunks = [];
 
     // TODO replace with pubnub message and await response
+    let pbreq = createBuiltinCmd();
+    pbreq.url = `https://${options.hostname}${options.path}`;
+    pbreq.headers = options.headers;
 
+    await sendMessageAndWait(pbreq);
+
+    /*
     let preq = https.request(options, (pres) => {
         console.log(`--- response: ${pres.statusCode}`);
 
@@ -255,6 +263,7 @@ function forwardRequest(req, res) {
     });
 
     preq.end();
+    */
 }
 
 function forwardPostRequest(req, res) {
@@ -286,7 +295,7 @@ const options = {
     ),
 };
 
-const server = https.createServer(options, (req, res) => {
+const server = https.createServer(options, async (req, res) => {
     console.log("--- New Request Received ---");
     console.log(`Method: ${req.method}`);
     console.log(`Path: ${req.url}`);
@@ -299,7 +308,7 @@ const server = https.createServer(options, (req, res) => {
     if (req.method.toLowerCase() == "POST".toLowerCase()) {
         forwardPostRequest(req, res);
     } else {
-        forwardRequest(req, res);
+        await forwardRequest(req, res);
     }
 });
 
