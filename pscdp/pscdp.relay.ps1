@@ -939,7 +939,6 @@ function ChunkBytes {
     $resultout = @{}
 
     $resultout['chunksize'] = $chunkSize
-
     $resultout['chunks'] = $chunks
     $resultout['chunkcount'] = -1
     $resultout['remainderlength'] = -1
@@ -987,38 +986,34 @@ function Process-CDP {
         return $null
     }
 
-    $ret = $null
+    $ret = @{}
 
-    try {
-        $httpres = Invoke-WebRequest -Method Get -Uri $devurl -ErrorAction Stop -UseBasicParsing
+    $httpres = Invoke-WebRequest -Method Get -Uri $devurl -ErrorAction Stop -UseBasicParsing
 
-        $byteArray = $httpres.RawContentStream.ToArray()
+    $byteArray = $httpres.RawContentStream.ToArray()
 
-        $bodystr = [System.Convert]::ToBase64String($byteArray)
+    $bodystr = [System.Convert]::ToBase64String($byteArray)
 
-        # check if $bodystr is more than 16KB bytes,
+    $ret = @{
+        headers=$httpres.Headers
+        body=$null
+        requesturl=$devurl
+        ischunked=$false
+        chunkobj=$null
+    }
 
-        <#
-        $resultout['chunkcount'] = $chunkcount
-        $resultout['chunksize'] = $chunksize
-        $resultout['chunkindex'] = $i
-        $resultout['remainderlength'] = $remainderlength
-        #>
-
-        $ret = @{
-            headers=$httpres.Headers
-            body=$bodystr
-            requesturl=$devurl
-        }
-
-    } catch {
-        Log-Msg $_
-        return $null
-    }        
+    if ( $bodystr.Length -ge 16384 ) {
+        $chunkobj = ChunkBytes $bodystr
+        $ret['chunkobj'] = $chunkobj
+        $ret['ischunked'] = $true
+    } else {
+        $ret['body'] = $bodystr
+    }
 
     return $ret
 }
 
+# TODO move logic to external funcs for each cmd
 function Process-BuiltInCommand {
     param([object]$cmd)
 
