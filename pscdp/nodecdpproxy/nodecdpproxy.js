@@ -189,7 +189,9 @@ function forwardRequest(req, res) {
     let chunks = [];
 
     // TODO replace with pubnub message and await response
+sendMessageAndWait
 
+    /*
     let preq = https.request(options, (pres) => {
         console.log(`--- response: ${pres.statusCode}`);
 
@@ -255,6 +257,7 @@ function forwardRequest(req, res) {
     });
 
     preq.end();
+    */
 }
 
 function forwardPostRequest(req, res) {
