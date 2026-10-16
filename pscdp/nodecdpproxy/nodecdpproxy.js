@@ -1,8 +1,130 @@
-// C:\Program Files\OpenSSL-Win64
-
 const https = require("node:https");
 const fs = require("node:fs");
 const zlib = require("zlib");
+const PubNub = require('pubnub');
+
+function getTimestamp() {
+    const now = new Date();
+
+    const pad = (n) => String(n).padStart(2, '0');
+
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1); // Months are 0-indexed
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+
+    return `${year}${month}${day}${hours}${minutes}${seconds}`;
+}
+
+function generateRandCode() {
+    return Math.floor(10000000 + Math.random() * 90000000);
+}
+
+const uuid = 'nodecdpproxy.js';
+
+const pubnub = new PubNub({
+    publishKey: 'pub-c-bd83b994-1964-4760-9bf2-142ceadf7f66',
+    subscribeKey: 'sub-c-62ba6c3d-b786-4be3-a033-e472ab227774',
+    userId: 'nodecdpproxy.js',
+});
+
+const channel_name = 'clientid_88992233_JS_client';
+
+const REQUEST_CHANNEL = channel_name;
+const RESPONSE_CHANNEL = channel_name;
+
+function createBuiltinCmd() {
+    
+    let cmdobj = {
+        "builtincmd":"ProcessCDP",
+        "source":"nodecdpproxy.js",
+        "destination":"pscdp.relay.ps1",
+        "cmdid":generateRandCode(),
+        "ts":getTimestamp(),
+        "url":"",
+        "headers":""
+    };
+
+    return cmdobj;
+}
+
+function sendMessageAndWait(messagePayload, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+        
+        const requestId = Math.random().toString(36).substring(2, 15);
+        messagePayload.requestId = requestId;
+        
+        const timeout = setTimeout(() => {
+            pubnub.removeListener(listener);
+            reject(new Error(`Timeout: No response received within ${timeoutMs}ms`));
+        }, timeoutMs);
+
+        const listener = {
+            message: (event) => {
+                // message was sent successfully
+                if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
+                    clearTimeout(timeout);
+                    pubnub.removeListener(listener); // Clean up listener
+                    resolve(event.message); // TODO remove and move to handlerm resolve when pscdp.relay.ps1 sends response
+                }
+
+                // TODO handle response from pscdp.relay.ps1
+                // handle chunks -- concat
+            },
+
+            status: function (event) {
+                if ( event.category === "PNConnectedCategory" ) {
+
+                    console.log("Connected to PubNub!");
+
+                } else if ( event.category === "PNNetworkIssuesCategory" ) {
+
+                    console.log("Connection lost. Attempting to reconnect...");
+
+                } else if ( event.category === "PNReconnectedCategory" ) {
+
+                    console.log("Reconnected to PubNub!");
+
+                }
+            }
+
+        };
+
+        pubnub.addListener(listener);
+        pubnub.subscribe({ channels: [RESPONSE_CHANNEL] });
+
+        pubnub.publish({
+            channel: REQUEST_CHANNEL,
+            message: messagePayload
+        })
+        .then((publishResponse) => {
+            console.log(`✨ Message published successfully. Timetoken: ${publishResponse.timetoken}`);
+        })
+        .catch((error) => {
+            clearTimeout(timeout);
+            pubnub.removeListener(listener);
+            reject(new Error(`Failed to publish message: ${error.message}`));
+        });
+    });
+}
+
+async function main() {
+    try {
+        console.log("🚀 Sending test message, waiting for response...");
+        
+        const testData = { text: "Hello World!", timestamp: Date.now() };
+        const response = await sendMessageAndWait(testData, 10000);
+        
+        console.log("✅ Response received:", response);
+    } catch (error) {
+        console.error("❌ Error:", error.message);
+    } finally {
+        pubnub.unsubscribeAll();
+        process.exit();
+    }
+}
 
 let chromehost = "chrome-devtools-frontend.appspot.com";
 
@@ -65,6 +187,8 @@ function forwardRequest(req, res) {
     });
 
     let chunks = [];
+
+    // TODO replace with pubnub message and await response
 
     let preq = https.request(options, (pres) => {
         console.log(`--- response: ${pres.statusCode}`);
