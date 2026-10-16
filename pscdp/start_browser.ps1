@@ -30,6 +30,9 @@ function ConvertArgs {
     return $targs
 }
 
+& subst Z: C:\
+###
+
 $path = "Z:\Users\LC2022\AppData\Local\WORKING\binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
 #$path = "Z:\Users\LC2022\AppData\Local\WORKING\binaries\ungoogled-chromium_155.0.8059.39-1.1_windows_x64\ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
 $path = $( Join-Path $path "chrome.exe" )
@@ -71,7 +74,11 @@ if ( $null -ne $resp -and $resp.Length -ge 1 ) {
 
 ####
 
-$path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
+    $path = "C:\Users\LC2022\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
+} else {
+    $path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+}
 
 if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
     throw "$path does not exist"

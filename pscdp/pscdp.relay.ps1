@@ -930,6 +930,54 @@ function Exec-CDP {
     Log-Msg "pass"
 }
 
+function ChunkBytes {
+    [OutputType([hashtable])]
+    param([string]$imagedata, [int32]$chunkSize = 512)
+
+    $chunks = [System.Collections.Generic.List[string]]::new()
+
+    $resultout = @{}
+
+    $resultout['chunksize'] = $chunkSize
+
+    $resultout['chunks'] = $chunks
+    $resultout['chunkcount'] = -1
+    $resultout['remainderlength'] = -1
+
+    if ( [string]::IsNullOrEmpty($imagedata) ) {
+        return $resultout
+    }
+
+    $imagelength = $imagedata.length
+    $chunkcount = [int] ( $imagelength / $chunkSize )
+    $remainderlength = $imagelength % $chunkSize
+
+    $tchunkcount = $chunkcount
+
+    if ( $remainderlength -gt 0 ) {
+        $tchunkcount = $chunkcount - 1
+    }
+
+    for ($i = 0; $i -lt $tchunkcount; $i++ ) {
+        $substr = ""
+        $substr = $imagedata.Substring( $i*$chunkSize, $chunkSize )
+
+        $chunks.Add( $substr )
+    }
+
+    if ( $remainderlength -gt 0 ) {
+        $chunks.Add( $imagedata.Substring( ($chunkcount-1)*$chunkSize ) )
+    }
+
+    $resultout['chunks'] = $chunks    
+    $resultout['remainderlength'] = $remainderlength
+    $resultout['chunkcount'] = $chunkcount
+
+    return $resultout
+}
+
+
+# http GET/POST requests to chrome cdp
 function Process-CDP {
     param($cmd)
 
@@ -944,8 +992,18 @@ function Process-CDP {
     try {
         $httpres = Invoke-WebRequest -Method Get -Uri $devurl -ErrorAction Stop -UseBasicParsing
 
-        $bodystr = $httpres.Content.Replace("devtools: ws://127.0.0.1:*", "devtools: ws://127.0.0.1:* ws://localhost:*")
-        $bodystr = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bodystr))
+        $byteArray = $httpres.RawContentStream.ToArray()
+
+        $bodystr = [System.Convert]::ToBase64String($byteArray)
+
+        # check if $bodystr is more than 16KB bytes,
+
+        <#
+        $resultout['chunkcount'] = $chunkcount
+        $resultout['chunksize'] = $chunksize
+        $resultout['chunkindex'] = $i
+        $resultout['remainderlength'] = $remainderlength
+        #>
 
         $ret = @{
             headers=$httpres.Headers
