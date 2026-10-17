@@ -52,7 +52,7 @@ function createBuiltinCmd() {
     return cmdobj;
 }
 
-function sendMessageAndWait(messagePayload, timeoutMs = 5000) {
+function sendMessageAndWait(messagePayload, timeoutMs = 500000) {
     return new Promise((resolve, reject) => {
         
         const requestId = Math.random().toString(36).substring(2, 15);

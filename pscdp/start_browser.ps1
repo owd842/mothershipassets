@@ -33,19 +33,32 @@ function ConvertArgs {
 & subst Z: C:\
 ###
 
-$path = "Z:\Users\LC2022\AppData\Local\WORKING\binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
-$path = $( Join-Path $path "chrome.exe" )
-
-if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-    $path = "Z:\Users\LC2022\AppData\Local\WORKING\binaries\ungoogled-chromium_155.0.8059.39-1.1_windows_x64\ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
+if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
+    $path = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    $path = "C:\Binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
     $path = $( Join-Path $path "chrome.exe" )
+
+    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+        throw "$path does not exist"
+    }
+
+} else {
+
+    $path = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
+    $path = $( Join-Path $path "chrome.exe" )
+
+    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+        $path = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries\ungoogled-chromium_155.0.8059.39-1.1_windows_x64\ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
+        $path = $( Join-Path $path "chrome.exe" )
+    }
+
+    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+        throw "$path does not exist"
+    }
+
 }
 
-if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-    throw "$path does not exist"
-}
-
-$datadir = "C:\Users\LC2022\AppData\Local\chrome-test"
+$datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
 
 $sargs = @{
     "remote-debugging-port"="9223";
@@ -79,7 +92,7 @@ if ( $null -ne $resp -and $resp.Length -ge 1 ) {
 ####
 
 if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
-    $path = "C:\Users\LC2022\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
+    $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
 } else {
     $path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 }
@@ -88,7 +101,7 @@ if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
     throw "$path does not exist"
 }
 
-$datadir = "C:\Users\LC2022\AppData\Local\msedge-test"
+$datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
 
 $sargs = @{
     "remote-debugging-port"="9222";
