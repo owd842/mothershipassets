@@ -1923,12 +1923,12 @@ class PSCDP {
         $this.AddQueue( @{ method="DOM.enable"; params=@{ enabled = $true }; target=$target } )
         $this.AddQueue( @{ method="Runtime.enable"; params=@{ enabled = $true }; target=$target; callback=$script:runtime_enable_callback } )
 
-        if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
+        if ( [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
             $this.AddQueue( @{ method="Emulation.setFocusEmulationEnabled"; params=@{ enabled = $true }; target=$target; callback=$script:emulation_enable_callback } )
         }
         
-        
-        if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) ) {
+        # TODO modify to check if addbinking_ok=$false on pubnub target
+        if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) -and $target.url -eq $this.pubnuburl -and $target.addbinding_ok -eq $false -and $target.targetId -eq $this.pubnubTarget.targetId) {
             $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
         }
 

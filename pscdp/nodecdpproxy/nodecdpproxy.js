@@ -37,6 +37,18 @@ const channel_name = 'clientid_88992233_JS_client';
 const REQUEST_CHANNEL = channel_name;
 const RESPONSE_CHANNEL = channel_name;
 
+const subscription = pubnub.channel(RESPONSE_CHANNEL).subscription();
+
+subscription.onMessage = (messageEvent) => {
+    
+    if ( messageEvent.message.destination == 'BROADCAST' || messageEvent.message.source == 'nodecdpproxy.js' )
+        return;
+
+    console.log('Received message:', messageEvent.message);
+};
+
+subscription.subscribe();
+
 function createBuiltinCmd() {
     
     let cmdobj = {
@@ -65,11 +77,13 @@ function sendMessageAndWait(messagePayload, timeoutMs = 500000) {
 
         const listener = {
             message: (event) => {
-                // message was sent successfully
+                // checks if message was sent successfully
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
                     clearTimeout(timeout);
                     pubnub.removeListener(listener); // Clean up listener
                     resolve(event.message); // TODO remove and move to handlerm resolve when pscdp.relay.ps1 sends response
+                } else {
+
                 }
 
                 // TODO handle response from pscdp.relay.ps1
