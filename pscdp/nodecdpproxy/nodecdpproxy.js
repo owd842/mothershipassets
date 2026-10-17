@@ -45,9 +45,33 @@ subscription.onMessage = (messageEvent) => {
         return;
 
     console.log('Received message:', messageEvent.message);
+
+    /*
+messageEvent.message.result
+{
+  ischunked: false,
+  chunkobj: null,
+  headers: {
+    "access-control-allow-origin": "*",
+    "x-cloud-trace-context": "0732c52e6cff9ccde3991c5451d323ff",
+    Vary: "Accept-Encoding",
+    Age: "1537",
+    "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+    "Content-Length": "990",
+    "Cache-Control": "public, max-age=604800",
+    "Content-Type": "text/html",
+    Date: "Sat, 17 Oct 2026 03:06:48 GMT",
+    Server: "Google Frontend",
+  },
+  requesturl: "https://chrome-devtools-frontend.appspot.com/serve_rev/@d04cdb24d67b081f6cf80200ffc5233f44b61109/inspector.html?ws=localhost:9223/devtools/page/93E6F8C8006E3788B047A07C263005F3",
+  body: "PCEtLQogKiBDb3B5cmlnaHQgMjAxOCBUaGUgQ2hyb21pdW0gQXV0aG9ycwogKiBVc2Ugb2YgdGhpcyBzb3VyY2UgY29kZSBpcyBnb3Zlcm5lZCBieSBhIEJTRC1zdHlsZSBsaWNlbnNlIHRoYXQgY2FuIGJlCiAqIGZvdW5kIGluIHRoZSBMSUNFTlNFIGZpbGUuCi0tPgo8IURPQ1RZUEUgaHRtbD4KPGh0bWwgbGFuZz0iZW4iPgo8bWV0YSBjaGFyc2V0PSJ1dGYtOCI+Cjx0aXRsZT5EZXZUb29sczwvdGl0bGU+CjxzdHlsZT4KICBAbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSB7CiAgICBib2R5IHsKICAgICAgYmFja2dyb3VuZC1jb2xvcjogcmdiKDQxIDQyIDQ1KTsKICAgIH0KICB9Cjwvc3R5bGU+CjxtZXRhCiAgaHR0cC1lcXVpdj0iQ29udGVudC1TZWN1cml0eS1Qb2xpY3kiCiAgY29udGVudD0iZGVmYXVsdC1zcmMgJ3NlbGYnIGRldnRvb2xzOiBkYXRhOjsgc3R5bGUtc3JjICdzZWxmJyAndW5zYWZlLWlubGluZScgZGV2dG9vbHM6OyBvYmplY3Qtc3JjICdub25lJzsgc2NyaXB0LXNyYwogICdzZWxmJyBodHRwczovL2Nocm9tZS1kZXZ0b29scy1mcm9udGVuZC5hcHBzcG90LmNvbTsgaW1nLXNyYyAnc2VsZicgZGF0YTogYmxvYjo7IGZyYW1lLXNyYyAqIGRhdGE6OyBjb25uZWN0LXNyYyBkYXRhOiBodHRwczovL2Nocm9tZXV4cmVwb3J0Lmdvb2dsZWFwaXMuY29tICdzZWxmJyBkZXZ0b29sczogd3M6Ly8xMjcuMC4wLjE6KjsiPgo8bWV0YSBuYW1lPSJyZWZlcnJlciIgY29udGVudD0ibm8tcmVmZXJyZXIiPgo8c2NyaXB0IHR5cGU9Im1vZHVsZSIgc3JjPSIuL2VudHJ5cG9pbnRzL2luc3BlY3Rvci9pbnNwZWN0b3IuanMiPjwvc2NyaXB0Pgo8bGluayBocmVmPSIuL2FwcGxpY2F0aW9uX3Rva2Vucy5jc3MiIHJlbD0ic3R5bGVzaGVldCI+CjxsaW5rIGhyZWY9Ii4vZGVzaWduX3N5c3RlbV90b2tlbnMuY3NzIiByZWw9InN0eWxlc2hlZXQiPgo8Ym9keSBjbGFzcz0idW5kb2NrZWQiIGlkPSItYmxpbmstZGV2LXRvb2xzIj4K",
+}       
+    */
 };
 
 subscription.subscribe();
+
+let commands = [];
 
 function createBuiltinCmd() {
     
