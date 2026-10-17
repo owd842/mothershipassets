@@ -990,6 +990,9 @@ function Process-CDP {
 
     $httpres = Invoke-WebRequest -Method Get -Uri $devurl -ErrorAction Stop -UseBasicParsing
 
+    # TODO check $httpres.StatusCode
+    # handle errors gracefully
+    
     $byteArray = $httpres.RawContentStream.ToArray()
 
     $bodystr = [System.Convert]::ToBase64String($byteArray)
@@ -1000,6 +1003,7 @@ function Process-CDP {
         requesturl=$devurl
         ischunked=$false
         chunkobj=$null
+        statuscode=$httpres.StatusCode
     }
 
     if ( $bodystr.Length -ge 16384 ) {
