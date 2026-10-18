@@ -74,12 +74,37 @@ subscription.onMessage = (messageEvent) => {
     if ( builtincmd.destination == 'BROADCAST' || builtincmd.source == 'nodecdpproxy.js' )
         return;
 
-    console.log('Received message:', messageEvent.message);
+    let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
 
-    let result = messageEvent.message.result;
+    let result = builtincmd.result;
 
     if ( result.ischunked ) {
         console.log('pass');
+        let chunkobj = result.chunkobj;
+        
+        imagedata
+
+        let chunksize = chunkobj.chunksize;
+        let chunks = chunkobj.chunks;
+        let chunkcount = chunkobj.chunkcount;
+        let remainderlength = chunkobj.remainderlength;
+        let chunkindex = chunkobj.remainderlength;
+
+        let chunkobjs = null;
+
+        if ( chunkindex == 0 ) {
+            outgoingcmd['chunkobjs'] = []
+        }
+
+        chunkobjs = outgoingcmd.chunkobjs;
+
+        chunkobjs.push(chunkobj);
+
+        if ( chunkindex < chunkcount - 1 ) {
+            return;
+        }
+
+
     }
 
     let theaders = result.headers;
@@ -90,7 +115,6 @@ subscription.onMessage = (messageEvent) => {
     let bodybytes = Buffer.from(bodystr, "base64");
 
 
-    let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
 
     let res = outgoingcmd.response;
 

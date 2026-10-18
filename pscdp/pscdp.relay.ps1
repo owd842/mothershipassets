@@ -1041,25 +1041,23 @@ function Process-BuiltInCommand {
         if ( ! $ischunked ) {
             $resultout['result'] = $result
         } else {
-            $chunkobj = $resultout['chunkobj']
-
-            $chunksize = $chunkobj['chunksize']
+            $chunkobj = $result['chunkobj'] # anchor
             $chunks = $chunkobj['chunks']
-            $chunkcount = $chunkobj['chunkcount']
-            $remainderlength = $chunkobj['remainderlength']
+
+            $tresult = @{
+                chunksize = $chunkobj['chunksize']
+                chunkcount = $chunkobj['chunkcount']
+                remainderlength = $chunkobj['remainderlength']
+                imagedata = $null
+                chunkindex = -1
+            }
 
             for ( $i=0; $i -lt $chunkcount; $i++ ) {
-                $result = @{ imagedata="" }
-                $result['imagedata'] = $chunks[$i]
 
-                $resultout['result'] = $result
-
-                $resultout['ts']=$(Get-Timestamp)
-
-                $resultout['chunkcount'] = $chunkcount
-                $resultout['chunksize'] = $chunksize
-                $resultout['chunkindex'] = $i
-                $resultout['remainderlength'] = $remainderlength
+                $tresult['imagedata'] = $chunks[$i]
+                $tresult['chunkindex'] = $i
+                
+                $resultout['result'] = $tresult
                 
                 $script:pubnubws.SendPBMessage($resultout)
             }
