@@ -1,8 +1,9 @@
-# 20261014-1629
+# 20261018-1847
 # https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
 
 # Emulation.setFocusEmulationEnabled
 
+Add-Type -AssemblyName System.Web
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
 
 $scriptGuid = '70d8ab8e-fdb2-4076-9fd8-ba81c1be92e3' # Use a unique GUID for each script
@@ -988,12 +989,19 @@ function Process-CDP {
 
     $ret = @{}
 
+    $uri = [uri]$devurl
+    $params = [System.Web.HttpUtility]::ParseQueryString($uri.Query)
+
     $httpres = Invoke-WebRequest -Method Get -Uri $devurl -ErrorAction Stop -UseBasicParsing
 
     # TODO check $httpres.StatusCode
     # handle errors gracefully
     
     $byteArray = $httpres.RawContentStream.ToArray()
+
+    if ( $params.AllKeys.Contains("testchunking") ) {
+        $byteArray = $byteArray + (, [byte]0 * 16384)
+    }
 
     $bodystr = [System.Convert]::ToBase64String($byteArray)
 
@@ -1056,9 +1064,9 @@ function Process-BuiltInCommand {
 
                 $tresult['imagedata'] = $chunks[$i]
                 $tresult['chunkindex'] = $i
-                
+
                 $resultout['result'] = $tresult
-                
+
                 $script:pubnubws.SendPBMessage($resultout)
             }
 

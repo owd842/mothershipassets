@@ -82,13 +82,12 @@ subscription.onMessage = (messageEvent) => {
         console.log('pass');
         let chunkobj = result.chunkobj;
         
-        imagedata
-
+        let imagedata = chunkobj.imagedata;
         let chunksize = chunkobj.chunksize;
-        let chunks = chunkobj.chunks;
+        // let chunks = chunkobj.chunks;
         let chunkcount = chunkobj.chunkcount;
         let remainderlength = chunkobj.remainderlength;
-        let chunkindex = chunkobj.remainderlength;
+        let chunkindex = chunkobj.chunkindex;
 
         let chunkobjs = null;
 
