@@ -37,14 +37,96 @@ const channel_name = 'clientid_88992233_JS_client';
 const REQUEST_CHANNEL = channel_name;
 const RESPONSE_CHANNEL = channel_name;
 
+pubnub.addListener({
+  status: (statusEvent) => {
+    switch (statusEvent.category) {
+      case 'PNConnectedCategory':
+        console.log('Successfully connected to PubNub!'); //
+        break;
+      case 'PNSubscriptionChangedCategory':
+        console.log('Channel subscription list updated.'); //
+        break;
+      case 'PNDisconnectedCategory':
+        console.log('Intentionally disconnected.'); //
+        break;
+      case 'PNDisconnectedUnexpectedlyCategory':
+        console.log('Network connection lost! SDK will auto-retry.'); //
+        break;
+      case 'PNAccessDeniedCategory':
+        console.error('PAM Authorization failed (invalid token/keys).'); //
+        break;
+    }
+  }
+});
+
+pubnub.subscribe({ channels: [RESPONSE_CHANNEL] });
+
 const subscription = pubnub.channel(RESPONSE_CHANNEL).subscription();
 
 subscription.onMessage = (messageEvent) => {
     
-    if ( messageEvent.message.destination == 'BROADCAST' || messageEvent.message.source == 'nodecdpproxy.js' )
+    let builtincmd = messageEvent.message;
+
+    if ( ! builtincmd ) {
+        throw new Error('builtincmd is null');
+    }
+
+    if ( builtincmd.destination == 'BROADCAST' || builtincmd.source == 'nodecdpproxy.js' )
         return;
 
     console.log('Received message:', messageEvent.message);
+
+    let result = messageEvent.message.result;
+
+    if ( result.ischunked ) {
+        console.log('pass');
+    }
+
+    let theaders = result.headers;
+    let bodystr = result.body;
+    let statuscode = result.statuscode;
+
+    // TODO handle error gracefully
+    let bodybytes = Buffer.from(bodystr, "base64");
+
+
+    let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
+
+    let res = outgoingcmd.response;
+
+    delete theaders["Content-Length"];
+    delete theaders["content-length"];
+
+    let htmlbody = "";
+
+    let decoded = null;
+
+    if ( theaders["content-encoding"] === "gzip" ) {
+        console.log("info: unzipping response");
+        decoded = zlib.gunzipSync(bodybytes);
+        bodybytes = decoded;
+    }
+
+    // TODO refactor to deal with charset
+    if ( [ "text/html", "text/html; charset=utf-8", "text/css", "application/json" ].includes(theaders["content-type"]) ) {
+        htmlbody = bodybytes.toString("utf-8");
+        htmlbody = modifyCSPTag(htmlbody);
+        dataout = Buffer.from(htmlbody);
+    } else {
+        dataout= bodybytes;
+    }
+
+    delete theaders["content-encoding"];
+
+    theaders["Content-Length"] = dataout.length;
+
+    if ( res ) {
+        res.writeHead(statuscode, theaders);
+        res.write(dataout);
+        res.end();
+    } else {
+        console.log('pass');
+    }
 
     /*
 messageEvent.message.result
@@ -71,7 +153,8 @@ messageEvent.message.result
 
 subscription.subscribe();
 
-let commands = [];
+let cmdindex=0;
+let commandslist = [];
 
 function createBuiltinCmd() {
     
@@ -88,7 +171,7 @@ function createBuiltinCmd() {
     return cmdobj;
 }
 
-function sendMessageAndWait(messagePayload, timeoutMs = 500000) {
+async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
     return new Promise((resolve, reject) => {
         
         const requestId = Math.random().toString(36).substring(2, 15);
@@ -101,35 +184,14 @@ function sendMessageAndWait(messagePayload, timeoutMs = 500000) {
 
         const listener = {
             message: (event) => {
-                // checks if message was sent successfully
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
                     clearTimeout(timeout);
-                    pubnub.removeListener(listener); // Clean up listener
-                    resolve(event.message); // TODO remove and move to handlerm resolve when pscdp.relay.ps1 sends response
+                    pubnub.removeListener(listener);
+                    resolve(event.message); 
                 } else {
-
-                }
-
-                // TODO handle response from pscdp.relay.ps1
-                // handle chunks -- reassemble
-            },
-
-            status: function (event) {
-                if ( event.category === "PNConnectedCategory" ) {
-
-                    console.log("Connected to PubNub!");
-
-                } else if ( event.category === "PNNetworkIssuesCategory" ) {
-
-                    console.log("Connection lost. Attempting to reconnect...");
-
-                } else if ( event.category === "PNReconnectedCategory" ) {
-
-                    console.log("Reconnected to PubNub!");
-
+                    console.log('pass');
                 }
             }
-
         };
 
         pubnub.addListener(listener);
@@ -188,7 +250,7 @@ function modifyCSPTag(inputhtml) {
     return ret;
 }
 
-async function forwardRequest(req, res) {
+function forwardRequest(req, res) {
     let path = req.url;
     let method = req.method;
     let headers = req.headers;
@@ -233,7 +295,35 @@ async function forwardRequest(req, res) {
     pbreq.url = `https://${options.hostname}${options.path}`;
     pbreq.headers = options.headers;
 
-    await sendMessageAndWait(pbreq);
+    let sendtask = sendMessageAsync(pbreq);
+
+    let sendstate = { isPending: true, isFulfilled: false, isRejected: false, value: null };
+
+    sendtask.then(
+        (value) => {
+            sendstate.isPending = false;
+            sendstate.isFulfilled = true;
+            sendstate.value = value;
+            return value;
+        },
+        (error) => {
+            state.isPending = false;
+            state.isRejected = true;
+            state.value = error;
+            // throw error;
+        }
+    );
+
+    let outgoingcmd = {
+        builtincmd:pbreq,
+        sendtask:sendtask,
+        sendstate:sendstate,
+        response:res,
+        cmdindex:cmdindex++
+    };
+
+    commandslist.push(outgoingcmd);
+
 
     /*
     let preq = https.request(options, (pres) => {
@@ -333,7 +423,7 @@ const options = {
     ),
 };
 
-const server = https.createServer(options, async (req, res) => {
+const server = https.createServer(options, (req, res) => {
     console.log("--- New Request Received ---");
     console.log(`Method: ${req.method}`);
     console.log(`Path: ${req.url}`);
@@ -346,7 +436,7 @@ const server = https.createServer(options, async (req, res) => {
     if (req.method.toLowerCase() == "POST".toLowerCase()) {
         forwardPostRequest(req, res);
     } else {
-        await forwardRequest(req, res);
+        forwardRequest(req, res);
     }
 });
 
