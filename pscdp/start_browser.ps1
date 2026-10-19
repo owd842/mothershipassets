@@ -6,6 +6,43 @@
 # C:\Users\LC2022\AppData\Local\uchrome\ungoogled-chromium_154.0.8037.97-1.1_windows_x64
 #$path = "C:\MAIN\__Binaries\ungoogled-chromium_154.0.8037.97-1.1_windows_x64\ungoogled-chromium_154.0.8037.97-1.1_windows_x64"
 
+$processes = Get-CimInstance Win32_Process | Select-Object Name, ProcessId, CommandLine, ExecutablePath
+
+function PingDebugPort {
+    param([string]$debugport)
+
+    $resp = (Invoke-WebRequest -Uri http://localhost:$($debugport)/json -UseBasicParsing).Content | ConvertFrom-Json
+
+    if ( $null -ne $resp -and $resp.Length -ge 1 ) {
+        Write-Host "$debugport is ok"
+        return $true
+    }
+
+    Write-Error "$debugport not responsive"
+
+    return $false
+}
+
+function IsBrowserRunning {
+    param([string]$procname, [string]$debugport, [string]$exepath)
+
+    $str = "*remote-debugging-port=" + $debugport + "*"
+
+    if ( [string]::IsNullOrWhiteSpace($exepath) ) {
+        $processes = Get-CimInstance Win32_Process | Select-Object Name, ProcessId, CommandLine
+        $processes = $processes | Where-Object { $_.Name -eq $procname -and  $_.CommandLine -like $str }
+    } else {
+        $processes = Get-CimInstance Win32_Process | Select-Object Name, ProcessId, CommandLine, ExecutablePath
+        $processes = $processes | Where-Object { $_.Name -eq $procname -and  $_.CommandLine -like $str -and $_.ExecutablePath -like $exepath }
+    }
+
+    if ( $processes.Count -ge 1 ) {
+        return $true
+    }
+
+    return $false
+}
+
 function ConvertArgs {
     param([hashtable]$sargs)
 
@@ -30,7 +67,42 @@ function ConvertArgs {
     return $targs
 }
 
-& subst Z: C:\
+function LaunchBrowser {
+    param([int32]$debugport = 9222, [string]$datadir, [string]$exepath)
+
+    if ( ! ( Test-Path -Path $exepath -PathType Leaf ) ) {
+        throw "$exepath does not exist"
+    }
+
+    $sargs = @{
+        "remote-debugging-port"="$debugport";
+        "profile-directory"="Default";
+        "remote-allow-origins"="*";
+        "suppress-message-center-popups"=$null;
+        "noerrdialogs"=$null;
+        "disable-infobars"=$null;
+        "disable-notifications"=$null;
+        "no-first-run"=$null;
+        "no-default-browser-check"=$null;
+        "disable-signin-promo"=$null;
+        "hide-crash-restore-bubble"=$null;
+        "new-window"="https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub";
+        "remote-debugging-address"="0.0.0.0";
+        "user-data-dir"=$datadir
+    }
+
+    $targs = ConvertArgs $sargs
+
+    $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
+
+    if ( ! $process.HasExited ) {
+        Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
+    } else {
+        Write-Error "process failed to launch [$exepath]"
+    }
+
+}
+
 
 $launch_chrome = {
 
@@ -89,32 +161,32 @@ $launch_chrome = {
 
     $targs = ConvertArgs $sargs
 
-    & $path $targs
+    $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
 
-    $resp = (Invoke-WebRequest -Uri http://localhost:9223/json -UseBasicParsing).Content | ConvertFrom-Json
-
-    if ( $null -ne $resp -and $resp.Length -ge 1 ) {
-        Write-Host "9223 is ok"
-    } else {
-        throw "9223 not responsive"   
+    if ( ! $process.HasExited ) {
+        Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
     }
+
+    # & $path $targs
+
 
 }
 
 $launch_msedge = {
-    param([int32]$debugport = 9222)
+    param([int32]$debugport = 9222, [string]$datadir, [string]$exepath)
 
-    if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
-        $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
-    } else {
+    if ( [string]::IsNullOrWhiteSpace($exepath) ) {
         $path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    }
+
+    if ( [string]::IsNullOrWhiteSpace($datadir) ) {
+        $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
     }
 
     if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
         throw "$path does not exist"
     }
 
-    $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
 
     $sargs = @{
         "remote-debugging-port"="$debugport";
@@ -136,25 +208,31 @@ $launch_msedge = {
     $targs = ConvertArgs $sargs
 
     $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
-    #& $path $targs
 
     if ( ! $process.HasExited ) {
         Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
     }
     
-    $resp = (Invoke-WebRequest -Uri http://localhost:$debugport/json -UseBasicParsing).Content | ConvertFrom-Json
-
-    if ( $null -ne $resp -and $resp.Length -ge 1 ) {
-        Write-Host "$debugport is ok"
-    } else {
-        throw "$debugport not responsive"   
-    }
 }
 
-if ( ! $env:COMPUTERNAME -eq "BWPCP506" ) {
-    & $launch_chrome
+& subst Z: C:\
+
+$msedge_port ="9222"
+$chrome_port = "9223"
+
+
+if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
+    & $launch_msedge $chrome_port "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
 } else {
-    & $launch_msedge 9223
+
+    if ( ! ( IsBrowserRunning "chrome.exe" $chrome_port "*ungoogled*" ) ) {
+        & $launch_chrome $chrome_port
+    }
+
 }
 
-& $launch_msedge 9222
+PingDebugPort
+
+if ( ! ( IsBrowserRunning "msedge.exe" $msedge_port ) ) {
+    & $launch_msedge 9222
+}
