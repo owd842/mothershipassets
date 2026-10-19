@@ -33,15 +33,15 @@ function ConvertArgs {
 & subst Z: C:\
 ###
 
-if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
-    $path = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
+    $path = "C:\Users\$($env:USERNAME)\AppData\Local\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
+} elseif ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
     $path = "C:\Binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
     $path = $( Join-Path $path "chrome.exe" )
 
     if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
         throw "$path does not exist"
     }
-
 } else {
 
     $path = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
@@ -52,10 +52,12 @@ if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
         $path = $( Join-Path $path "chrome.exe" )
     }
 
-    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+}
+
+if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+    if ( ! $env:COMPUTERNAME -eq "BWPCP506" ) {
         throw "$path does not exist"
     }
-
 }
 
 $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
@@ -79,14 +81,19 @@ $sargs = @{
 
 $targs = ConvertArgs $sargs
 
-& $path $targs
+if ( ! $env:COMPUTERNAME -eq "BWPCP506" ) {
+    & $path $targs
+}
+
 
 $resp = (Invoke-WebRequest -Uri http://localhost:9223/json -UseBasicParsing).Content | ConvertFrom-Json
 
 if ( $null -ne $resp -and $resp.Length -ge 1 ) {
     Write-Host "9223 is ok"
 } else {
-    throw "9223 not responsive"   
+    if ( ! $env:COMPUTERNAME -eq "BWPCP506" ) {
+        throw "9223 not responsive"   
+    }
 }
 
 ####
