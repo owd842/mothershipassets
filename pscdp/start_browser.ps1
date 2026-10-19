@@ -102,6 +102,7 @@ $launch_chrome = {
 }
 
 $launch_msedge = {
+    param([int32]$debugport = 9222)
 
     if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
         $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
@@ -116,7 +117,7 @@ $launch_msedge = {
     $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
 
     $sargs = @{
-        "remote-debugging-port"="9222";
+        "remote-debugging-port"="$debugport";
         "profile-directory"="Default";
         "remote-allow-origins"="*";
         "suppress-message-center-popups"=$null;
@@ -129,24 +130,31 @@ $launch_msedge = {
         "hide-crash-restore-bubble"=$null;
         "new-window"="https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub";
         "remote-debugging-address"="0.0.0.0";
-        "user-data-dir"=$datadir  
+        "user-data-dir"=$datadir
     }
 
     $targs = ConvertArgs $sargs
 
-    & $path $targs
+    $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
+    #& $path $targs
 
-    $resp = (Invoke-WebRequest -Uri http://localhost:9222/json -UseBasicParsing).Content | ConvertFrom-Json
+    if ( ! $process.HasExited ) {
+        Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
+    }
+    
+    $resp = (Invoke-WebRequest -Uri http://localhost:$debugport/json -UseBasicParsing).Content | ConvertFrom-Json
 
     if ( $null -ne $resp -and $resp.Length -ge 1 ) {
-        Write-Host "9222 is ok"
+        Write-Host "$debugport is ok"
     } else {
-        throw "9222 not responsive"   
+        throw "$debugport not responsive"   
     }
 }
 
 if ( ! $env:COMPUTERNAME -eq "BWPCP506" ) {
     & $launch_chrome
+} else {
+    & $launch_msedge 9223
 }
 
-& $launch_msedge
+& $launch_msedge 9222
