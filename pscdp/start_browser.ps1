@@ -33,29 +33,35 @@ function ConvertArgs {
 & subst Z: C:\
 ###
 
+$ungoogled_paths = @(
+    "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",
+    "ungoogled-chromium_155.0.8059.79-1.1_windows_x64",
+    "ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
+)
+
 if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
-    $path = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-    $path = "C:\Binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
-    $path = $( Join-Path $path "chrome.exe" )
-
-    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-        throw "$path does not exist"
-    }
-
+    $rootpath = "C:\Binaries" 
 } else {
+    $rootpath = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries"
+}
 
-    $path = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries\ungoogled-chromium_152.0.7977.82-1.1_windows_x64\ungoogled-chromium_152.0.7977.82-1.1_windows_x64"
-    $path = $( Join-Path $path "chrome.exe" )
+$foundpath = $true
+$path = ""
+
+for ($i=0; $i -lt $ungoogled_paths.Count; $i++ ) {
+    $paths = @( $rootpath,  $ungoogled_paths[$i], $ungoogled_paths[$i], "chrome.exe" )
+
+    $path = $paths -join "\"
 
     if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-        $path = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries\ungoogled-chromium_155.0.8059.39-1.1_windows_x64\ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
-        $path = $( Join-Path $path "chrome.exe" )
+        $foundpath = $falses
+        continue
     }
 
-    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-        throw "$path does not exist"
-    }
+}
 
+if ( ! $foundpath ) {
+    throw "$path does not exist"
 }
 
 $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
