@@ -116,14 +116,14 @@ $launch_chrome = {
     if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
         $rootpath = "C:\Binaries"
     } else {
-        $rootpath = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries"
+        $rootpath = "Z:\Users\$($env:USERNAME)\AppData\Local\uchrome"
     }
 
     $foundpath = $true
     $path = ""
 
     for ($i=0; $i -lt $ungoogled_paths.Count; $i++ ) {
-        $paths = @( $rootpath,  $ungoogled_paths[$i], $ungoogled_paths[$i], "chrome.exe" )
+        $paths = @( $rootpath,  $ungoogled_paths[$i], "chrome.exe" )
 
         $path = $paths -join "\"
 
