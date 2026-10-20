@@ -68,7 +68,7 @@ function ConvertArgs {
 }
 
 function LaunchBrowser {
-    param([int32]$debugport = 9222, [string]$datadir, [string]$exepath)
+    param([int32]$debugport = 9222, [string]$exepath, [string]$datadir)
 
     if ( ! ( Test-Path -Path $exepath -PathType Leaf ) ) {
         throw "$exepath does not exist"
@@ -105,6 +105,7 @@ function LaunchBrowser {
 
 
 $launch_chrome = {
+    param([string]$debugport = "9223")
 
     $ungoogled_paths = @(
         "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",
@@ -113,7 +114,7 @@ $launch_chrome = {
     )
 
     if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
-        $rootpath = "C:\Binaries" 
+        $rootpath = "C:\Binaries"
     } else {
         $rootpath = "Z:\Users\$($env:USERNAME)\AppData\Local\WORKING\binaries"
     }
@@ -142,77 +143,31 @@ $launch_chrome = {
 
     $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
 
-    $sargs = @{
-        "remote-debugging-port"="9223";
-        "profile-directory"="Default";
-        "remote-allow-origins"="*";
-        "suppress-message-center-popups"=$null;
-        "noerrdialogs"=$null;
-        "disable-infobars"=$null;
-        "disable-notifications"=$null;
-        "no-first-run"=$null;
-        "no-default-browser-check"=$null;
-        "disable-signin-promo"=$null;
-        "hide-crash-restore-bubble"=$null;
-        #"new-window"="https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub";
-        "remote-debugging-address"="0.0.0.0";
-        "user-data-dir"=$datadir  
-    }
-
-    $targs = ConvertArgs $sargs
-
-    $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
-
-    if ( ! $process.HasExited ) {
-        Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
-    }
-
-    # & $path $targs
-
-
+    LaunchBrowser $debugport $path $datadir
 }
 
 $launch_msedge = {
-    param([int32]$debugport = 9222, [string]$datadir, [string]$exepath)
+    param([string]$debugport = "9222")
 
-    if ( [string]::IsNullOrWhiteSpace($exepath) ) {
-        $path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-    }
+    $path = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
     if ( [string]::IsNullOrWhiteSpace($datadir) ) {
         $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
     }
 
-    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
-        throw "$path does not exist"
+    LaunchBrowser $debugport $path $datadir
+}
+
+$launch_vivaldi = {
+    param([string]$debugport = "9222")
+
+    $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
+
+    if ( [string]::IsNullOrWhiteSpace($datadir) ) {
+        $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
     }
 
-
-    $sargs = @{
-        "remote-debugging-port"="$debugport";
-        "profile-directory"="Default";
-        "remote-allow-origins"="*";
-        "suppress-message-center-popups"=$null;
-        "noerrdialogs"=$null;
-        "disable-infobars"=$null;
-        "disable-notifications"=$null;
-        "no-first-run"=$null;
-        "no-default-browser-check"=$null;
-        "disable-signin-promo"=$null;
-        "hide-crash-restore-bubble"=$null;
-        "new-window"="https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub";
-        "remote-debugging-address"="0.0.0.0";
-        "user-data-dir"=$datadir
-    }
-
-    $targs = ConvertArgs $sargs
-
-    $process = Start-Process -FilePath $path -ArgumentList "$( $targs -join " " )" -PassThru
-
-    if ( ! $process.HasExited ) {
-        Write-Host "The process is currently RUNNING (PID: ($($process.Id))."
-    }
-    
+    LaunchBrowser $debugport $path $datadir
 }
 
 & subst Z: C:\
@@ -222,7 +177,7 @@ $chrome_port = "9223"
 
 
 if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
-    & $launch_msedge $chrome_port "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
+    & $launch_vivaldi $msedge_port
 } else {
 
     if ( ! ( IsBrowserRunning "chrome.exe" $chrome_port "*ungoogled*" ) ) {
@@ -231,8 +186,6 @@ if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
 
 }
 
-PingDebugPort
-
 if ( ! ( IsBrowserRunning "msedge.exe" $msedge_port ) ) {
-    & $launch_msedge 9222
+    & $launch_msedge $msedge_port
 }

@@ -2,6 +2,7 @@
 # https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
 
 # Emulation.setFocusEmulationEnabled
+Wait-Debugger
 
 Add-Type -AssemblyName System.Web
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
@@ -1049,25 +1050,29 @@ function Process-BuiltInCommand {
         if ( ! $ischunked ) {
             $resultout['result'] = $result
         } else {
-            $chunkobj = $result['chunkobj'] # anchor
-            $chunks = $chunkobj['chunks']
+            try { # anchor
+                $chunkobj = $result['chunkobj'] # anchor
+                $chunks = $chunkobj['chunks']
 
-            $tresult = @{
-                chunksize = $chunkobj['chunksize']
-                chunkcount = $chunkobj['chunkcount']
-                remainderlength = $chunkobj['remainderlength']
-                imagedata = $null
-                chunkindex = -1
-            }
+                $tresult = @{
+                    chunksize = $chunkobj['chunksize']
+                    chunkcount = $chunkobj['chunkcount']
+                    remainderlength = $chunkobj['remainderlength']
+                    imagedata = $null
+                    chunkindex = -1
+                }
 
-            for ( $i=0; $i -lt $chunkcount; $i++ ) {
+                for ( $i=0; $i -lt $chunkcount; $i++ ) {
 
-                $tresult['imagedata'] = $chunks[$i]
-                $tresult['chunkindex'] = $i
+                    $tresult['imagedata'] = $chunks[$i]
+                    $tresult['chunkindex'] = $i
 
-                $resultout['result'] = $tresult
+                    $resultout['result'] = $tresult
 
-                $script:pubnubws.SendPBMessage($resultout)
+                    $script:pubnubws.SendPBMessage($resultout)
+                }
+            } catch {
+                Log-Msg $_
             }
 
             return

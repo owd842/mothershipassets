@@ -113,8 +113,6 @@ subscription.onMessage = (messageEvent) => {
     // TODO handle error gracefully
     let bodybytes = Buffer.from(bodystr, "base64");
 
-
-
     let res = outgoingcmd.response;
 
     delete theaders["Content-Length"];

@@ -5,10 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "PowerShell: Launch Current File",
+            "name": "PowerShell: Attach to Host Process",
+            "type": "PowerShell",
+            "request": "attach",
+            "runspaceId": 1
+        },
+        {
             "type": "PowerShell",
             "request": "launch",
-            "script": "${file}"
+            "name": "PowerShell: Launch Current File",
+            "script": "${file}",
+            "args": [],
+            "cwd": "${file}"
         },
         {
             "name": "Attach to Command Line",
