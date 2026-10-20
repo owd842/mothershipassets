@@ -1053,6 +1053,7 @@ function Process-BuiltInCommand {
             try { # anchor
                 $chunkobj = $result['chunkobj'] # anchor
                 $chunks = $chunkobj['chunks']
+                $chunkcount = [int32]$chunks.Count
 
                 $tresult = @{
                     chunksize = $chunkobj['chunksize']
