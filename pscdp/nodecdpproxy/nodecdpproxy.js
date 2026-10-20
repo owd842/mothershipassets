@@ -5,6 +5,10 @@ const fs = require("node:fs");
 const zlib = require("zlib");
 const PubNub = require('pubnub');
 
+function isNullOrEmpty(str) {
+    return str == null || str.length === 0;
+}
+
 function getTimestamp() {
     const now = new Date();
 
@@ -71,16 +75,27 @@ subscription.onMessage = (messageEvent) => {
         throw new Error('builtincmd is null');
     }
 
-    if ( builtincmd.destination == 'BROADCAST' || builtincmd.source == 'nodecdpproxy.js' )
+    if ( builtincmd.destination != 'nodecdpproxy.js' ) {
+        console.log('...received message from: '+builtincmd.source+' to: ' + builtincmd.destination + ' ts: '+builtincmd.ts + ' cmd: '+builtincmd.builtincmd);
         return;
+    }
 
     let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
 
     let result = builtincmd.result;
 
-    if ( result.ischunked ) {
-        console.log('pass');
-        let chunkobj = result.chunkobj;
+    let ischunked = builtincmd.result.chunksize >= 1;
+
+    let chunkobj = null;
+
+    if ( ! ischunked ) {
+        console.log('requesturl: '+result.requesturl);
+        console.log('statuscode: '+result.statuscode);
+    } else {
+        chunkobj = result;
+    }
+
+    if ( ischunked ) {
         
         let imagedata = chunkobj.imagedata;
         let chunksize = chunkobj.chunksize;
@@ -88,6 +103,11 @@ subscription.onMessage = (messageEvent) => {
         let chunkcount = chunkobj.chunkcount;
         let remainderlength = chunkobj.remainderlength;
         let chunkindex = chunkobj.chunkindex;
+
+        console.log('chunksize: '+chunksize);
+        console.log('chunkcount: '+chunkcount);
+        console.log('remainderlength: '+remainderlength);
+        console.log('chunkindex: '+chunkindex);
 
         let chunkobjs = null;
 
@@ -103,12 +123,16 @@ subscription.onMessage = (messageEvent) => {
             return;
         }
 
-
     }
 
     let theaders = result.headers;
     let bodystr = result.body;
     let statuscode = result.statuscode;
+
+    console.log('received headers');
+    Object.entries(theaders).forEach(([header, value]) => {
+        console.log(`<-- [${header}]=[${value}]`);
+    });
 
     // TODO handle error gracefully
     let bodybytes = Buffer.from(bodystr, "base64");
@@ -128,16 +152,24 @@ subscription.onMessage = (messageEvent) => {
         bodybytes = decoded;
     }
 
-    // TODO refactor to deal with charset
-    if ( [ "text/html", "text/html; charset=utf-8", "text/css", "application/json" ].includes(theaders["content-type"]) ) {
+
+    let contenttype = theaders["content-type"];
+
+    if ( isNullOrEmpty(contenttype) ) {
+        contenttype = theaders["Content-Type"];
+    }
+
+    // TODO ! charset will be an issue
+    if ( [ "text/javascript", "text/html", "text/html; charset=utf-8", "text/css", "application/json" ].includes(contenttype) ) {
         htmlbody = bodybytes.toString("utf-8");
         htmlbody = modifyCSPTag(htmlbody);
         dataout = Buffer.from(htmlbody);
     } else {
-        dataout= bodybytes;
+        dataout = bodybytes;
     }
 
     delete theaders["content-encoding"];
+
 
     theaders["Content-Length"] = dataout.length;
 
@@ -146,7 +178,7 @@ subscription.onMessage = (messageEvent) => {
         res.write(dataout);
         res.end();
     } else {
-        console.log('pass');
+        console.log('pass B');
     }
 
     /*
@@ -205,12 +237,16 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
 
         const listener = {
             message: (event) => {
+                console.log('sendMessageAsync: ' + event.channel + ' incomming: ' + event.message.requestId + ' expected: ' + requestId);
+
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
+                    console.log('sendMessageAsync: match');
+
                     clearTimeout(timeout);
                     pubnub.removeListener(listener);
                     resolve(event.message); 
                 } else {
-                    console.log('pass');
+                    console.log('sendMessageAsync: no match');
                 }
             }
         };
@@ -305,6 +341,7 @@ function forwardRequest(req, res) {
         return;
     }
 
+    console.log('request headers');
     Object.entries(headers).forEach(([header, value]) => {
         console.log(`--> [${header}]=[${value}]`);
     });
@@ -325,6 +362,9 @@ function forwardRequest(req, res) {
             sendstate.isPending = false;
             sendstate.isFulfilled = true;
             sendstate.value = value;
+            
+            console.log('sendtask fullfilled for '+pbreq.url);
+
             return value;
         },
         (error) => {
@@ -344,7 +384,6 @@ function forwardRequest(req, res) {
     };
 
     commandslist.push(outgoingcmd);
-
 
     /*
     let preq = https.request(options, (pres) => {
