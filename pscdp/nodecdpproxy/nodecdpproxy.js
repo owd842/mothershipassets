@@ -67,8 +67,48 @@ pubnub.subscribe({ channels: [RESPONSE_CHANNEL] });
 
 const subscription = pubnub.channel(RESPONSE_CHANNEL).subscription();
 
+function addChunk(outgoingcmd, chunkobj) {
+
+    if ( ! outgoingcmd['chunks'] ) {
+        outgoingcmd['chunks'] = [];
+    }
+
+    outgoingcmd.chunks.push(chunkobj);
+
+    let imagedata = chunkobj.imagedata;
+    let chunksize = chunkobj.chunksize;
+    let chunkcount = chunkobj.chunkcount;
+    let remainderlength = chunkobj.remainderlength;
+    let chunkindex = chunkobj.chunkindex;
+
+    console.log(`addChunk chunksize: ${chunksize} imagedata: ${imagedata.length} chunkindex: ${chunkindex} chunkcount: ${chunkcount} remainderlength: ${remainderlength}`);
+}
+
+function assembleChunks(chunks) {
+
+    let bodystr = "";
+
+    for ( let i = 0; i<chunks.length; i++) {
+        let chunkobj = chunks[i];
+
+        let chunkindex = chunkobj.chunkindex;
+        let chunksize = chunkobj['chunksize']
+        let chunkcount = chunkobj['chunkcount'];
+        let remainderlength = chunkobj['remainderlength']
+        let imagedata = chunkobj['chunkcount'];
+
+        if ( ! ( chunkindex == i && chunks.length == chunkcount ) ) {
+            throw new Error("chunks not valid -- mismatch index and/or chunk count");
+        }
+
+        bodystr += imagedata;
+    }
+
+    return bodystr;
+}
+
 subscription.onMessage = (messageEvent) => {
-    
+
     let builtincmd = messageEvent.message;
 
     if ( ! builtincmd ) {
@@ -82,7 +122,15 @@ subscription.onMessage = (messageEvent) => {
 
     let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
 
+    if ( ! outgoingcmd.pbmsglist ) {
+        outgoingcmd.pbmsglist = [];
+    }
+
+    outgoingcmd.pbmsglist.push(builtincmd);
+
     let result = builtincmd.result;
+
+    let bodystr = null;
 
     let ischunked = builtincmd.result.chunksize >= 1;
 
@@ -91,42 +139,32 @@ subscription.onMessage = (messageEvent) => {
     if ( ! ischunked ) {
         console.log('requesturl: '+result.requesturl);
         console.log('statuscode: '+result.statuscode);
-    } else {
-        chunkobj = result;
-    }
-
-    if ( ischunked ) {
         
-        let imagedata = chunkobj.imagedata;
-        let chunksize = chunkobj.chunksize;
-        // let chunks = chunkobj.chunks;
+        bodystr = result.body;
+    } else {
+
+        chunkobj = result;
+
         let chunkcount = chunkobj.chunkcount;
-        let remainderlength = chunkobj.remainderlength;
         let chunkindex = chunkobj.chunkindex;
 
-        console.log('chunksize: '+chunksize);
-        console.log('chunkcount: '+chunkcount);
-        console.log('remainderlength: '+remainderlength);
-        console.log('chunkindex: '+chunkindex);
-
-        let chunkobjs = null;
-
         if ( chunkindex == 0 ) {
-            outgoingcmd['chunkobjs'] = []
+            console.log('requesturl: '+chunkobj.requesturl);
+            console.log('statuscode: '+chunkobj.statuscode);
+            console.log('...received first chunk');
         }
 
-        chunkobjs = outgoingcmd.chunkobjs;
-
-        chunkobjs.push(chunkobj);
+        addChunk(outgoingcmd, chunkobj);
 
         if ( chunkindex < chunkcount - 1 ) {
             return;
+        } else {
+            console.log('...assembling chunks');
+            bodystr = assembleChunks(outgoingcmd.chunks);
         }
-
     }
 
     let theaders = result.headers;
-    let bodystr = result.body;
     let statuscode = result.statuscode;
 
     console.log('received headers');
@@ -355,13 +393,12 @@ function forwardRequest(req, res) {
     });
 
 
-    let pbreq = createBuiltinCmd();
-    pbreq.url = `https://${options.hostname}${options.path}`;
-    pbreq.headers = options.headers;
+    let pbmsg = createBuiltinCmd();
+    pbmsg.url = `https://${options.hostname}${options.path}`;
+    pbmsg.headers = options.headers;
 
-    let sendtask = sendMessageAsync(pbreq);
+    let sendtask = sendMessageAsync(pbmsg);
 
-    // anchor
     let sendstate = { 
         isPending: true, 
         isFulfilled: false, 
@@ -385,12 +422,11 @@ function forwardRequest(req, res) {
         }
     );
 
-    // anchor
-
     let outgoingcmd = {
         builtincmd:pbreq,
         sendtask:sendtask,
-        pbmsg: 
+        pbmsg: pbmsg,
+        pbmsglist: [],
         response:res,
         cmdindex:cmdindex++
     };

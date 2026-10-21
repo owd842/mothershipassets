@@ -1026,6 +1026,10 @@ function Process-CDP {
     return $ret
 }
 
+function Send-ChunkedResult {
+
+}
+
 # TODO move logic to external funcs for each cmd
 function Process-BuiltInCommand {
     param([object]$cmd)
@@ -1051,7 +1055,7 @@ function Process-BuiltInCommand {
             $resultout['result'] = $result
         } else {
             try { # anchor
-                $chunkobj = $result['chunkobj'] # anchor
+                $chunkobj = $result['chunkobj']
                 $chunks = $chunkobj['chunks']
                 $chunkcount = [int32]$chunks.Count
 
@@ -1067,6 +1071,12 @@ function Process-BuiltInCommand {
 
                     $tresult['imagedata'] = $chunks[$i]
                     $tresult['chunkindex'] = $i
+
+                    if ( $i -eq 0 ) {
+                        $tresult['requesturl'] = $result['requesturl']
+                        $tresult['statuscode'] = $result['statuscode']
+                        $tresult['headers'] = $result['headers']
+                    }
 
                     $resultout['result'] = $tresult
 
