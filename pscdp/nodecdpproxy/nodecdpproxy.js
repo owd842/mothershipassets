@@ -208,6 +208,7 @@ subscription.subscribe();
 
 let cmdindex=0;
 let commandslist = [];
+let pbmessages = [];
 
 function createBuiltinCmd() {
     
@@ -229,41 +230,48 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
         
         const requestId = Math.random().toString(36).substring(2, 15);
         messagePayload.requestId = requestId;
-        
+        messagePayload.timetoken = null;
+        messagePayload.listen_state = 'listening';
+        messagePayload.error = null;
+        messagePayload.istimeout = false;
+
         const timeout = setTimeout(() => {
             pubnub.removeListener(listener);
+            messagePayload.istimeout = true;
             reject(new Error(`Timeout: No response received within ${timeoutMs}ms`));
         }, timeoutMs);
 
         const listener = {
             message: (event) => {
-                console.log('sendMessageAsync: ' + event.channel + ' incomming: ' + event.message.requestId + ' expected: ' + requestId);
 
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
-                    console.log('sendMessageAsync: match');
+                    messagePayload.listen_state = 'cleared';
 
                     clearTimeout(timeout);
                     pubnub.removeListener(listener);
                     resolve(event.message); 
-                } else {
-                    console.log('sendMessageAsync: no match');
                 }
             }
         };
 
+        
         pubnub.addListener(listener);
         pubnub.subscribe({ channels: [RESPONSE_CHANNEL] });
+
+        pbmessages.push(messagePayload);
 
         pubnub.publish({
             channel: REQUEST_CHANNEL,
             message: messagePayload
         })
         .then((publishResponse) => {
-            console.log(`✨ Message published successfully. Timetoken: ${publishResponse.timetoken}`);
+            messagePayload.timetoken = publishResponse.timetoken;
+            console.log(`Message published successfully. Timetoken: ${publishResponse.timetoken}`);
         })
         .catch((error) => {
             clearTimeout(timeout);
             pubnub.removeListener(listener);
+            messagePayload.error = error.message;
             reject(new Error(`Failed to publish message: ${error.message}`));
         });
     });
@@ -330,8 +338,6 @@ function forwardRequest(req, res) {
         port: port,
     };
 
-    console.log(`making request to ${chromehost}${path}:${port}`);
-
     if (path.indexOf(".well-known/appspecific/com.chrome.devtools.json") >= 0) {
         console.log("info: ignoring path");
 
@@ -341,21 +347,27 @@ function forwardRequest(req, res) {
         return;
     }
 
+    console.log(`making request to ${chromehost}${path}:${port}`);
+
     console.log('request headers');
     Object.entries(headers).forEach(([header, value]) => {
         console.log(`--> [${header}]=[${value}]`);
     });
 
-    let chunks = [];
 
-    // TODO replace with pubnub message and await response
     let pbreq = createBuiltinCmd();
     pbreq.url = `https://${options.hostname}${options.path}`;
     pbreq.headers = options.headers;
 
     let sendtask = sendMessageAsync(pbreq);
 
-    let sendstate = { isPending: true, isFulfilled: false, isRejected: false, value: null };
+    // anchor
+    let sendstate = { 
+        isPending: true, 
+        isFulfilled: false, 
+        isRejected: false, 
+        value: null 
+    };
 
     sendtask.then(
         (value) => {
@@ -363,8 +375,6 @@ function forwardRequest(req, res) {
             sendstate.isFulfilled = true;
             sendstate.value = value;
             
-            console.log('sendtask fullfilled for '+pbreq.url);
-
             return value;
         },
         (error) => {
@@ -375,83 +385,17 @@ function forwardRequest(req, res) {
         }
     );
 
+    // anchor
+
     let outgoingcmd = {
         builtincmd:pbreq,
         sendtask:sendtask,
-        sendstate:sendstate,
+        pbmsg: 
         response:res,
         cmdindex:cmdindex++
     };
 
     commandslist.push(outgoingcmd);
-
-    /*
-    let preq = https.request(options, (pres) => {
-        console.log(`--- response: ${pres.statusCode}`);
-
-        Object.entries(pres.headers).forEach(([header, value]) => {
-            console.log(`--> [${header}]=[${value}]`);
-        });
-
-        if (pres.statusCode >= 400) {
-            console.log("warn: 4xx received");
-            //let theaders = { ...pres.headers };
-            //res.writeHead(pres.statusCode, theaders);
-            //res.end();
-        }
-
-        pres.on("data", (chunk) => {
-            chunks.push(chunk);
-        });
-
-        pres.on("end", () => {
-            let dataout = Buffer.concat(chunks);
-
-            let theaders = { ...pres.headers };
-
-            let contlena = theaders["Content-Length"];
-            let contlenb = theaders["content-length"];
-
-            delete theaders["Content-Length"];
-            delete theaders["content-length"];
-
-            let htmlbody = "";
-
-            if (theaders["content-type"] == "text/html") {
-                if (pres.headers["content-encoding"] === "gzip") {
-                    console.log("info: unzipping response");
-                    let decoded = zlib.gunzipSync(dataout);
-                    htmlbody = decoded.toString("utf-8");
-                } else {
-                    htmlbody = dataout.toString();
-                }
-
-                delete theaders["content-encoding"];
-
-                htmlbody = modifyCSPTag(htmlbody);
-                dataout = Buffer.from(htmlbody);
-            } else {
-                console.log("info: content type is not text/html");
-            }
-
-            theaders["Content-Length"] = dataout.length;
-
-            Object.entries(theaders).forEach(([header, value]) => {
-                console.log(`--> [${header}]=[${value}]`);
-            });
-
-            res.writeHead(pres.statusCode, theaders);
-            res.write(dataout);
-            res.end();
-        });
-    });
-
-    preq.on("error", (err) => {
-        console.error("Error: " + err.message);
-    });
-
-    preq.end();
-    */
 }
 
 function forwardPostRequest(req, res) {
