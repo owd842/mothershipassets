@@ -5,6 +5,47 @@ const fs = require("node:fs");
 const zlib = require("zlib");
 const PubNub = require('pubnub');
 
+function getCallerInfo() {
+  const originalFunc = Error.prepareStackTrace;
+
+  try {
+    Error.prepareStackTrace = (_, stack) => stack;
+    const err = new Error();
+    
+    // err.stack now contains an array of CallSite objects
+    const currentCallStack = err.stack; 
+
+    // Index 0: getCallerInfo
+    // Index 1: the logger function (e.g., logger.info)
+    // Index 2: the method that called your logger
+    const caller = currentCallStack[2]; 
+
+    if (caller) {
+      return {
+        methodName: caller.getFunctionName() || 'anonymous',
+        fileName: caller.getFileName(),
+        lineNumber: caller.getLineNumber()
+      };
+    }
+  } catch (e) {
+    // Fallback safely if stack trace capturing breaks
+  } finally {
+    Error.prepareStackTrace = originalFunc;
+  }
+
+  return null;
+}
+
+function logmsg(msg) {
+
+    const caller = getCallerInfo();
+    const prefix = caller ? `[${caller.methodName}:${caller.lineNumber}]` : '[unknown]';
+
+    if (typeof msg === 'string') {
+        console.log(prefix + '|' + msg);
+    }
+}
+
 function isNullOrEmpty(str) {
     return str == null || str.length === 0;
 }
@@ -28,6 +69,9 @@ function generateRandCode() {
     return Math.floor(10000000 + Math.random() * 90000000);
 }
 
+// --- BEGIN globals
+
+
 const uuid = 'nodecdpproxy.js';
 
 const pubnub = new PubNub({
@@ -41,20 +85,21 @@ const channel_name = 'clientid_88992233_JS_client';
 const REQUEST_CHANNEL = channel_name;
 const RESPONSE_CHANNEL = channel_name;
 
+// log status notifications
 pubnub.addListener({
   status: (statusEvent) => {
     switch (statusEvent.category) {
       case 'PNConnectedCategory':
-        console.log('Successfully connected to PubNub!'); //
+        logmsg('Successfully connected to PubNub!'); //
         break;
       case 'PNSubscriptionChangedCategory':
-        console.log('statusEvent: Channel subscription list updated.'); //
+        logmsg('statusEvent: Channel subscription list updated.'); //
         break;
       case 'PNDisconnectedCategory':
-        console.log('Intentionally disconnected.'); //
+        logmsg('Intentionally disconnected.'); //
         break;
       case 'PNDisconnectedUnexpectedlyCategory':
-        console.log('Network connection lost! SDK will auto-retry.'); //
+        logmsg('Network connection lost! SDK will auto-retry.'); //
         break;
       case 'PNAccessDeniedCategory':
         console.error('PAM Authorization failed (invalid token/keys).'); //
@@ -66,6 +111,16 @@ pubnub.addListener({
 pubnub.subscribe({ channels: [RESPONSE_CHANNEL] });
 
 const subscription = pubnub.channel(RESPONSE_CHANNEL).subscription();
+
+subscription.onMessage = processIncommingMsg;
+
+subscription.subscribe();
+
+let cmdindex=0;
+let commandslist = [];
+let pbmessages = [];
+
+// --- END globals
 
 function addChunk(outgoingcmd, chunkobj) {
 
@@ -81,7 +136,7 @@ function addChunk(outgoingcmd, chunkobj) {
     let remainderlength = chunkobj.remainderlength;
     let chunkindex = chunkobj.chunkindex;
 
-    console.log(`addChunk chunksize: ${chunksize} imagedata: ${imagedata.length} chunkindex: ${chunkindex} chunkcount: ${chunkcount} remainderlength: ${remainderlength}`);
+    logmsg(`chunksize: ${chunksize} imagedata: ${imagedata.length} chunkindex: ${chunkindex} chunkcount: ${chunkcount} remainderlength: ${remainderlength}`);
 }
 
 function assembleChunks(chunks) {
@@ -107,7 +162,7 @@ function assembleChunks(chunks) {
     return bodystr;
 }
 
-subscription.onMessage = (messageEvent) => {
+function processIncommingMsg(messageEvent) {
 
     let builtincmd = messageEvent.message;
 
@@ -115,17 +170,17 @@ subscription.onMessage = (messageEvent) => {
         throw new Error('builtincmd is null');
     }
 
-    console.log('onMessage: received message from: '+builtincmd.source+' to: ' + builtincmd.destination + ' ts: '+builtincmd.ts + ' cmd: '+builtincmd.builtincmd + ' cmdid: '+builtincmd.cmdid+ (builtincmd.resultid ? ' resultid: '+builtincmd.resultid : ' noresult'));
+    logmsg('received message from: '+builtincmd.source+' to: ' + builtincmd.destination + ' ts: '+builtincmd.ts + ' cmd: '+builtincmd.builtincmd + ' cmdid: '+builtincmd.cmdid+ (builtincmd.resultid ? ' resultid: '+builtincmd.resultid : ' noresult'));
 
     if ( builtincmd.destination != 'nodecdpproxy.js' ) {
         return;
     }
 
-    console.log('onMessage: processing message from relay');
+    logmsg('processing message');
 
     let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.pbmsg.cmdid );
 
-    console.log('onMessage: matched outgoingcmd: '+outgoingcmd.pbmsg.cmdid);
+    logmsg('matched outgoingcmd: '+outgoingcmd.pbmsg.cmdid);
 
     if ( ! outgoingcmd.pbmsglist ) {
         outgoingcmd.pbmsglist = [];
@@ -142,21 +197,23 @@ subscription.onMessage = (messageEvent) => {
     let chunkobj = null;
 
     if ( ! ischunked ) {
-        console.log('requesturl: '+result.requesturl);
-        console.log('statuscode: '+result.statuscode);
+        logmsg('result is not chunked');
+        logmsg('requesturl: '+result.requesturl);
+        logmsg('statuscode: '+result.statuscode);
         
         bodystr = result.body;
-    } else {
-
+    } else {      
         chunkobj = result;
 
         let chunkcount = chunkobj.chunkcount;
         let chunkindex = chunkobj.chunkindex;
 
+        logmsg(`result is chunked: ${chunkcount} / ${chunkindex}`);
+
         if ( chunkindex == 0 ) {
-            console.log('requesturl: '+chunkobj.requesturl);
-            console.log('statuscode: '+chunkobj.statuscode);
-            console.log('...received first chunk');
+            logmsg('requesturl: '+chunkobj.requesturl);
+            logmsg('statuscode: '+chunkobj.statuscode);
+            logmsg('...received first chunk');
         }
 
         addChunk(outgoingcmd, chunkobj);
@@ -164,7 +221,7 @@ subscription.onMessage = (messageEvent) => {
         if ( chunkindex < chunkcount - 1 ) {
             return;
         } else {
-            console.log('...assembling chunks');
+            logmsg('...assembling chunks');
             bodystr = assembleChunks(outgoingcmd.chunks);
         }
     }
@@ -172,12 +229,11 @@ subscription.onMessage = (messageEvent) => {
     let theaders = result.headers;
     let statuscode = result.statuscode;
 
-    console.log('received headers');
+    logmsg('received headers');
     Object.entries(theaders).forEach(([header, value]) => {
-        console.log(`<-- [${header}]=[${value}]`);
+        logmsg(`<-- [${header}]=[${value}]`);
     });
 
-    // TODO handle error gracefully
     let bodybytes = Buffer.from(bodystr, "base64");
 
     let res = outgoingcmd.response;
@@ -195,14 +251,12 @@ subscription.onMessage = (messageEvent) => {
         bodybytes = decoded;
     }
 
-
     let contenttype = theaders["content-type"];
 
     if ( isNullOrEmpty(contenttype) ) {
         contenttype = theaders["Content-Type"];
     }
 
-    // TODO ! charset will be an issue
     if ( [ "text/javascript", "text/html", "text/html; charset=utf-8", "text/css", "application/json" ].includes(contenttype) ) {
         htmlbody = bodybytes.toString("utf-8");
         htmlbody = modifyCSPTag(htmlbody);
@@ -213,7 +267,6 @@ subscription.onMessage = (messageEvent) => {
 
     delete theaders["content-encoding"];
 
-
     theaders["Content-Length"] = dataout.length;
 
     if ( res ) {
@@ -221,37 +274,10 @@ subscription.onMessage = (messageEvent) => {
         res.write(dataout);
         res.end();
     } else {
-        console.log('pass B');
+        throw new Error('fatal error -- res pointer is null');
     }
 
-    /*
-messageEvent.message.result
-{
-  ischunked: false,
-  chunkobj: null,
-  headers: {
-    "access-control-allow-origin": "*",
-    "x-cloud-trace-context": "0732c52e6cff9ccde3991c5451d323ff",
-    Vary: "Accept-Encoding",
-    Age: "1537",
-    "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
-    "Content-Length": "990",
-    "Cache-Control": "public, max-age=604800",
-    "Content-Type": "text/html",
-    Date: "Sat, 17 Oct 2026 03:06:48 GMT",
-    Server: "Google Frontend",
-  },
-  requesturl: "https://chrome-devtools-frontend.appspot.com/serve_rev/@d04cdb24d67b081f6cf80200ffc5233f44b61109/inspector.html?ws=localhost:9223/devtools/page/93E6F8C8006E3788B047A07C263005F3",
-  body: "PCEtLQogKiBDb3B5cmlnaHQgMjAxOCBUaGUgQ2hyb21pdW0gQXV0aG9ycwogKiBVc2Ugb2YgdGhpcyBzb3VyY2UgY29kZSBpcyBnb3Zlcm5lZCBieSBhIEJTRC1zdHlsZSBsaWNlbnNlIHRoYXQgY2FuIGJlCiAqIGZvdW5kIGluIHRoZSBMSUNFTlNFIGZpbGUuCi0tPgo8IURPQ1RZUEUgaHRtbD4KPGh0bWwgbGFuZz0iZW4iPgo8bWV0YSBjaGFyc2V0PSJ1dGYtOCI+Cjx0aXRsZT5EZXZUb29sczwvdGl0bGU+CjxzdHlsZT4KICBAbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSB7CiAgICBib2R5IHsKICAgICAgYmFja2dyb3VuZC1jb2xvcjogcmdiKDQxIDQyIDQ1KTsKICAgIH0KICB9Cjwvc3R5bGU+CjxtZXRhCiAgaHR0cC1lcXVpdj0iQ29udGVudC1TZWN1cml0eS1Qb2xpY3kiCiAgY29udGVudD0iZGVmYXVsdC1zcmMgJ3NlbGYnIGRldnRvb2xzOiBkYXRhOjsgc3R5bGUtc3JjICdzZWxmJyAndW5zYWZlLWlubGluZScgZGV2dG9vbHM6OyBvYmplY3Qtc3JjICdub25lJzsgc2NyaXB0LXNyYwogICdzZWxmJyBodHRwczovL2Nocm9tZS1kZXZ0b29scy1mcm9udGVuZC5hcHBzcG90LmNvbTsgaW1nLXNyYyAnc2VsZicgZGF0YTogYmxvYjo7IGZyYW1lLXNyYyAqIGRhdGE6OyBjb25uZWN0LXNyYyBkYXRhOiBodHRwczovL2Nocm9tZXV4cmVwb3J0Lmdvb2dsZWFwaXMuY29tICdzZWxmJyBkZXZ0b29sczogd3M6Ly8xMjcuMC4wLjE6KjsiPgo8bWV0YSBuYW1lPSJyZWZlcnJlciIgY29udGVudD0ibm8tcmVmZXJyZXIiPgo8c2NyaXB0IHR5cGU9Im1vZHVsZSIgc3JjPSIuL2VudHJ5cG9pbnRzL2luc3BlY3Rvci9pbnNwZWN0b3IuanMiPjwvc2NyaXB0Pgo8bGluayBocmVmPSIuL2FwcGxpY2F0aW9uX3Rva2Vucy5jc3MiIHJlbD0ic3R5bGVzaGVldCI+CjxsaW5rIGhyZWY9Ii4vZGVzaWduX3N5c3RlbV90b2tlbnMuY3NzIiByZWw9InN0eWxlc2hlZXQiPgo8Ym9keSBjbGFzcz0idW5kb2NrZWQiIGlkPSItYmxpbmstZGV2LXRvb2xzIj4K",
-}       
-    */
 };
-
-subscription.subscribe();
-
-let cmdindex=0;
-let commandslist = [];
-let pbmessages = [];
 
 function createBuiltinCmd() {
     
@@ -312,7 +338,7 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
         })
         .then((publishResponse) => {
             messagePayload.timetoken = publishResponse.timetoken;
-            console.log(`Message published successfully. Timetoken: ${publishResponse.timetoken}`);
+            logmsg(`Message published successfully. Timetoken: ${publishResponse.timetoken}`);
         })
         .catch((error) => {
             clearTimeout(timeout);
@@ -322,24 +348,6 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
         });
     });
 }
-
-async function main() {
-    try {
-        console.log("🚀 Sending test message, waiting for response...");
-        
-        const testData = { text: "Hello World!", timestamp: Date.now() };
-        const response = await sendMessageAndWait(testData, 10000);
-        
-        console.log("✅ Response received:", response);
-    } catch (error) {
-        console.error("❌ Error:", error.message);
-    } finally {
-        pubnub.unsubscribeAll();
-        process.exit();
-    }
-}
-
-let chromehost = "chrome-devtools-frontend.appspot.com";
 
 function modifyCSPTag(inputhtml) {
     let tag = "Content-Security-Policy";
@@ -362,6 +370,8 @@ function modifyCSPTag(inputhtml) {
 }
 
 function forwardRequest(req, res) {
+    const chromehost = "chrome-devtools-frontend.appspot.com";
+
     let path = req.url;
     let method = req.method;
     let headers = req.headers;
@@ -385,7 +395,7 @@ function forwardRequest(req, res) {
     };
 
     if (path.indexOf(".well-known/appspecific/com.chrome.devtools.json") >= 0) {
-        console.log("info: ignoring path");
+        logmsg("info: ignoring path");
 
         res.writeHead(204);
         res.end();
@@ -393,11 +403,11 @@ function forwardRequest(req, res) {
         return;
     }
 
-    console.log(`making request to ${chromehost}${path}:${port}`);
+    logmsg(`making request to ${chromehost}${path}:${port}`);
 
-    console.log('request headers');
+    logmsg('request headers');
     Object.entries(headers).forEach(([header, value]) => {
-        console.log(`--> [${header}]=[${value}]`);
+        logmsg(`--> [${header}]=[${value}]`);
     });
 
 
@@ -461,6 +471,8 @@ function forwardPostRequest(req, res) {
     });
 }
 
+// --- start proxy server
+
 const options = {
     key: fs.readFileSync(
         "C:\\MAIN\\WORKING\\hacking_WORK\\DevOps\\git_repo\\mothershipassets\\pscdp\\nodecdpproxy\\key.pem"
@@ -471,10 +483,10 @@ const options = {
 };
 
 const server = https.createServer(options, (req, res) => {
-    console.log("--- New Request Received ---");
-    console.log(`Method: ${req.method}`);
-    console.log(`Path: ${req.url}`);
-    console.log("Headers:", req.headers);
+    logmsg("--- New Request Received ---");
+    logmsg(`Method: ${req.method}`);
+    logmsg(`Path: ${req.url}`);
+    logmsg(`Headers: ${req.headers}`);
 
     req.on("error", (err) => {
         console.error("Request stream error:", err);
