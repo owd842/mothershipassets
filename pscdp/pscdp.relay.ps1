@@ -1027,6 +1027,35 @@ function Process-CDP {
 }
 
 function Send-ChunkedResult {
+    param([hashtable]$result, [hashtable]$resultout)
+
+    $chunkobj = $result['chunkobj']
+    $chunks = $chunkobj['chunks']
+    $chunkcount = [int32]$chunks.Count
+
+    $tresult = @{
+        chunksize = $chunkobj['chunksize']
+        chunkcount = $chunkobj['chunkcount']
+        remainderlength = $chunkobj['remainderlength']
+        imagedata = $null
+        chunkindex = -1
+    }
+
+    for ( $i=0; $i -lt $chunkcount; $i++ ) {
+
+        $tresult['imagedata'] = $chunks[$i]
+        $tresult['chunkindex'] = $i
+
+        if ( $i -eq 0 ) {
+            $tresult['requesturl'] = $result['requesturl']
+            $tresult['statuscode'] = $result['statuscode']
+            $tresult['headers'] = $result['headers']
+        }
+
+        $resultout['result'] = $tresult
+
+        $script:pubnubws.SendPBMessage($resultout)
+    }
 
 }
 
@@ -1051,44 +1080,10 @@ function Process-BuiltInCommand {
 
         $ischunked = $result['ischunked']
 
-        if ( ! $ischunked ) {
-            $resultout['result'] = $result
-        } else {
-            try { # anchor
-                $chunkobj = $result['chunkobj']
-                $chunks = $chunkobj['chunks']
-                $chunkcount = [int32]$chunks.Count
-
-                $tresult = @{
-                    chunksize = $chunkobj['chunksize']
-                    chunkcount = $chunkobj['chunkcount']
-                    remainderlength = $chunkobj['remainderlength']
-                    imagedata = $null
-                    chunkindex = -1
-                }
-
-                for ( $i=0; $i -lt $chunkcount; $i++ ) {
-
-                    $tresult['imagedata'] = $chunks[$i]
-                    $tresult['chunkindex'] = $i
-
-                    if ( $i -eq 0 ) {
-                        $tresult['requesturl'] = $result['requesturl']
-                        $tresult['statuscode'] = $result['statuscode']
-                        $tresult['headers'] = $result['headers']
-                    }
-
-                    $resultout['result'] = $tresult
-
-                    $script:pubnubws.SendPBMessage($resultout)
-                }
-            } catch {
-                Log-Msg $_
-            }
-
+        if ( $ischunked ) {
+            Send-ChunkedResult($result, $resultout)
             return
         }
-
 
     } elseif ( $cmd.builtincmd -eq "ExecCDPCommand" ) {
         $result = Exec-CDP($cmd)

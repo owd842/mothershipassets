@@ -48,7 +48,7 @@ pubnub.addListener({
         console.log('Successfully connected to PubNub!'); //
         break;
       case 'PNSubscriptionChangedCategory':
-        console.log('Channel subscription list updated.'); //
+        console.log('statusEvent: Channel subscription list updated.'); //
         break;
       case 'PNDisconnectedCategory':
         console.log('Intentionally disconnected.'); //
@@ -115,12 +115,17 @@ subscription.onMessage = (messageEvent) => {
         throw new Error('builtincmd is null');
     }
 
+    console.log('onMessage: received message from: '+builtincmd.source+' to: ' + builtincmd.destination + ' ts: '+builtincmd.ts + ' cmd: '+builtincmd.builtincmd + ' cmdid: '+builtincmd.cmdid+ (builtincmd.resultid ? ' resultid: '+builtincmd.resultid : ' noresult'));
+
     if ( builtincmd.destination != 'nodecdpproxy.js' ) {
-        console.log('...received message from: '+builtincmd.source+' to: ' + builtincmd.destination + ' ts: '+builtincmd.ts + ' cmd: '+builtincmd.builtincmd);
         return;
     }
 
-    let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.builtincmd.cmdid );
+    console.log('onMessage: processing message from relay');
+
+    let outgoingcmd = commandslist.find( cmd => builtincmd.cmdid == cmd.pbmsg.cmdid );
+
+    console.log('onMessage: matched outgoingcmd: '+outgoingcmd.pbmsg.cmdid);
 
     if ( ! outgoingcmd.pbmsglist ) {
         outgoingcmd.pbmsglist = [];
@@ -274,6 +279,7 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
         messagePayload.istimeout = false;
 
         const timeout = setTimeout(() => {
+            console.log('error: message timedout');
             pubnub.removeListener(listener);
             messagePayload.istimeout = true;
             reject(new Error(`Timeout: No response received within ${timeoutMs}ms`));
@@ -283,6 +289,8 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
             message: (event) => {
 
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
+                    console.log('info: message send success, removing listener');
+
                     messagePayload.listen_state = 'cleared';
 
                     clearTimeout(timeout);
@@ -415,16 +423,15 @@ function forwardRequest(req, res) {
             return value;
         },
         (error) => {
-            state.isPending = false;
-            state.isRejected = true;
-            state.value = error;
-            // throw error;
+            sendstate.isPending = false;
+            sendstate.isRejected = true;
+            sendstate.value = error;
         }
     );
 
     let outgoingcmd = {
-        builtincmd:pbreq,
         sendtask:sendtask,
+        sendstate:sendstate,
         pbmsg: pbmsg,
         pbmsglist: [],
         response:res,
