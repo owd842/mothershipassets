@@ -871,7 +871,8 @@ function ProcessDOMObj {
     return $result
 }
 
-# TODO refactor to use pubnubws to upload
+# TODO refactor to use pubnubws to upload instead of direct HTTP request
+#      make javascript POST call (no need to write pb message)
 function Upload-Bunny {
     param (
         [byte[]]$bytes,
@@ -910,6 +911,8 @@ function Transform-PSCustomObject($obj) {
     return $ht;
 }
 
+# TODO implement capability execute arbitrary CDP commands
+#      master enters CDP commands in UI tooling, etc.
 function Exec-CDP {
     param($cmd)
 
@@ -2007,6 +2010,9 @@ while ( $true ) {
         $script:pubnubws.LogState()
 
         $socketok = $script:pubnubws.IsSocketHealthy()
+
+        # check broadcastresponses -- if there 3 or more broadcasts that have
+        # not succeeded, reconnect
 
         # anchor
         if ( ! $socketok ) {
