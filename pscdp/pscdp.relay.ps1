@@ -2053,7 +2053,7 @@ while ( $true ) {
     } catch {
         Log-Msg $_
 
-        $script:clientws.Reset()
+        $script:clientws = [PSCDP]::new($clientport, $null, "clientws")
         $script:clientws.ConnectCdp()
     }
 
