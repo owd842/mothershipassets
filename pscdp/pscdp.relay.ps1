@@ -532,7 +532,7 @@ class PSCDPTarget {
     }
 
     static [PSCDPTarget] Create([PSCustomObject]$obj) {
-        return GetPSCustomObject($obj)
+        return [PSCDPTarget]::GetPSCustomObject($obj)
     }
 }
 
@@ -1846,6 +1846,7 @@ class PSCDP {
             # pass
         }
 
+        # WARN throws exception
         # TODO refactor for pbtarget -- check if target is pubnubtarget
         if ( $executionContextsCleared ) {
             # TODO check if $pubnubtarget.sessionId -eq $sessionid
@@ -1857,7 +1858,7 @@ class PSCDP {
 
             # anchor
             if ( $targetInfo.type -eq "page" ) {
-                $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
+                $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
                 $this.targets.Add($targetInfo)
 
