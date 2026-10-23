@@ -122,11 +122,11 @@ function Log-Msg {
     $script:logger_logmsg_i++
 
     if ( $_ -is [System.Exception] -or $_ -is [System.Management.Automation.ErrorRecord]) {
-        Write-Host "caller: $caller"
+        Write-Host "caller: $caller" 
         Write-Error $_.Exception.Message
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     } else {
-        Write-Host "$caller|$script:logger_logmsg_i|$Msg"
+        Write-Host "$caller|$script:logger_logmsg_i|$Msg" -ForegroundColor Cyan
     }
 }
 
@@ -524,6 +524,17 @@ class PSCDPTarget {
     }
 }
 
+$script:pingpbtarget_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    # TODO check $Response for error if any -- ensure valid response
+    # refactor to set pingstate to be response output
+
+    $cdpobj.pingstate = $Response
+}
+
 $script:browserversion_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -557,6 +568,7 @@ $script:SendPBMessage_callback = {
     }
 }
 
+# TODO refactor to use $pingstate -- callback
 $script:runtime_evaluate_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -580,6 +592,7 @@ $script:runtime_evaluate_callback = {
     $target.console_log_check = $pass
 }
 
+# TODO refactor, get rid of console.log check -- this is covered by pingstate
 $script:runtime_addBinding_callback = {
     param(
         [PSCDPResult]$Response, [PSCDP]$cdpobj
@@ -1335,6 +1348,9 @@ class PSCDP {
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
     $broadcasterrors = [System.Collections.Generic.List[object]]::new()
     
+    $pbpings = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $pbpingresponses = [System.Collections.Generic.List[object]]::new()
+
     $versionchecks = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $versionresponses = [System.Collections.Generic.List[object]]::new()
 
@@ -1353,6 +1369,7 @@ class PSCDP {
     [PSCDPTarget]$pubnubTarget = $null
 
     [hashtable]$browserversion = $null
+    [object]$pingstate = $null
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -1363,6 +1380,15 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
+    [hashtable] GetSystemHealth() {
+        return @{
+           IsSocketHealthy = $this.IsSocketHealthy()
+           IsConnectionOk = $this.IsConnectionOk()
+           IsBroadcastOk = $this.IsBroadcastOk()
+           IsPBConnectOk = $this.IsPBConnectOk()
+        }
+    }
+
     [bool] IsSocketHealthy() {
         if ( ( ! $null -eq $this.webSocket ) -and ( $this.webSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open ) ) {
             return $true
@@ -1371,8 +1397,29 @@ class PSCDP {
         return $false
     }
 
-    # TODO check if versionchecks have succeeded, if broadcast messages have succeeded
+    # TODO check if versionchecks have succeeded
     [bool] IsConnectionOk() {
+        return $true
+    }
+
+    # TODO check if broadcast messages have succeeded, 
+    [bool] IsBroadcastOk() {
+        
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return $true    
+        }
+
+        return $true
+    }
+
+    # TODO if pb target healthy check if console.log went through
+    #      pubnub target must be active
+    [bool] IsPBConnectOk() {
+
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return $true    
+        }
+
         return $true
     }
 
@@ -1543,9 +1590,9 @@ class PSCDP {
         return $this.GetResultByCmd($cmd)
     }
 
+    # TODO refactor get rid of exceptions
     [PSCDPCommand] SendCdpCommand([PSCDPCommand]$cmd) {
         
-        # anchor
         if ( $false -eq $this.IsSocketHealthy() ) {
             throw "websocket is not healthy"
         }
@@ -1937,6 +1984,32 @@ class PSCDP {
         # Network.enable
     }
 
+    # TODO impelement anchor
+    [void] PingPBTarget() {
+        # send console.log to pb target
+
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return
+        }
+
+        if ( $null -eq $this.pubnubTarget ) {
+            return
+        }
+
+        $params = @{
+            expression="(function() { console.log(`"PubNub Status Notification -- Successfully connected from pscdp.relay.ps1 -- "+ $(Get-Timestamp) + " `"); return " + $(Get-Random -Minimum 1 -Maximum 100) + "; })()"
+            returnByValue=$true
+        }
+
+        $this.AddQueue( @{ 
+            method="Runtime.evaluate"; 
+            params=$params; 
+            target=$this.pubnubTarget; 
+            callback=$script:pingpbtarget_callback 
+            ispbping=$true
+        } )
+    }
+
     [void] GetBrowserVersion() {
         $msg = @{ 
             method="Browser.getVersion"; 
@@ -1982,6 +2055,7 @@ class PSCDP {
         }
     }
 
+    # TODO refactor get rid of exceptions
     [void] Broadcast() {
         $target = $this.pubnubTarget
 
@@ -2061,15 +2135,10 @@ while ( $true ) {
     try {
         $script:pubnubws.LogState()
 
-        $socketok = $script:pubnubws.IsSocketHealthy()
+        $systemok = $script:pubnubws.IsSystemOk()
 
-        $connectok = $script:pubnubws.IsConnectionOk()
-        # check broadcastresponses -- if there 3 or more broadcasts that have
-        # not succeeded, reconnect
-
-        # anchor
-        if ( ! $socketok ) {
-            Log-Msg "socket not ok -- reconnecting"
+        if ( ! $systemok ) {
+            Log-Msg "system not ok -- reconnecting"
             $script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl, "pubnubws")
             $script:pubnubws.ConnectCdp()
         } else {
@@ -2084,6 +2153,7 @@ while ( $true ) {
             if ( $i -ge $n ) {
                 $script:pubnubws.Broadcast()
                 $script:pubnubws.GetBrowserVersion()
+                # $script:pubnubws.PingPBTarget()
                 $i=0
             }
         }
