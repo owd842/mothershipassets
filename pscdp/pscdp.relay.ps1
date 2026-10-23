@@ -182,6 +182,7 @@ class PSCDPCommand {
     [bool]$isinvoked = $false
     [bool]$iserror = $false
     [bool]$isbroadcast = $false
+    [bool]$isbrowserversion = $false
     [string]$targetid = $null
 
     [object]$sendTask = $null
@@ -204,6 +205,7 @@ class PSCDPCommand {
         $out.isinvoked = $obj.isinvoked
         $out.iserror = $obj.iserror
         $out.isbroadcast = $obj.isbroadcast
+        $out.isbrowserversion = $obj.isbrowserversion
         $out.targetid = $obj.targetid
         $out.target = $obj.target
 
@@ -522,6 +524,18 @@ class PSCDPTarget {
     }
 }
 
+$script:browserversion_callback = {
+    param(
+        [object]$Response, [PSCDP]$cdpobj
+    )
+
+    $cdpobj.versionresponses.Add($Response)
+
+    $cmd = $Response.cmd
+
+    $cdpobj.browserversion = $Response
+}
+
 $script:runtime_enable_callback = {
     param(
         [object]$Response, [PSCDP]$cdpobj
@@ -537,6 +551,7 @@ $script:SendPBMessage_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
     
+    # anchor check if response is error
     if ( $Response.cmd.isbroadcast ) {
         $cdpobj.broadcastresponses.Add($Response)
     }
@@ -1211,6 +1226,16 @@ function Process-BuiltInCommand {
         throw 'fatal error: not implemented'
     } elseif ( $cmd.builtincmd -eq "GetKeyboardLog" ) {
         throw 'fatal error: not implemented'
+    } elseif ( $cmd.builtincmd -eq "GetCDPVersion" ) { 
+        
+        $script:clientws.AddQueue( @{ 
+            method="Browser.getVersion"; 
+            params=@{} 
+            #callback=
+            builtincmd=$cmd
+        } ) 
+
+        return
     } else {
         throw "unsupported command [$($cmd.builtincmd)]"
     }
@@ -1304,23 +1329,30 @@ class PSCDP {
 
     [string]$wsname = $null
 
-    # TODO cleanup and refactor using PSCDP<...> types
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
-    $responses = [System.Collections.Generic.List[object]]::new()
-    
+
     $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $broadcastresponses = [System.Collections.Generic.List[object]]::new()
     $broadcasterrors = [System.Collections.Generic.List[object]]::new()
     
+    $versionchecks = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $versionresponses = [System.Collections.Generic.List[object]]::new()
+
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
+
+    $responses = [System.Collections.Generic.List[object]]::new()
     $results = [System.Collections.Generic.List[object]]::new()
     $errors = [System.Collections.Generic.List[object]]::new() 
-    $pubnubmsgs = [System.Collections.Generic.List[object]]::new()
+
+    # incomming pb messages
+    $pubnubmsgs = [System.Collections.Generic.List[hashtable]]::new()
 
     $targets = [System.Collections.Generic.List[PSCDPTarget]]::new()
 
     [PSCDPTarget]$pubnubTarget = $null
+
+    [hashtable]$browserversion = $null
 
     [int32]$messageId = 1
     $receiveNew = $true
@@ -1337,6 +1369,11 @@ class PSCDP {
         }
 
         return $false
+    }
+
+    # TODO check if versionchecks have succeeded, if broadcast messages have succeeded
+    [bool] IsConnectionOk() {
+        return $true
     }
 
     PSCDP() {
@@ -1509,7 +1546,7 @@ class PSCDP {
     [PSCDPCommand] SendCdpCommand([PSCDPCommand]$cmd) {
         
         # anchor
-        if ( $null -eq $this.IsSocketHealthy() ) {
+        if ( $false -eq $this.IsSocketHealthy() ) {
             throw "websocket is not healthy"
         }
 
@@ -1873,9 +1910,11 @@ class PSCDP {
 
     }
 
-    [void] AddQueue([hashtable]$msg) {
+    [PSCDPCommand] AddQueue([hashtable]$msg) {
         $cmd = [PSCDPCommand]::Create($msg)
         $this.sendQueue.Add($cmd)
+
+        return $cmd
     }
 
     [void] LoadQueue([PSCDPTarget]$target) {
@@ -1896,6 +1935,19 @@ class PSCDP {
 
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
         # Network.enable
+    }
+
+    [void] GetBrowserVersion() {
+        $msg = @{ 
+            method="Browser.getVersion"; 
+            params=@{}; 
+            callback=$script:browserversion_callback;
+            isbrowserversion=$true
+        }
+
+        $cmd = $this.AddQueue( $msg )
+
+        $this.versionchecks.Add($cmd)
     }
 
     [void] SendPBMessage([hashtable]$cmd) {
@@ -1922,11 +1974,11 @@ class PSCDP {
             isbroadcast=$false 
         }
 
-        $this.AddQueue( $msg )
+        $cdpcmd = $this.AddQueue( $msg )
 
         if ( $cmd.ContainsKey('builtincmd') -and $cmd['builtincmd'] -eq "SendBroadcast" ) {
             $msg['isbroadcast'] = $true
-            $this.broadcasts.Add($msg)
+            $this.broadcasts.Add($cdpcmd)
         }
     }
 
@@ -2011,6 +2063,7 @@ while ( $true ) {
 
         $socketok = $script:pubnubws.IsSocketHealthy()
 
+        $connectok = $script:pubnubws.IsConnectionOk()
         # check broadcastresponses -- if there 3 or more broadcasts that have
         # not succeeded, reconnect
 
@@ -2030,6 +2083,7 @@ while ( $true ) {
 
             if ( $i -ge $n ) {
                 $script:pubnubws.Broadcast()
+                $script:pubnubws.GetBrowserVersion()
                 $i=0
             }
         }
