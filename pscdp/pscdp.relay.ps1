@@ -512,7 +512,7 @@ class PSCDPTarget {
         return $null
     }
 
-    static [PSCDPTarget] GetPSCustomObject($obj) {
+    static [PSCDPTarget] Create([PSCustomObject]$obj) {
         $ht = @{
             title=$obj.title
             url=$obj.url
@@ -530,10 +530,6 @@ class PSCDPTarget {
 
         return [PSCDPTarget]$ht
     }
-
-    static [PSCDPTarget] Create([PSCustomObject]$obj) {
-        return [PSCDPTarget]::GetPSCustomObject($obj)
-    }
 }
 
 # TODO refactor all callbacks to use PSCDPResult as Response object
@@ -542,11 +538,16 @@ $script:pingpbtarget_callback = {
     param(
         [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
-
-    # TODO check $Response for error if any -- ensure valid response
-    # refactor to set pingstate to be response output
-
+   
     $cdpobj.pbpingresponses.Add( $Response )
+
+    if ( $Response.iserror ) {
+        $cdpobj.console_log_check = $false
+        $cdpobj.pbpingerrors.Add( $Response )
+    } else {
+        $cdpobj.console_log_check = $true
+    }
+
 }
 
 $script:browserversion_callback = {
@@ -556,7 +557,9 @@ $script:browserversion_callback = {
 
     $cdpobj.versionresponses.Add($Response)
 
-    $cmd = $Response.cmd
+    if ( $Response.iserror ) {
+        $cdpobj.versionerrors.Add( $Response )
+    }
 
     $cdpobj.browserversion = $Response
 }
@@ -573,11 +576,17 @@ $script:runtime_enable_callback = {
 
 $script:SendPBMessage_callback = {
     param(
-        [object]$Response, [PSCDP]$cdpobj
+        [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
     
     if ( $Response.cmd.isbroadcast ) {
+
         $cdpobj.broadcastresponses.Add($Response)
+        
+        if ( $Response.iserror ) {
+            $cdpobj.broadcasterrors.Add($Response)
+        }
+
     }
 }
 
@@ -1359,24 +1368,24 @@ class PSCDP {
 
     $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
 
+    $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
+
+    $responses = [System.Collections.Generic.List[hashtable]]::new() # TODO refactor to pscustomobject or hashtable
+    $results = [System.Collections.Generic.List[object]]::new() # TODO refactor to PSCDPResult
+    $errors = [System.Collections.Generic.List[hashtable]]::new() 
+
     $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
-    $broadcastresponses = [System.Collections.Generic.List[object]]::new()
-    $broadcasterrors = [System.Collections.Generic.List[object]]::new()
+    $broadcastresponses = [System.Collections.Generic.List[PSCDPResult]]::new()
+    $broadcasterrors = [System.Collections.Generic.List[PSCDPResult]]::new()
     
     $pbpings = [System.Collections.Generic.List[PSCDPCommand]]::new()
-    $pbpingresponses = [System.Collections.Generic.List[object]]::new()
-    $pbpingerrors = [System.Collections.Generic.List[object]]::new()
+    $pbpingresponses = [System.Collections.Generic.List[PSCDPResult]]::new()
+    $pbpingerrors = [System.Collections.Generic.List[PSCDPResult]]::new()
 
     $versionchecks = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $versionresponses = [System.Collections.Generic.List[object]]::new()
     $versionerrors = [System.Collections.Generic.List[object]]::new()
-
-    $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
-    $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
-
-    $responses = [System.Collections.Generic.List[object]]::new() # TODO refactor to pscustomobject or hashtable
-    $results = [System.Collections.Generic.List[object]]::new() # TODO refactor to PSCDPResult
-    $errors = [System.Collections.Generic.List[hashtable]]::new() 
 
     $pubnubmsgs = [System.Collections.Generic.List[hashtable]]::new()
 
@@ -1435,6 +1444,14 @@ class PSCDP {
 
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
             return $true    
+        }
+
+        if ( ! $this.pubnubTarget.addbinding_ok ) {
+            return $false
+        } elseif ( [string]::IsNullOrEmpty($this.pubnubTarget.executionContextId) ) {
+            return $false
+        } elseif ( $this.pubnubTarget.executionContextId -eq -1 ) {
+            return $false
         }
 
         return $true
@@ -1549,62 +1566,10 @@ class PSCDP {
         return $cmd
     }
 
-    [PSCDPCommand] GetCommand([string]$name) {
-        $cmd = $this.commands | Where-Object { $_.name -eq $name } | Select-Object -First 1
-        return $cmd
-    }
-
     [PSCDPTarget] GetTarget($targetId) {
         $target = $this.targets | Where-Object { $_.targetId -eq $targetId } | Select-Object -First 1
 
         return $target
-    }
-
-    [object] GetResultByID($id) {
-        $cmd = $this.GetCommandByID($id)
-
-        if ( $null -eq $cmd ) {
-            return $null
-        }
-
-        return $this.GetResultByCmd($cmd)
-    }
-
-    [object] GetResultByCmd([PSCDPCommand]$cmd) { #TODO refactor to return PSCDPResult object
-        try {
-            $id = $cmd.id
-
-            if ( ( $null -eq $this.results ) -or ( $this.results.Count -le 0 ) ) {
-                return $null
-            }
-
-            $arr = $this.results.ToArray()
-            for ($i = 0; $i -lt $arr.Count; $i++) {
-                $t = $arr[$i]
-
-                if ( ($t.id).ToString() -eq ($id).ToString() ) {
-                    return $t
-                }
-
-            }
-            
-            return $null
-        } catch {
-            Write-Error $_.Exception.Message
-        }
-
-        return $null
-    }
-
-    [object] GetResult([string]$cmdname) { #TODO refactor to return PSCDPResult object
-
-        $cmd = $this.GetCommand($cmdname)
-
-        if ( $null -eq $cmd ) {
-            return $null
-        }
-
-        return $this.GetResultByCmd($cmd)
     }
 
     [PSCDPCommand] SendCdpCommand([PSCDPCommand]$cmd) {
@@ -1856,13 +1821,15 @@ class PSCDP {
         if ( $targetCreated ) { # add target to list
             $targetInfo = $msg.params.targetInfo
 
-            # anchor
             if ( $targetInfo.type -eq "page" ) {
                 $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
                 $this.targets.Add($targetInfo)
 
-                $this.AddQueue( @{ method="Target.attachToTarget"; params=@{ targetId=$targetInfo.targetId; flatten=$true }; } )
+                $this.AddQueue( @{ 
+                    method="Target.attachToTarget"; 
+                    params=@{ targetId=$targetInfo.targetId; flatten=$true }; 
+                } )
 
                 if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
                     $this.pubnubTarget = $targetInfo
@@ -1873,7 +1840,7 @@ class PSCDP {
 
         if ( $attachedToTarget ) { # update sessionId
             $targetInfo = $msg.params.targetInfo
-            $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
+            $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
             $targetInfo.sessionId = $sessionId
 
@@ -1894,7 +1861,6 @@ class PSCDP {
 
         if ( $targetDestroyed ) {
             $targetInfo = $msg.params.targetInfo
-            $targetInfo = [PSCDPTarget]::GetPSCustomObject($targetInfo)
 
             $index = $this.targets.FindIndex( { $_.targetId -eq $targetInfo.targetId } )
 
@@ -1981,13 +1947,21 @@ class PSCDP {
         }
     }
 
-    [void] SendPBMessage([hashtable]$cmd) {
+    [void] SendPBMessage([hashtable]$pbmsg) {
 
-        if ( [string]::IsNullOrEmpty($this.pubnubTarget.executionContextId) ) {
-            throw 'executionContextId is empty'
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return
         }
 
-        $json = $cmd | ConvertTo-Json -Depth 10 # TODO wrap in try catch and report error as needed
+        if ( $null -eq $this.pubnubTarget ) {
+            return
+        }
+
+        if ( [string]::IsNullOrEmpty($this.pubnubTarget.executionContextId) ) {
+            return
+        }
+
+        $json = $pbmsg | ConvertTo-Json -Depth 10 # TODO wrap in try catch and report error as needed
         $tbytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $jsonb = "`"" + [System.Convert]::ToBase64String($tbytes) + "`""
 
@@ -1997,19 +1971,16 @@ class PSCDP {
             returnByValue=$true
         }
 
-        $msg = @{ 
+        $cmd = $this.AddQueue( @{ 
             method="Runtime.callFunctionOn"; 
             params=$params; 
             target=$this.pubnubTarget; 
             callback=$script:SendPBMessage_callback; 
-            isbroadcast=$false 
-        }
+        } )
 
-        $cdpcmd = $this.AddQueue( $msg )
-
-        if ( $cmd.ContainsKey('builtincmd') -and $cmd['builtincmd'] -eq "SendBroadcast" ) {
-            $msg['isbroadcast'] = $true
-            $this.broadcasts.Add($cdpcmd)
+        if ( $pbmsg.ContainsKey('builtincmd') -and $pbmsg['builtincmd'] -eq "SendBroadcast" ) {
+            $cmd.isbroadcast = $true
+            $this.broadcasts.Add($cmd)
         }
     }
 
@@ -2022,6 +1993,8 @@ class PSCDP {
         if ( $null -eq $this.pubnubTarget ) {
             return
         }
+
+        $this.console_log_check = $false
 
         $params = @{
             expression="(function() { console.log(`"PubNub Status Notification -- Successfully connected from pscdp.relay.ps1 -- "+ $(Get-Timestamp) + " `"); return " + $(Get-Random -Minimum 1 -Maximum 100) + "; })()"
@@ -2056,11 +2029,6 @@ class PSCDP {
             throw [PSCDPException]::new("pubnub target null", $true)
         }
 
-        if ( ! $target.addbinding_ok ) {
-            throw [PSCDPException]::new("pubnub target in incorrect state -- addbinding_ok=$($target.addbinding_ok)", $true)
-        } elseif ( [string]::IsNullOrEmpty($target.executionContextId) ) {
-            throw [PSCDPException]::new("pubnub target in incorrect state -- executionContextId=$($target.executionContextId)", $true)
-        }
 
         $cmd = @{
             builtincmd="SendBroadcast"
@@ -2073,16 +2041,19 @@ class PSCDP {
         $this.SendPBMessage($cmd)
     }
 
-
-    # TODO incomplete
+    # anchor
     [void] LogState() {
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
         $msgstrs += "sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count)"
         $msgstrs += "responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
         $msgstrs += "broadcasts sent: $($this.broadcasts.Count) received: $($this.broadcastresponses.Count) errors: $($this.broadcasterrors.Count)"
+        $msgstrs += "version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)"
        
         if ( $null -ne $this.pubnubTarget) {
+       
+            $msgstrs += "pbpings sent: $($this.pbpings.Count) received: $($this.pbpingresponses.Count) errors: $($this.pbpingerrors.Count)"
+
             $msgstrs += "pbmsgs: $($this.pubnubmsgs.Count)"
             $msgstrs += "console.log: $($this.pubnubTarget.console_log_check)"
             $msgstrs += "addbinding_ok: $($this.pubnubTarget.addbinding_ok)"
