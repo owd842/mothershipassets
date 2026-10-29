@@ -1391,7 +1391,8 @@ class PSCDP {
     $result = $null
 
     [bool] IsSystemOk() {
-        foreach ($item in $this.GetSystemHealth().GetEnumerator()) {
+        $syshealth = $this.GetSystemHealth()
+        foreach ($item in $syshealth.GetEnumerator()) {
             if ( ! $item.Value ) {
                 Log-Msg "System not ok: $($item.Key)"
                 return $false
@@ -2076,7 +2077,8 @@ class PSCDP {
         Log-Msg $msgstr
     }
 
-    static [void] Iterate([ref]$cdpobj, [bool]$broadcast) {
+    static [void] Iterate([ref]$tcdpobj, [bool]$broadcast) {
+        $cdpobj = $tcdpobj.Value
         $cdpobj.LogState()
 
         $systemok = $cdpobj.IsSystemOk()
@@ -2085,6 +2087,7 @@ class PSCDP {
             Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
             
             $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
+            $tcdpobj.Value = $cdpobj
             $cdpobj.ConnectCdp()
 
             $systemok = $cdpobj.IsSystemOk()
