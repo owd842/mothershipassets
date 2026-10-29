@@ -2,7 +2,7 @@
 # https://orgfarm-bd12a2161b-dev-ed.develop.my.salesforce-sites.com/services/apexrest/StorageVault/client_pubnub
 
 # Emulation.setFocusEmulationEnabled
-Wait-Debugger
+# Wait-Debugger
 
 Add-Type -AssemblyName System.Web
 Set-Location -LiteralPath (Split-Path -Parent -Path $MyInvocation.MyCommand.Definition)
@@ -478,6 +478,8 @@ class PSCDPTarget {
     [byte[]]$pngBytes
 
     # set when result arrives with success
+    $addbinding_ts = $null              # set before call  to addBinding
+    $addbinding_ts_ok = $null           # set after call  to addBinding
     $addbinding_ok = $false             # Runtime.addBinding
     $runtime_enable_ok = $false         # Runtime.enable
     $emulation_enable_ok = $false       # Emulation.setFocusEmulationEnabled
@@ -550,7 +552,7 @@ $script:browserversion_callback = {
         [object]$Response, [PSCDP]$cdpobj
     )
 
-    $cdpobj.browserversion = $Response
+    $cdpobj.browserversion = $Response.result
 
     $cdpobj.versionresponses.Add($Response)
 
@@ -577,15 +579,6 @@ $script:SendPBMessage_callback = {
         [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
     
-    if ( $Response.cmd.isbroadcast ) {
-
-        $cdpobj.broadcastresponses.Add($Response)
-        
-        if ( $Response.iserror ) {
-            $cdpobj.broadcasterrors.Add($Response)
-        }
-
-    }
 }
 
 $script:runtime_evaluate_callback = {
@@ -602,7 +595,10 @@ $script:runtime_addBinding_callback = {
 
     $target = $Response.cmd.target
 
-    $target.addbinding_ok = $true
+    if ( ! $Response.cmd.iserror ) {
+        $target.addbinding_ok = $true
+        $target.addbinding_ts_ok = Get-Date
+    }
 }
 
 $script:emulation_enable_callback = {
@@ -838,7 +834,16 @@ $script:BroadcastMsg_callback = {
         [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
 
-    if ( ! $Response.iserror ) {
+    if ( ! $Response.cmd.isbroadcast ) {
+        # TODO throw error -- wrong callback specified
+        return
+    }
+
+    $cdpobj.broadcastresponses.Add($Response)
+    
+    if ( $Response.iserror ) {
+        $cdpobj.broadcasterrors.Add($Response)
+    } else {
         $cdpobj.broadcastcheck = 0
     }
 
@@ -1390,16 +1395,18 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
-    [bool] IsSystemOk() {
+    [hashtable] IsSystemOk() {
         $syshealth = $this.GetSystemHealth()
+        $syshealth['issystemok'] = $true
+
         foreach ($item in $syshealth.GetEnumerator()) {
             if ( ! $item.Value ) {
-                Log-Msg "System not ok: $($item.Key)"
-                return $false
+                $syshealth['issystemok'] = $false
+                return $syshealth
             }
         }
 
-        return $true
+        return $syshealth
     }
 
     [hashtable] GetSystemHealth() {
@@ -1429,8 +1436,12 @@ class PSCDP {
     }
 
     [bool] IsConnectionOk() {
-        
-        if ( $this.versionchecksn -le 2 ) {
+
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return $true
+        }
+
+        if ( $this.versionchecksn -le 3 ) {
             return $true
         }
 
@@ -1454,6 +1465,20 @@ class PSCDP {
 
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
             return $true    
+        }
+
+        if ( $null -eq $this.pubnubTarget ) {
+            return $false
+        }
+
+        if ( $null -eq $this.pubnubTarget.addbinding_ts ) {
+            return $true
+        }
+
+        $e = ($(Get-Date) - $this.pubnubTarget.addbinding_ts).TotalSeconds
+
+        if ( $e -le 100 ) {
+            return $true
         }
 
         if ( ! $this.pubnubTarget.addbinding_ok ) {
@@ -1486,12 +1511,14 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $ttargets = $this.GetTargets()
+        $ttargets = $this.GetTargets() # anchor
         
         $this.targets = $ttargets
 
         if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
-            $twsUri = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1).webSocketDebuggerUrl
+            $targetInfo = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1)
+            $this.pubnubTarget = $targetInfo
+            $twsUri = $targetInfo.webSocketDebuggerUrl
         } else {
             $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
         }
@@ -1540,7 +1567,7 @@ class PSCDP {
         } else {
             Log-Msg "reconnecting to cdp on [$($this.wsUri)]"
         }
-    
+
         $this.websocket = New-Object System.Net.WebSockets.ClientWebSocket
 
         $connectTask = $this.websocket.ConnectAsync($this.wsUri, [System.Threading.CancellationToken]::None)
@@ -1704,7 +1731,7 @@ class PSCDP {
             return
         }
         
-        ProcessMessage($msg)
+        $this.ProcessMessage($msg)
     }
 
     [void] ProcessMessage([PSCustomObject]$msg) {
@@ -1837,7 +1864,13 @@ class PSCDP {
             if ( $targetInfo.type -eq "page" ) {
                 $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
-                $this.targets.Add($targetInfo)
+                $ptarget = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
+
+                if ( $null -eq $ptarget ) {
+                    $this.targets.Add($targetInfo)
+                } else {
+                    $targetInfo = $ptarget
+                }
 
                 $this.AddQueue( @{ 
                     method="Target.attachToTarget"; 
@@ -1956,6 +1989,7 @@ class PSCDP {
         }
         
         if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) -and $target.url -eq $this.pubnuburl -and $target.addbinding_ok -eq $false -and $target.targetId -eq $this.pubnubTarget.targetId) {
+            $this.pubnubTarget.addbinding_ts = Get-Date
             $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
         }
     }
@@ -2045,7 +2079,7 @@ class PSCDP {
 
     [void] Broadcast() {
 
-        $cmd = @{
+        $msg = @{
             builtincmd="SendBroadcast"
             source="pscdp.relay.ps1"
             destination="BROADCAST"
@@ -2053,24 +2087,29 @@ class PSCDP {
             cmdid=$(Get-Random -Minimum 10000000 -Maximum 100000000)
         }
 
-        $this.SendPBMessage($cmd)
+        $this.SendPBMessage($msg)
     }
 
     [void] LogState() {
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
-        $msgstrs += "sendQueue: $($this.sendQueue.Count) commands: $($this.commands.Count)"
-        $msgstrs += "responses: $($this.responses.Count) results: $($this.results.Count) errors: $($this.errors.Count)"
-        $msgstrs += "broadcasts sent: $($this.broadcasts.Count) received: $($this.broadcastresponses.Count) errors: $($this.broadcasterrors.Count)"
-        $msgstrs += "version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)"
+        $msgstrs += "[sendQueue: $($this.sendQueue.Count)]"
+        $msgstrs += "[responses: $($this.responses.Count)]"
+        $msgstrs += "[commands: $($this.commands.Count) results: $($this.results.Count) errors: $($this.errors.Count)]"
        
         if ( $null -ne $this.pubnubTarget) {
-       
-            $msgstrs += "pbpings sent: $($this.pbpings.Count) received: $($this.pbpingresponses.Count) errors: $($this.pbpingerrors.Count)"
+            $msgstrs += "[version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)]"
 
-            $msgstrs += "pbmsgs: $($this.pubnubmsgs.Count)"
-            $msgstrs += "addbinding_ok: $($this.pubnubTarget.addbinding_ok)"
-            $msgstrs += "executionContextId: $($this.pubnubTarget.executionContextId)"
+            $msgstrs += "[broadcasts sent: $($this.broadcasts.Count) received: $($this.broadcastresponses.Count) errors: $($this.broadcasterrors.Count)]"
+       
+            $msgstrs += "[pbpings sent: $($this.pbpings.Count) received: $($this.pbpingresponses.Count) errors: $($this.pbpingerrors.Count)]"
+
+            $msgstrs += "[pbmsgs: $($this.pubnubmsgs.Count)]"
+            
+            $e = ( $this.pubnubTarget.addbinding_ts_ok - $this.pubnubTarget.addbinding_ts ).TotalSeconds
+            $msgstrs += "[addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
+
+            $msgstrs += "[executionContextId: $($this.pubnubTarget.executionContextId)]"
         }
 
         $msgstr = $msgstrs -join " "
@@ -2081,18 +2120,19 @@ class PSCDP {
         $cdpobj = $tcdpobj.Value
         $cdpobj.LogState()
 
-        $systemok = $cdpobj.IsSystemOk()
+        $check = $cdpobj.IsSystemOk()
 
-        if ( ! $systemok ) {
+        if ( ! $check['issystemok'] ) {
+            Log-Msg ( $check | Out-String )
             Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
             
             $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
             $tcdpobj.Value = $cdpobj
             $cdpobj.ConnectCdp()
 
-            $systemok = $cdpobj.IsSystemOk()
+            $check = $cdpobj.IsSystemOk()
             
-            if ( ! $systemok ) {
+            if ( ! $check['issystemok'] ) {
                 throw [PSCDPException]::new('pubnubws system not ok -- skipping to next iteration')
             }
 
@@ -2163,10 +2203,11 @@ while ( $true ) {
     }
 
     Start-Sleep -Milliseconds $d
-    $i++
-
+    
     if ( $i -ge $n ) {
         $i = 0
+    } else {
+        $i++
     }
 }
 
