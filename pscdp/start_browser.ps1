@@ -105,7 +105,7 @@ function LaunchBrowser {
 
 
 $launch_chrome = {
-    param([string]$debugport = "9223")
+    param([string]$debugport = "9223", [string]$chromepath)
 
     $ungoogled_paths = @(
         "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",

