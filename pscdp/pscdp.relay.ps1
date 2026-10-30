@@ -1532,6 +1532,10 @@ class PSCDP {
             $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
         }
 
+        if ( [string]::IsNullOrEmpty($twsUri) ) {
+            throw "wsuri is null"
+        }
+
         $twsUri = New-Object System.Uri($twsUri)
 
         $this.wsUri = $twsUri
@@ -2115,7 +2119,12 @@ class PSCDP {
 
             $msgstrs += "[pbmsgs: $($this.pubnubmsgs.Count)]"
             
-            $e = ( $this.pubnubTarget.addbinding_ts_ok - $this.pubnubTarget.addbinding_ts ).TotalSeconds
+            if ( ( ! $null -eq $this.pubnubTarget.addbinding_ts_ok ) -and ( ! $null -eq $this.pubnubTarget.addbinding_ts ) ) {
+                $e = ( $this.pubnubTarget.addbinding_ts_ok - $this.pubnubTarget.addbinding_ts ).TotalSeconds
+            } else {
+                $e = -1
+            }
+
             $msgstrs += "[addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
 
             $msgstrs += "[executionContextId: $($this.pubnubTarget.executionContextId)]"
@@ -2127,41 +2136,41 @@ class PSCDP {
 
     static [void] Iterate([hashtable]$tcdpobj) {
         $cdpobj = $tcdpobj['cdpobj']
+        $check = $tcdpobj['systemcheck']
+        $broadcast = $tcdpobj['broadcast']
+        $delay = $tcdpobj['delay']
 
-        $check = $cdpobj['systemcheck']
-        
         if ( $null -eq $check ) {
             $check = $cdpobj.IsSystemOk()
         }
 
         if ( ! $check['issystemok'] ) {
-            $delay = $tcdpobj['delay']
             
             if ( $delay -eq -1 ) {
                 $checkstr = ($check.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '|'
-                Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
+                Log-Msg "$($cdpobj.wsname) system not ok"
                 Log-Msg $checkstr
 
                 $delay = 5
             } elseif ( $delay -gt 0 ) {
+                Log-Msg "$($cdpobj.wsname) -- $delay remaining"
+
                 $delay -= 1
             } 
 
+            $tcdpobj['delay'] = $delay
+
             if ( $delay -gt 0 ) {
                 return
+            } else {
+                $tcdpobj['delay'] = -1
             }
 
-            $delay = -1
-            
+            Log-Msg "$($cdpobj.wsname) -- connecting"
+
             $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
             $tcdpobj['cdpobj'] = $cdpobj
             $cdpobj.ConnectCdp()
-
-            $check = $cdpobj.IsSystemOk()
-            
-            if ( ! $check['issystemok'] ) {
-                throw [PSCDPException]::new('pubnubws system not ok -- skipping to next iteration')
-            }
 
         } else {
             $cdpobj.LogState()
@@ -2246,7 +2255,7 @@ while ( $true ) {
     try {
         $script:clientit['broadcast'] = ( $i -ge $n )
 
-        [PSCDP]::Iterate($script:clientit, ( $i -ge $n ))
+        [PSCDP]::Iterate($script:clientit)
     } catch {
         Log-Msg $_
     }
