@@ -110,11 +110,14 @@ $launch_chrome = {
     $ungoogled_paths = @(
         "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",
         "ungoogled-chromium_155.0.8059.79-1.1_windows_x64",
-        "ungoogled-chromium_155.0.8059.39-1.1_windows_x64"
+        "ungoogled-chromium_155.0.8059.39-1.1_windows_x64",
+        "ungoogled-chromium_156.0.8078.47-1.1_windows_x64"
     )
 
     if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
         $rootpath = "C:\Binaries"
+    } elseif ( $env:USERNAME -eq 'CAT2022' ) {
+        $rootpath = "C:\ProgramData\owd\uchrome"
     } else {
         $rootpath = "Z:\Users\$($env:USERNAME)\AppData\Local\uchrome"
     }
@@ -163,6 +166,15 @@ $launch_vivaldi = {
 
     $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Vivaldi-bin\vivaldi.exe"
 
+    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+        $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Application\vivaldi.exe"
+    }
+
+
+    if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+        throw '$path not found'
+    }
+
     if ( [string]::IsNullOrWhiteSpace($datadir) ) {
         $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\msedge-test"
     }
@@ -187,5 +199,11 @@ if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
 }
 
 if ( ! ( IsBrowserRunning "msedge.exe" $msedge_port ) ) {
-    & $launch_msedge $msedge_port
+
+    if ( $env:USERNAME -eq 'CAT2022' ) {
+        & $launch_vivaldi $msedge_port
+    } else {
+        & $launch_msedge $msedge_port
+    }
+
 }
