@@ -1,4 +1,5 @@
 // 20261016-1619
+debugger;
 
 const https = require("node:https");
 const fs = require("node:fs");
@@ -36,13 +37,15 @@ function getCallerInfo() {
   return null;
 }
 
-function logmsg(msg) {
+function logmsg(msg, obj) {
 
     const caller = getCallerInfo();
     const prefix = caller ? `[${caller.methodName}:${caller.lineNumber}]` : '[unknown]';
 
     if (typeof msg === 'string') {
         console.log(prefix + '|' + msg);
+        if ( obj )
+            console.log(obj);
     }
 }
 
@@ -246,7 +249,7 @@ function processIncommingMsg(messageEvent) {
     let decoded = null;
 
     if ( theaders["content-encoding"] === "gzip" ) {
-        console.log("info: unzipping response");
+        logmsg("info: unzipping response");
         decoded = zlib.gunzipSync(bodybytes);
         bodybytes = decoded;
     }
@@ -305,7 +308,7 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
         messagePayload.istimeout = false;
 
         const timeout = setTimeout(() => {
-            console.log('error: message timedout');
+            logmsg('error: message timedout');
             pubnub.removeListener(listener);
             messagePayload.istimeout = true;
             reject(new Error(`Timeout: No response received within ${timeoutMs}ms`));
@@ -315,7 +318,7 @@ async function sendMessageAsync(messagePayload, timeoutMs = 500000) {
             message: (event) => {
 
                 if (event.channel === RESPONSE_CHANNEL && event.message.requestId === requestId) {
-                    console.log('info: message send success, removing listener');
+                    logmsg('info: message send success, removing listener');
 
                     messagePayload.listen_state = 'cleared';
 
@@ -461,7 +464,7 @@ function forwardPostRequest(req, res) {
 
     req.on("end", () => {
         // const rawBody = Buffer.concat(bodyChunks).toString();
-        // console.log(`Raw Body Payload: ${rawBody}`);
+        // logmsg(`Raw Body Payload: ${rawBody}`);
 
         forwardRequest(req, bodyChunks);
 
@@ -475,10 +478,10 @@ function forwardPostRequest(req, res) {
 
 const options = {
     key: fs.readFileSync(
-        "C:\\MAIN\\WORKING\\hacking_WORK\\DevOps\\git_repo\\mothershipassets\\pscdp\\nodecdpproxy\\key.pem"
+        __dirname + "\\key.pem"
     ),
     cert: fs.readFileSync(
-        "C:\\MAIN\\WORKING\\hacking_WORK\\DevOps\\git_repo\\mothershipassets\\pscdp\\nodecdpproxy\\cert.pem"
+        __dirname + "\\cert.pem"
     ),
 };
 
@@ -489,7 +492,7 @@ const server = https.createServer(options, (req, res) => {
     logmsg(`Headers: ${req.headers}`);
 
     req.on("error", (err) => {
-        console.error("Request stream error:", err);
+        logmsg("Request stream error:", err);
     });
 
     if (req.method.toLowerCase() == "POST".toLowerCase()) {
@@ -501,5 +504,5 @@ const server = https.createServer(options, (req, res) => {
 
 const PORT = 8443;
 server.listen(PORT, () => {
-    console.log(`HTTPS server running at https://localhost:${PORT}`);
+    logmsg(`HTTPS server running at https://localhost:${PORT}`);
 });

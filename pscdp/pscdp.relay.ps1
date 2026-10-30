@@ -1425,6 +1425,14 @@ class PSCDP {
             return $true
         }
 
+        if ( ! $null -eq $this.webSocket ) {
+            try { 
+                $this.webSocket.Dispose(); 
+            } catch { 
+                Log-Msg $_
+            }
+        }
+        
         return $false
     }
 
@@ -1455,7 +1463,7 @@ class PSCDP {
             return $true    
         }
 
-        if ( $this.broadcastcheck -le 2 ) {
+        if ( $this.broadcastcheck -le 10 ) {
             return $true
         }
 
@@ -1559,7 +1567,7 @@ class PSCDP {
     }
 
     [void] ConnectCdp() {
-        Log-Msg "new CDP connection at $($this.debugport)"
+        Log-Msg "[$($this.wsname)] attempting new CDP connection at $($this.debugport)"
 
         $this.wsUri = $this.GetWSUrI()
 
