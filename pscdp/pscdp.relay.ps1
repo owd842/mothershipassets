@@ -2125,20 +2125,36 @@ class PSCDP {
         Log-Msg $msgstr
     }
 
-    static [void] Iterate([ref]$tcdpobj, [bool]$broadcast) {
-        $cdpobj = $tcdpobj.Value
-        $cdpobj.LogState()
+    static [void] Iterate([hashtable]$tcdpobj) {
+        $cdpobj = $tcdpobj['cdpobj']
 
-        $check = $cdpobj.IsSystemOk()
+        $check = $cdpobj['systemcheck']
+        
+        if ( $null -eq $check ) {
+            $check = $cdpobj.IsSystemOk()
+        }
 
         if ( ! $check['issystemok'] ) {
-            $checkstr = ($check.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '|'
+            $delay = $tcdpobj['delay']
+            
+            if ( $delay -eq -1 ) {
+                $checkstr = ($check.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '|'
+                Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
+                Log-Msg $checkstr
 
-            Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
-            Log-Msg $checkstr
+                $delay = 5
+            } elseif ( $delay -gt 0 ) {
+                $delay -= 1
+            } 
+
+            if ( $delay -gt 0 ) {
+                return
+            }
+
+            $delay = -1
             
             $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
-            $tcdpobj.Value = $cdpobj
+            $tcdpobj['cdpobj'] = $cdpobj
             $cdpobj.ConnectCdp()
 
             $check = $cdpobj.IsSystemOk()
@@ -2148,6 +2164,7 @@ class PSCDP {
             }
 
         } else {
+            $cdpobj.LogState()
 
             $cdpobj.InitReceive()
             $cdpobj.ReadMessage()
@@ -2193,6 +2210,22 @@ $keyboardlogger = {
 # $ps = [powershell]::Create().AddScript($keyboardlogger)
 # $asyncResult = $ps.BeginInvoke()
 
+
+$script:pubnubit = @{
+    "cdpobj" = $script:pubnubws
+    "broadcast" = $false
+    "systemcheck" = $null
+    "delay" = -1
+}
+
+$script:clientit = @{
+    "cdpobj" = $script:clientws
+    "broadcast" = $false
+    "systemcheck" = $null
+    "delay" = -1
+}
+
+
 $d = 250
 $n = 50
 $i = 0
@@ -2202,13 +2235,18 @@ while ( $true ) {
     Log-Msg "new iteration -- $($i+1)/$n"
 
     try {
-        [PSCDP]::Iterate($script:pubnubws, ( $i -ge $n ))
+        $script:pubnubit['broadcast'] = ( $i -ge $n )
+
+        [PSCDP]::Iterate($script:pubnubit)
+
     } catch {
         Log-Msg $_
     }
 
     try {
-        [PSCDP]::Iterate($script:clientws, ( $i -ge $n ))
+        $script:clientit['broadcast'] = ( $i -ge $n )
+
+        [PSCDP]::Iterate($script:clientit, ( $i -ge $n ))
     } catch {
         Log-Msg $_
     }
