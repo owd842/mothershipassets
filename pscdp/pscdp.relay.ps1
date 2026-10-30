@@ -1302,6 +1302,7 @@ function Process-PubNubEvent {
     $cmd = $payload.message
 
     if ( $null -ne $cmd ) {
+        $cmd = Transform-PSCustomObject($cmd)
         Process-BuiltInCommand($cmd)
     }
 
@@ -2123,8 +2124,10 @@ class PSCDP {
         $check = $cdpobj.IsSystemOk()
 
         if ( ! $check['issystemok'] ) {
-            Log-Msg ( $check | Out-String )
+            $checkstr = ($check.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '|'
+
             Log-Msg "$($cdpobj.wsname) system not ok -- connecting"
+            Log-Msg $checkstr
             
             $cdpobj = [PSCDP]::new($cdpobj.debugport, $cdpobj.pubnuburl, $cdpobj.wsname)
             $tcdpobj.Value = $cdpobj
