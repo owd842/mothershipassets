@@ -484,6 +484,8 @@ class PSCDPTarget {
     $runtime_enable_ok = $false         # Runtime.enable
     $emulation_enable_ok = $false       # Emulation.setFocusEmulationEnabled
 
+    $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
+
     [hashtable] GetDict() {
         $ht = @{
             title=$this.title
@@ -553,7 +555,7 @@ $script:browserversion_callback = {
     )
 
     $cdpobj.browserversion = $Response.result
-
+$true
     $cdpobj.versionresponses.Add($Response)
 
     if ( $Response.iserror ) {
@@ -1359,8 +1361,8 @@ class PSCDP {
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
 
-    $responses = [System.Collections.Generic.List[hashtable]]::new() # TODO refactor to pscustomobject or hashtable
-    $results = [System.Collections.Generic.List[object]]::new() # TODO refactor to PSCDPResult
+    $responses = [System.Collections.Generic.List[hashtable]]::new() 
+    $results = [System.Collections.Generic.List[PSCDPResult]]::new() 
     $errors = [System.Collections.Generic.List[hashtable]]::new() 
 
     $broadcasts = [System.Collections.Generic.List[PSCDPCommand]]::new()
@@ -1520,7 +1522,7 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $ttargets = $this.GetTargets() # anchor
+        $ttargets = $this.GetTargets()
         
         $this.targets = $ttargets
 
@@ -1812,7 +1814,9 @@ class PSCDP {
             $cmd = $this.GetCommandByID($msg.id)
             
             if ( $null -ne $cmd ) {
-                $cmd.response = [PSCDPResult]::Create($msght)
+                $tresult = [PSCDPResult]::Create($msght)
+                $this.results.Add($tresult)
+                $cmd.response = $tresult
                 $cmd.response.cmd = $cmd
                 $cmd.iserror = $iserror
             }
@@ -1956,11 +1960,17 @@ class PSCDP {
 
         if ( $null -eq $target -and ( ! [string]::IsNullOrEmpty($targetid) ) ) {
             $target = $this.GetTarget($targetid)
-            $cmd.target = $target
         }
 
         if ( $null -ne $target -and ( [string]::IsNullOrEmpty($targetid) ) ) {
-            $cmd.target = $target
+            $targetid = $target.targetId
+        }
+
+        $cmd.target = $target
+        $cmd.targetid = $targetid
+
+        if ( $null -ne $target ) {
+            $target.commands.Add($cmd)
         }
 
         $cmd = $this.SendCdpCommand($cmd)
@@ -2125,7 +2135,7 @@ class PSCDP {
                 $e = -1
             }
 
-            $msgstrs += "[addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
+            $msgstrs += "[runtime_enable_ok:$($this.pubnubTarget.runtime_enable_ok) addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
 
             $msgstrs += "[executionContextId: $($this.pubnubTarget.executionContextId)]"
         }

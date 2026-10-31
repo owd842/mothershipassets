@@ -111,7 +111,8 @@ $launch_chrome = {
         "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",
         "ungoogled-chromium_155.0.8059.79-1.1_windows_x64",
         "ungoogled-chromium_155.0.8059.39-1.1_windows_x64",
-        "ungoogled-chromium_156.0.8078.47-1.1_windows_x64"
+        "ungoogled-chromium_156.0.8078.47-1.1_windows_x64",
+        "ungoogled-chromium_156.0.8078.73-1.1_windows_x64"
     )
 
     if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
