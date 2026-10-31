@@ -573,6 +573,8 @@ $script:runtime_enable_callback = {
 
     $target = $Response.cmd.target
 
+    $target = $cdpobj.GetTarget($target.targetId)
+
     $target.runtime_enable_ok = $true
 }
 
@@ -596,6 +598,8 @@ $script:runtime_addBinding_callback = {
     )
 
     $target = $Response.cmd.target
+
+    $target = $cdpobj.GetTarget($target.targetId)
 
     if ( ! $Response.cmd.iserror ) {
         $target.addbinding_ok = $true
@@ -621,6 +625,7 @@ $script:captureScreenshot_callback = {
 
     $cmd = $Response.cmd.builtincmd
     $target = $Response.cmd.target
+    $target = $cdpobj.GetTarget($target.targetId)
 
     $resultout = @{
         builtincmd=$cmd.builtincmd
@@ -1474,6 +1479,8 @@ class PSCDP {
 
     [bool] IsPBConnectOk() {
 
+        $this.pubnubTarget = $this.GetPBTarget()
+
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
             return $true    
         }
@@ -1527,8 +1534,7 @@ class PSCDP {
         $this.targets = $ttargets
 
         if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
-            $targetInfo = ($ttargets | Where-Object { $_.url -eq $this.pubnuburl } | Select-Object -First 1)
-            $this.pubnubTarget = $targetInfo
+            $targetInfo = $this.GetPBTarget()
             $twsUri = $targetInfo.webSocketDebuggerUrl
         } else {
             $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
@@ -1618,6 +1624,18 @@ class PSCDP {
         return $cmd
     }
 
+    [PSCDPTarget] GetPBTarget() {
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            throw 'pubnuburl missing'
+        }
+
+        $pbtarget = $this.targets | Where-Object {
+            $_.url -eq $this.pubnuburl
+        }
+
+        return $pbtarget
+    }
+    
     [PSCDPTarget] GetTarget($targetId) {
         $target = $this.targets | Where-Object { $_.targetId -eq $targetId } | Select-Object -First 1
 
@@ -2114,6 +2132,8 @@ class PSCDP {
     }
 
     [void] LogState() {
+        $this.pubnubTarget = $this.GetPBTarget()
+        
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
         $msgstrs += "[sendQueue: $($this.sendQueue.Count)]"
@@ -2262,6 +2282,7 @@ while ( $true ) {
         Log-Msg $_
     }
 
+<#
     try {
         $script:clientit['broadcast'] = ( $i -ge $n )
 
@@ -2269,6 +2290,7 @@ while ( $true ) {
     } catch {
         Log-Msg $_
     }
+#>
 
     Start-Sleep -Milliseconds $d
     
