@@ -472,7 +472,8 @@ class PSCDPTarget {
     [string]$browserContextId
     # [string]$pid # TODO fix this is reserved keyword in powershell
     [int32]$executionContextId = -1 # needed to execute Runtime.callFunctionOn 
-    
+    [bool]$targetDestroyed = $false
+
     [string]$sessionId
 
     [byte[]]$pngBytes
@@ -1444,7 +1445,7 @@ class PSCDP {
     }
 
     [bool] IsPBPingOk() {
-        if ( $this.pbpingcheck -le 2 ) {
+        if ( $this.pbpingcheck -le 10 ) {
             return $true
         }
 
@@ -1479,11 +1480,11 @@ class PSCDP {
 
     [bool] IsPBConnectOk() {
 
-        $this.pubnubTarget = $this.GetPBTarget()
-
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
             return $true    
         }
+
+        $this.pubnubTarget = $this.GetPBTarget()
 
         if ( $null -eq $this.pubnubTarget ) {
             return $false
@@ -1925,29 +1926,34 @@ class PSCDP {
 
             $targetInfo.sessionId = $sessionId
 
-            $target = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
+            $ptarget = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
 
-            if ( $null -eq $target ) {
+            if ( $null -eq $ptarget ) {
                 $this.targets.Add($targetInfo)
             } else {
-                $target.sessionId = $sessionId
+                $targetInfo = $ptarget
             }
 
-            if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
-                $this.pubnubTarget = $targetInfo # ? should not be necessary
+            if ( ! [string]::IsNullOrEmpty($sessionId) ) {
+                $this.targets | ForEach-Object { $_.sessionId = $sessionId }
             }
 
             $this.LoadQueue($targetInfo)
         }
 
         if ( $targetDestroyed ) {
+            
             $targetInfo = $msg.params.targetInfo
+            $targetId = $targetInfo.targetId
 
-            $index = $this.targets.FindIndex( { $_.targetId -eq $targetInfo.targetId } )
+            if ( ![string]::IsNullOrEmpty($targetId) ) {
+                $target = $this.GetTarget($targetId)
 
-            if ( $index -ge 0 ) {
-                $this.targets.RemoveAt($index)
+                if ( ! $null -eq $target ) {
+                    $target.targetDestroyed = $true
+                }
             }
+
         }
 
     }
@@ -2017,6 +2023,7 @@ class PSCDP {
 
     [void] LoadQueue([PSCDPTarget]$target) {
 
+        $this.pubnubTarget = $this.GetPBTarget()
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
         # $this.sendQueue.Add( @{ method="Network.enable"; params=@{ enabled = $true } } )
         
@@ -2133,7 +2140,7 @@ class PSCDP {
 
     [void] LogState() {
         $this.pubnubTarget = $this.GetPBTarget()
-        
+
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
         $msgstrs += "[sendQueue: $($this.sendQueue.Count)]"
@@ -2151,11 +2158,13 @@ class PSCDP {
             
             if ( ( ! $null -eq $this.pubnubTarget.addbinding_ts_ok ) -and ( ! $null -eq $this.pubnubTarget.addbinding_ts ) ) {
                 $e = ( $this.pubnubTarget.addbinding_ts_ok - $this.pubnubTarget.addbinding_ts ).TotalSeconds
+            } elseif ( ! $null -eq $this.pubnubTarget.addbinding_ts_ok ) {
+                $e = $this.pubnubTarget.addbinding_ts_ok
             } else {
                 $e = -1
             }
 
-            $msgstrs += "[runtime_enable_ok:$($this.pubnubTarget.runtime_enable_ok) addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
+            $msgstrs += "[runtime_enable_ok: $($this.pubnubTarget.runtime_enable_ok) addbinding_ok: $($this.pubnubTarget.addbinding_ok) ts: $e]"
 
             $msgstrs += "[executionContextId: $($this.pubnubTarget.executionContextId)]"
         }
