@@ -201,7 +201,7 @@ if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
 
 if ( ! ( IsBrowserRunning "msedge.exe" $msedge_port ) ) {
 
-    if ( $env:USERNAME -eq 'CAT2022' ) {
+    if ( ($env:USERNAME -eq 'CAT2022') -or ($env:USERNAME -eq 'LC2022' ) ) {
         & $launch_vivaldi $msedge_port
     } else {
         & $launch_msedge $msedge_port
