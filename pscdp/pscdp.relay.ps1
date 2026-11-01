@@ -584,6 +584,7 @@ $script:SendPBMessage_callback = {
         [PSCDPResult]$Response, [PSCDP]$cdpobj
     )
     
+    Log-Msg "pass"
 }
 
 $script:runtime_evaluate_callback = {
@@ -1627,7 +1628,7 @@ class PSCDP {
 
     [PSCDPTarget] GetPBTarget() {
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
-            throw 'pubnuburl missing'
+            return $null
         }
 
         $pbtarget = $this.targets | Where-Object {
@@ -2064,6 +2065,8 @@ class PSCDP {
             return
         }
 
+        $this.pubnubTarget = $this.GetPBTarget()
+
         if ( $null -eq $this.pubnubTarget ) {
             return
         }
@@ -2155,15 +2158,19 @@ class PSCDP {
     }
 
     [void] LogState() {
-        $this.pubnubTarget = $this.GetPBTarget()
 
         $msgstrs = @()
         $msgstrs += "[$($this.wsname)]"
         $msgstrs += "[sendQueue: $($this.sendQueue.Count)]"
         $msgstrs += "[responses: $($this.responses.Count)]"
         $msgstrs += "[commands: $($this.commands.Count) results: $($this.results.Count) errors: $($this.errors.Count)]"
-       
+
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            $this.pubnubTarget = $this.GetPBTarget()
+        }
+
         if ( $null -ne $this.pubnubTarget) {
+            
             $msgstrs += "[version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)]"
 
             $msgstrs += "[broadcasts sent: $($this.broadcasts.Count) received: $($this.broadcastresponses.Count) errors: $($this.broadcasterrors.Count)]"
@@ -2307,7 +2314,7 @@ while ( $true ) {
         Log-Msg $_
     }
 
-<#
+
     try {
         $script:clientit['broadcast'] = ( $i -ge $n )
 
@@ -2315,7 +2322,7 @@ while ( $true ) {
     } catch {
         Log-Msg $_
     }
-#>
+
 
     Start-Sleep -Milliseconds $d
     
