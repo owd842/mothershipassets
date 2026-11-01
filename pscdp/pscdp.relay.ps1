@@ -421,7 +421,7 @@ class PSCDPResult {
 
         $tresult = $msght['result']
 
-        $obj.result = @{}
+        $obj.result = $msght
 
         if ( ( ! ($null -eq $tresult ) ) -and ( $tresult -is [pscustomobject] ) ) {
             $obj.result = Transform-PSCustomObject($tresult)
@@ -1471,7 +1471,7 @@ class PSCDP {
             return $true    
         }
 
-        if ( $this.broadcastcheck -le 10 ) {
+        if ( $this.broadcastcheck -le 3 ) {
             return $true
         }
 
@@ -1869,13 +1869,12 @@ class PSCDP {
 
             if ( $null -ne $target ) {
                 $target.executionContextId = $executionContextId
-            }
-
-            if ( $null -ne $this.pubnubTarget ) {
+            } elseif ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
                 $initorigin = [System.Uri]$this.pubnuburl
                 $initorigin = "$($initorigin.Scheme)://$($initorigin.Host)"
 
                 if ( $origin -eq $initorigin ) {
+                    $this.pubnubTarget = $this.GetPBTarget()
                     $this.pubnubTarget.executionContextId = $executionContextId
                 }
             }
@@ -1900,6 +1899,46 @@ class PSCDP {
             if ( $targetInfo.type -eq "page" ) {
                 $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
+                $skip = $false
+                if ( $targetInfo.url -like "*edge://newtab*" ) {
+                    $skip = $true
+                } elseif ( $targetInfo.url -like "*chrome://new-tab-page*" ) {
+                    $skip = $true
+                }
+
+                $ptarget = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
+
+                if ( ! $skip ) {
+                    if ( $null -eq $ptarget ) {
+                        $this.targets.Add($targetInfo)
+                    } else {
+                        $targetInfo = $ptarget
+                    }
+
+                    $this.AddQueue( @{ 
+                        method="Target.attachToTarget"; 
+                        params=@{ targetId=$targetInfo.targetId; flatten=$true }; 
+                    } )
+                }
+            }
+            
+        }
+
+        # Target.attachedToTarget
+        if ( $attachedToTarget ) { # update sessionId
+            $targetInfo = $msg.params.targetInfo
+            $targetInfo = [PSCDPTarget]::Create($targetInfo)
+
+            $skip = $false
+            if ( $targetInfo.url -like "*edge://newtab*" ) {
+                $skip = $true
+            } elseif ( $targetInfo.url -like "*chrome://new-tab-page*" ) {
+                $skip = $true
+            }
+
+            $targetInfo.sessionId = $sessionId
+
+            if ( ! $skip ) {
                 $ptarget = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
 
                 if ( $null -eq $ptarget ) {
@@ -1907,35 +1946,12 @@ class PSCDP {
                 } else {
                     $targetInfo = $ptarget
                 }
-
-                $this.AddQueue( @{ 
-                    method="Target.attachToTarget"; 
-                    params=@{ targetId=$targetInfo.targetId; flatten=$true }; 
-                } )
-
-                if ( ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) -and $targetInfo.url -eq $this.pubnuburl ) {
-                    $this.pubnubTarget = $targetInfo
-                }
             }
             
-        }
-
-        if ( $attachedToTarget ) { # update sessionId
-            $targetInfo = $msg.params.targetInfo
-            $targetInfo = [PSCDPTarget]::Create($targetInfo)
-
-            $targetInfo.sessionId = $sessionId
-
-            $ptarget = $this.targets | Where-Object { $_.targetId -eq $targetInfo.targetId } | Select-Object -First 1
-
-            if ( $null -eq $ptarget ) {
-                $this.targets.Add($targetInfo)
-            } else {
-                $targetInfo = $ptarget
-            }
-
             if ( ! [string]::IsNullOrEmpty($sessionId) ) {
-                $this.targets | ForEach-Object { $_.sessionId = $sessionId }
+                $this.targets | Where-Object {
+                    $_.targetId -eq $targetInfo.targetId
+                } | ForEach-Object { $_.sessionId = $sessionId }
             }
 
             $this.LoadQueue($targetInfo)
@@ -2158,8 +2174,8 @@ class PSCDP {
             
             if ( ( ! $null -eq $this.pubnubTarget.addbinding_ts_ok ) -and ( ! $null -eq $this.pubnubTarget.addbinding_ts ) ) {
                 $e = ( $this.pubnubTarget.addbinding_ts_ok - $this.pubnubTarget.addbinding_ts ).TotalSeconds
-            } elseif ( ! $null -eq $this.pubnubTarget.addbinding_ts_ok ) {
-                $e = $this.pubnubTarget.addbinding_ts_ok
+            } elseif ( ! $null -eq $this.pubnubTarget.addbinding_ts ) {
+                $e = $this.pubnubTarget.addbinding_ts
             } else {
                 $e = -1
             }
