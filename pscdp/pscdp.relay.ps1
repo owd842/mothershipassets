@@ -1363,7 +1363,7 @@ class PSCDP {
 
     [string]$wsname = $null
 
-    $sendQueue = [System.Collections.Concurrent.BlockingCollection[PSCDPCommand]]::new()
+    $sendQueue = [System.Collections.Generic.List[PSCDPCommand]]::new()
 
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
     $callbackcmds = [System.Collections.Generic.List[PSCDPCommand]]::new()
@@ -1990,11 +1990,24 @@ class PSCDP {
 
     [void] NextCmd() {
 
-        if ( $this.sendQueue.IsCompleted -or ( $this.sendQueue.Count -le 0 ) ) {
+        if ( $null -eq $this.sendQueue ) {
+            $this.sendQueue = [System.Collections.Generic.List[PSCDPCommand]]::new()
+        }
+
+        if ( $this.sendQueue.Count -le 0 ) {
             return
         }
         
-        $cmd = $this.sendQueue.Take()
+        $cmd = $this.sendQueue[0]
+        $this.sendQueue.RemoveAt(0)
+
+        if ( $cmd.builtincmd.builtincmd -eq 'GetTargets' ) {
+            Log-Msg "pass"
+        }
+
+        if ( $null -eq $cmd ) {
+            throw [PSCDPException]::new('cmd is null')
+        }
 
         $targetid = $cmd.targetid
         $target = $cmd.target
@@ -2034,6 +2047,10 @@ class PSCDP {
     [PSCDPCommand] AddQueue([hashtable]$msg) {
         $cmd = [PSCDPCommand]::Create($msg)
         $this.sendQueue.Add($cmd)
+
+        if ( $msg['isgettargets'] ) {
+            Log-Msg "pass"
+        }
 
         return $cmd
     }
@@ -2103,6 +2120,11 @@ class PSCDP {
             target=$this.pubnubTarget; 
             callback=$callbackfunc; 
             isbroadcast=$isbroadcast
+            isgettargets=( $pbmsg['builtincmd'] -eq 'GetTargets' )
+        }
+
+        if ( $pbmsg['builtincmd'] -eq 'GetTargets' ) {
+            Log-Msg "pass"
         }
 
         $cmd = $this.AddQueue( $cmd )
@@ -2298,7 +2320,7 @@ $script:clientit = @{
 
 
 $d = 250
-$n = 50
+$n = 25
 $i = 0
 
 while ( $true ) {
