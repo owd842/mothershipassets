@@ -107,12 +107,31 @@ function LaunchBrowser {
 $launch_chrome = {
     param([string]$debugport = "9223", [string]$chromepath)
 
+    $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
+
+    if ( ($env:COMPUTERNAME -eq "BWPCP511") -or ( $env:USERNAME -eq "CAT2022" ) ) {
+        $path = "C:\Users\$env:USERNAME\AppData\Local\uchrome\ungoogled-chromium-portable.exe"
+
+        if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+            $path = "C:\ProgramData\owd\uchrome\ungoogled-chromium-portable.exe"
+        }
+
+        if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
+            throw "$path not found"
+        }
+
+
+        LaunchBrowser $debugport $path $datadir
+        return
+    }
+
     $ungoogled_paths = @(
         "ungoogled-chromium_152.0.7977.82-1.1_windows_x64",
         "ungoogled-chromium_155.0.8059.79-1.1_windows_x64",
         "ungoogled-chromium_155.0.8059.39-1.1_windows_x64",
         "ungoogled-chromium_156.0.8078.47-1.1_windows_x64",
-        "ungoogled-chromium_156.0.8078.73-1.1_windows_x64"
+        "ungoogled-chromium_156.0.8078.73-1.1_windows_x64",
+        "ungoogled-chromium_156.0.8078.79-1.1_windows_x64"
     )
 
     if ( $env:COMPUTERNAME -eq "LAPTOP-638Q0G5V" ) {
@@ -145,7 +164,6 @@ $launch_chrome = {
             throw "$path does not exist"
     }
 
-    $datadir = "C:\Users\$($env:USERNAME)\AppData\Local\chrome-test"
 
     LaunchBrowser $debugport $path $datadir
 }
@@ -170,7 +188,6 @@ $launch_vivaldi = {
     if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
         $path = "C:\Users\$($env:USERNAME)\AppData\Local\vivaldi\Application\vivaldi.exe"
     }
-
 
     if ( ! ( Test-Path -Path $path -PathType Leaf ) ) {
         throw '$path not found'
@@ -201,7 +218,7 @@ if ( $env:COMPUTERNAME -eq "BWPCP506" ) {
 
 if ( ! ( IsBrowserRunning "msedge.exe" $msedge_port ) ) {
 
-    if ( ($env:USERNAME -eq 'CAT2022') -or ($env:USERNAME -eq 'LC2022' ) ) {
+    if ( ($env:USERNAME -eq 'CAT2022') ) {
         & $launch_vivaldi $msedge_port
     } else {
         & $launch_msedge $msedge_port
