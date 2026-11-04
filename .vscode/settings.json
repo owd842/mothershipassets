@@ -6,9 +6,6 @@
         "editor.renderWhitespace": "all"
     },
     "editor.renderWhitespace": "all",
-    "editor.folding": true,
-    "editor.foldingStrategy": "auto",
-    "editor.showFoldingControls": "always", // "mouseover",
     "editor.foldingImportsByDefault": false,
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,

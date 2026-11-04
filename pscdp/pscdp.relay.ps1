@@ -176,7 +176,7 @@ class PSCDPCommandException : System.Exception {
 }
 
 class PSCDPCommand {
-    [string]$name # TODO refactor and remove as it is not actually used anywhere
+    [string]$name
 
     [string]$sessionId
 
@@ -210,7 +210,6 @@ class PSCDPCommand {
     static [PSCDPCommand] Create([hashtable]$obj) {
         $out = [PSCDPCommand]::new()
         
-        $out.name = $obj.name
         $out.id = $obj.id
         $out.method = $obj.method
         $out.params = $obj.params
@@ -2001,10 +2000,6 @@ class PSCDP {
         $cmd = $this.sendQueue[0]
         $this.sendQueue.RemoveAt(0)
 
-        if ( $cmd.builtincmd.builtincmd -eq 'GetTargets' ) {
-            Log-Msg "pass"
-        }
-
         if ( $null -eq $cmd ) {
             throw [PSCDPException]::new('cmd is null')
         }
@@ -2047,10 +2042,6 @@ class PSCDP {
     [PSCDPCommand] AddQueue([hashtable]$msg) {
         $cmd = [PSCDPCommand]::Create($msg)
         $this.sendQueue.Add($cmd)
-
-        if ( $msg['isgettargets'] ) {
-            Log-Msg "pass"
-        }
 
         return $cmd
     }
@@ -2119,12 +2110,8 @@ class PSCDP {
             params=$params; 
             target=$this.pubnubTarget; 
             callback=$callbackfunc; 
-            isbroadcast=$isbroadcast
-            isgettargets=( $pbmsg['builtincmd'] -eq 'GetTargets' )
-        }
-
-        if ( $pbmsg['builtincmd'] -eq 'GetTargets' ) {
-            Log-Msg "pass"
+            isbroadcast=$isbroadcast;
+            name=$pbmsg['builtincmd']
         }
 
         $cmd = $this.AddQueue( $cmd )
