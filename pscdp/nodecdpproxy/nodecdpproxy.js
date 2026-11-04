@@ -206,12 +206,14 @@ function processIncommingMsg(messageEvent) {
         
         bodystr = result.body;
     } else {      
+        logmsg('result is chunked');
+
         chunkobj = result;
 
         let chunkcount = chunkobj.chunkcount;
         let chunkindex = chunkobj.chunkindex;
 
-        logmsg(`result is chunked: ${chunkcount} / ${chunkindex}`);
+        logmsg(`chunk: ${chunkcount} / ${chunkindex}`);
 
         if ( chunkindex == 0 ) {
             logmsg('requesturl: '+chunkobj.requesturl);
