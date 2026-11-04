@@ -478,6 +478,7 @@ class PSCDPTarget {
     [byte[]]$pngBytes
 
     # set when result arrives with success
+    $enable_init = $false
     $addbinding_ts = $null              # set before call  to addBinding
     $addbinding_ts_ok = $null           # set after call  to addBinding
     $addbinding_ok = $false             # Runtime.addBinding
@@ -485,6 +486,7 @@ class PSCDPTarget {
     $emulation_enable_ok = $false       # Emulation.setFocusEmulationEnabled
 
     $commands = [System.Collections.Generic.List[PSCDPCommand]]::new()
+    $consolecalls = [System.Collections.Generic.List[PSCDPResult]]::new()
 
     [hashtable] GetDict() {
         $ht = @{
@@ -555,7 +557,7 @@ $script:browserversion_callback = {
     )
 
     $cdpobj.browserversion = $Response.result
-$true
+
     $cdpobj.versionresponses.Add($Response)
 
     if ( $Response.iserror ) {
@@ -575,7 +577,9 @@ $script:runtime_enable_callback = {
 
     $target = $cdpobj.GetTarget($target.targetId)
 
-    $target.runtime_enable_ok = $true
+    if ( ! $null -eq $target ) {
+        $target.runtime_enable_ok = $true
+    }
 }
 
 $script:SendPBMessage_callback = {
@@ -1404,9 +1408,11 @@ class PSCDP {
     $totalbytecount = 0
     $result = $null
 
+    # TODO will return $true no matter what -- refactor to use console logs to check if target system is responsive
     [hashtable] IsSystemOk() {
         $syshealth = $this.GetSystemHealth()
         $syshealth['issystemok'] = $true
+        return $syshealth
 
         foreach ($item in $syshealth.GetEnumerator()) {
             if ( ! $item.Value ) {
@@ -1530,16 +1536,9 @@ class PSCDP {
             return $this.wsUri
         }
 
-        $ttargets = $this.GetTargets()
-        
-        $this.targets = $ttargets
-
-        if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
-            $targetInfo = $this.GetPBTarget()
-            $twsUri = $targetInfo.webSocketDebuggerUrl
-        } else {
-            $twsUri = ($ttargets | Select-Object -First 1).webSocketDebuggerUrl
-        }
+        $resp = Invoke-WebRequest -Uri "http://localhost:$($this.debugport)/json/version" -UseBasicParsing
+        $target = $resp | ConvertFrom-Json
+        $twsUri = ( $target ).webSocketDebuggerUrl
 
         if ( [string]::IsNullOrEmpty($twsUri) ) {
             throw "wsuri is null"
@@ -1560,7 +1559,9 @@ class PSCDP {
 
         $stargets = [System.Collections.Generic.List[PSCDPTarget]]::new()
 
-        $stargets = $ttargets | Where-Object { $_.type -eq "page" } | ForEach-Object {
+        $stargets = $ttargets | Where-Object { 
+            $_.type -eq "page" -and ( ! ( $_.url.StartsWith("chrome-extension://") ) ) -and ( ! ( $_.url.StartsWith("extension://") ) )
+        } | ForEach-Object {
             $target = @{}
             $_.psobject.Properties | ForEach-Object { 
                 $key = $_.Name
@@ -1579,8 +1580,38 @@ class PSCDP {
         return $stargets
     }
 
+    [void] CloseTab([PSCDPTarget]$target) {
+        $resp = (Invoke-WebRequest -Uri "http://localhost:$($this.debugport)/json/close/$($target.targetId)" -UseBasicParsing).Content
+    }
+
+    [PSCDPTarget] CreateTab($url) {
+        $obj = $null
+        $resp = (Invoke-WebRequest -Uri "http://localhost:$($this.debugport)/json/new?$url" -UseBasicParsing).Content
+
+        try {
+            $obj = $resp | ConvertFrom-Json
+            $obj = Transform-PSCustomObject($obj)
+            $obj = [PSCDPTarget]::Create($obj)
+        } catch {
+
+        }
+        
+        return $obj
+    } 
+
     [void] ConnectCdp() {
         Log-Msg "[$($this.wsname)] attempting new CDP connection at $($this.debugport)"
+
+        $ttargets = $this.GetTargets()        
+        $this.targets = $ttargets
+
+        if ( ! [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            $this.pubnubTarget = $this.GetPBTarget()
+
+            if ( $null -eq $this.pubnubTarget ) {
+                $this.pubnubTarget = $this.CreateTab($this.pubnuburl)
+            }
+        }
 
         $this.wsUri = $this.GetWSUrI()
 
@@ -1632,7 +1663,7 @@ class PSCDP {
 
         $pbtarget = $this.targets | Where-Object {
             $_.url -eq $this.pubnuburl
-        }
+        } | Select-Object -First 1
 
         return $pbtarget
     }
@@ -1852,6 +1883,17 @@ class PSCDP {
         }
 
         if ( $consoleAPICalled ) {
+
+            if ( ! [string]::IsNullOrEmpty($sessionId) ) {
+                $tresult = [PSCDPResult]::Create($msght)
+
+                $starget = $this.targets | Where-Object { $_.sessionId -eq $sessionId } | Select-Object -First 1
+
+                if ( $null -ne $starget ) {
+                    $starget.consolecalls.Add( $tresult )
+                }
+            }
+
             $msghtstr = $msght.GetEnumerator() | ForEach-Object { "{0}={1}" -f $_.Key, $_.Value } | Out-String
             
             if ( $this.logconsolemsg ) {
@@ -1896,7 +1938,8 @@ class PSCDP {
         if ( $targetCreated ) { # add target to list
             $targetInfo = $msg.params.targetInfo
 
-            if ( $targetInfo.type -eq "page" ) {
+            if ( $targetInfo.type -eq "page" -and ( ! ( $targetInfo.url.StartsWith("chrome-extension://") ) ) -and ( ! ( $targetInfo.url.StartsWith("extension://") ) ) ) {
+                 
                 $targetInfo = [PSCDPTarget]::Create($targetInfo)
 
                 $skip = $false
@@ -1934,6 +1977,12 @@ class PSCDP {
                 $skip = $true
             } elseif ( $targetInfo.url -like "*chrome://new-tab-page*" ) {
                 $skip = $true
+            } elseif ( $targetInfo.url.StartsWith("devtools://") ) {
+                $skip = $true
+            } elseif ( $targetInfo.url.StartsWith("chrome-extension://") ) {
+                $skip = $true
+            } elseif ( $targetInfo.url.StartsWith("extension://") ) {
+                $skip = $true
             }
 
             $targetInfo.sessionId = $sessionId
@@ -1946,15 +1995,18 @@ class PSCDP {
                 } else {
                     $targetInfo = $ptarget
                 }
+
+                if ( ! [string]::IsNullOrEmpty($sessionId) ) {
+                    $this.targets | Where-Object {
+                        $_.targetId -eq $targetInfo.targetId
+                    } | ForEach-Object { $_.sessionId = $sessionId }
+                }
+
+                if ( ! $targetInfo.enable_init ) {
+                    $this.LoadQueue($targetInfo)
+                }
             }
             
-            if ( ! [string]::IsNullOrEmpty($sessionId) ) {
-                $this.targets | Where-Object {
-                    $_.targetId -eq $targetInfo.targetId
-                } | ForEach-Object { $_.sessionId = $sessionId }
-            }
-
-            $this.LoadQueue($targetInfo)
         }
 
         if ( $targetDestroyed ) {
@@ -2047,8 +2099,13 @@ class PSCDP {
     }
 
     [void] LoadQueue([PSCDPTarget]$target) {
+        if ( $target.url.StartsWith("chrome-extension://") -or $target.url.StartsWith("extension://") ) {
+            return
+        }
 
         $this.pubnubTarget = $this.GetPBTarget()
+        $target.enable_init = $true
+
         # $this.sendQueue.Add( @{ method="Overlay.enable"; params=@{ enabled = $true } } )
         # $this.sendQueue.Add( @{ method="Network.enable"; params=@{ enabled = $true } } )
         
@@ -2062,6 +2119,8 @@ class PSCDP {
         }
         
         if ( ! [string]::IsNullOrWhiteSpace($this.pubnuburl) -and $target.url -eq $this.pubnuburl -and $target.addbinding_ok -eq $false -and $target.targetId -eq $this.pubnubTarget.targetId) {
+            $this.AddQueue( @{ method="Page.reload"; params=@{ ignoreCache=$true}; target=$target } ) 
+
             $this.pubnubTarget.addbinding_ts = Get-Date
             $this.AddQueue( @{ method="Runtime.addBinding"; params=@{ name="onPubNubEvent" }; target=$target; callback=$script:runtime_addBinding_callback } )
         }
@@ -2083,6 +2142,10 @@ class PSCDP {
             return
         }
 
+        if ( $this.pubnubTarget.executionContextId -eq -1 ) {
+            return
+        }
+
         $json = $pbmsg | ConvertTo-Json -Depth 10 # TODO wrap in try catch and report error as needed
         $tbytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $jsonb = "`"" + [System.Convert]::ToBase64String($tbytes) + "`""
@@ -2099,14 +2162,33 @@ class PSCDP {
             $callbackfunc = $script:BroadcastMsg_callback
         }
 
+        $expr = "function f() { let tpayload=JSON.parse(atob($jsonb)); "
+        $expr += "if ( typeof globalThis.sendMessage === 'function' ) { globalThis.sendMessage(tpayload); } else { console.log('sendMessage is not defined'); } } f();"
+
+        <#
         $params = @{
-            functionDeclaration="function f() { let tpayload=JSON.parse(atob($jsonb)); sendMessage(tpayload); }"
+            functionDeclaration=$expr
             executionContextId=$this.pubnubTarget.executionContextId
             returnByValue=$true
         }
 
         $cmd = @{ 
             method="Runtime.callFunctionOn"; 
+            params=$params; 
+            target=$this.pubnubTarget; 
+            callback=$callbackfunc; 
+            isbroadcast=$isbroadcast;
+            name=$pbmsg['builtincmd']
+        }
+        #>
+
+        $params = @{
+            expression=$expr
+            returnByValue=$true
+        }
+
+        $cmd = @{
+            method="Runtime.evaluate"; 
             params=$params; 
             target=$this.pubnubTarget; 
             callback=$callbackfunc; 
@@ -2155,6 +2237,10 @@ class PSCDP {
 
     [void] Broadcast() {
 
+        if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
+            return
+        }
+
         $msg = @{
             builtincmd="SendBroadcast"
             source="pscdp.relay.ps1"
@@ -2173,14 +2259,14 @@ class PSCDP {
         $msgstrs += "[sendQueue: $($this.sendQueue.Count)]"
         $msgstrs += "[responses: $($this.responses.Count)]"
         $msgstrs += "[commands: $($this.commands.Count) results: $($this.results.Count) errors: $($this.errors.Count)]"
+        $msgstrs += "[version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)]"
 
         if ( [string]::IsNullOrEmpty($this.pubnuburl) ) {
             $this.pubnubTarget = $this.GetPBTarget()
         }
 
         if ( $null -ne $this.pubnubTarget) {
-            
-            $msgstrs += "[version checks sent: $($this.versionchecks.Count) received: $($this.versionresponses.Count) errors: $($this.versionerrors.Count)]"
+            $msgstrs += "[console logs: $($this.pubnubTarget.consolecalls.Count)]"
 
             $msgstrs += "[broadcasts sent: $($this.broadcasts.Count) received: $($this.broadcastresponses.Count) errors: $($this.broadcasterrors.Count)]"
        
@@ -2254,8 +2340,9 @@ class PSCDP {
             $cdpobj.NextCmd()
 
             if ( $broadcast ) {
-                $cdpobj.Broadcast()
                 $cdpobj.GetBrowserVersion()
+
+                $cdpobj.Broadcast()
                 $cdpobj.PingPBTarget()
             }
 
@@ -2307,7 +2394,7 @@ $script:clientit = @{
 
 
 $d = 250
-$n = 25
+$n = 100
 $i = 0
 
 while ( $true ) {
